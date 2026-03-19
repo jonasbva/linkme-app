@@ -383,38 +383,38 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           </div>
 
           {/* Existing links */}
-          <div className="space-y-3">
+          <div className="space-y-5">
             {links.map((link: any, i: number) => (
-              <div key={link.id} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5 space-y-4">
-                {/* Link header */}
-                <div className="flex items-center gap-4">
-                  <span className="text-white/15 text-[12px] font-medium w-5 text-center">{i + 1}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium text-white/90 truncate">{link.title}</p>
-                    <p className="text-[11px] text-white/25 truncate mt-0.5">{link.url}</p>
+              <div key={link.id} className="flex gap-5 items-start">
+                {/* Left: settings box (max 50%) */}
+                <div className="w-1/2 max-w-[50%] bg-white/[0.02] border border-white/[0.04] rounded-xl p-5 space-y-3">
+                  {/* Link header */}
+                  <div className="flex items-center gap-3">
+                    <span className="text-white/15 text-[12px] font-medium w-5 text-center shrink-0">{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[13px] font-medium text-white/90 truncate">{link.title}</p>
+                      <p className="text-[11px] text-white/25 truncate mt-0.5">{link.url}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => toggleLink(link.id, !link.is_active)}
+                        className={`w-8 h-[18px] rounded-full transition-colors relative ${link.is_active ? 'bg-white/90' : 'bg-white/10'}`}
+                      >
+                        <div className={`w-3.5 h-3.5 rounded-full absolute top-[2px] transition-all ${
+                          link.is_active ? 'left-[17px] bg-black' : 'left-[2px] bg-white/30'
+                        }`} />
+                      </button>
+                      <button
+                        onClick={() => deleteLink(link.id)}
+                        className="text-white/15 hover:text-red-400/70 text-[11px] transition-colors ml-1"
+                      >
+                        Remove
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => toggleLink(link.id, !link.is_active)}
-                      className={`w-8 h-[18px] rounded-full transition-colors relative ${link.is_active ? 'bg-white/90' : 'bg-white/10'}`}
-                    >
-                      <div className={`w-3.5 h-3.5 rounded-full absolute top-[2px] transition-all ${
-                        link.is_active ? 'left-[17px] bg-black' : 'left-[2px] bg-white/30'
-                      }`} />
-                    </button>
-                    <button
-                      onClick={() => deleteLink(link.id)}
-                      className="text-white/15 hover:text-red-400/70 text-[11px] transition-colors ml-1"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </div>
 
-                {/* Settings + Preview side by side */}
-                <div className="flex gap-5 pl-9">
-                  {/* Left block: all settings compact */}
-                  <div className="flex-1 min-w-0 space-y-2.5">
+                  {/* Settings */}
+                  <div className="space-y-2.5 pt-1">
                     <div className="flex items-center gap-2">
                       <span className="text-[11px] text-white/20 w-14 shrink-0">Icon</span>
                       <select
@@ -474,12 +474,18 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                       </>
                     )}
                   </div>
+                </div>
 
-                  {/* Right block: preview */}
-                  {link.thumbnail_url && (
+                {/* Right: preview (outside the box, matches public page style) */}
+                {link.thumbnail_url && (
+                  <div className="flex-1 min-w-0" style={{ maxWidth: 500 }}>
+                    <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-2">Preview</p>
                     <div
-                      className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
-                      style={{ height: link.thumbnail_height || 200, width: 320 }}
+                      className="rounded-2xl overflow-hidden relative border border-white/[0.06]"
+                      style={{
+                        height: link.thumbnail_height || 200,
+                        background: creator.button_color || '#141414',
+                      }}
                     >
                       <img
                         src={link.thumbnail_url}
@@ -497,56 +503,76 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                         bottom: 0,
                         left: 0,
                         right: 0,
-                        padding: '24px 16px 12px',
-                        background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                        padding: '32px 16px 14px',
+                        background: 'linear-gradient(transparent, rgba(0,0,0,0.82))',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
                       }}>
-                        <span className="text-[13px] font-semibold text-white line-clamp-1">{link.title}</span>
+                        <span className="text-[14px] font-bold text-white flex-1">{link.title}</span>
                       </div>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
 
           {/* Add new link */}
           {!isNew && (
-            <div className="border border-dashed border-white/[0.06] rounded-xl p-5 space-y-4">
-              <p className="text-[12px] text-white/30 font-medium">Add link</p>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Title" value={newLink.title} onChange={v => setNewLink(p => ({ ...p, title: v }))} placeholder="OnlyFans (free for a short time)" />
-                <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
-                <Field label="Image URL" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional" />
-                <SelectField label="Icon" value={newLink.icon} onChange={v => setNewLink(p => ({ ...p, icon: v }))}
-                  options={ICON_OPTIONS.map(o => [o, o])} />
-              </div>
-
-              {newLink.icon === 'custom' && (
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-white/20 w-16 shrink-0">Icon URL</span>
-                  <input
-                    type="text"
-                    value={newLink.custom_icon_url || ''}
-                    onChange={e => setNewLink(p => ({ ...p, custom_icon_url: e.target.value }))}
-                    placeholder="https://..."
-                    className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
-                  />
+            <div className="flex gap-5 items-start">
+              {/* Left: add form in box (max 50%) */}
+              <div className="w-1/2 max-w-[50%] border border-dashed border-white/[0.06] rounded-xl p-5 space-y-4">
+                <p className="text-[12px] text-white/30 font-medium">Add link</p>
+                <div className="grid grid-cols-1 gap-3">
+                  <Field label="Title" value={newLink.title} onChange={v => setNewLink(p => ({ ...p, title: v }))} placeholder="OnlyFans (free for a short time)" />
+                  <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
+                  <Field label="Image URL" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional" />
+                  <SelectField label="Icon" value={newLink.icon} onChange={v => setNewLink(p => ({ ...p, icon: v }))}
+                    options={ICON_OPTIONS.map(o => [o, o])} />
                 </div>
-              )}
 
-              {newLink.thumbnail_url && (
-                <div className="flex gap-5">
-                  {/* Left: sliders */}
-                  <div className="flex-1 min-w-0 space-y-2.5">
+                {newLink.icon === 'custom' && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-white/20 w-14 shrink-0">Icon URL</span>
+                    <input
+                      type="text"
+                      value={newLink.custom_icon_url || ''}
+                      onChange={e => setNewLink(p => ({ ...p, custom_icon_url: e.target.value }))}
+                      placeholder="https://..."
+                      className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                    />
+                  </div>
+                )}
+
+                {newLink.thumbnail_url && (
+                  <div className="space-y-2.5">
                     <SliderField label="Height" value={newLink.thumbnail_height} min={100} max={400} step={10} suffix="px"
                       onChange={v => setNewLink(p => ({ ...p, thumbnail_height: v }))} />
                     <SliderField label="Position" value={parseInt(newLink.thumbnail_position) || 50} min={0} max={100} suffix="%"
                       onChange={v => setNewLink(p => ({ ...p, thumbnail_position: String(v) }))} />
                   </div>
-                  {/* Right: wider preview */}
+                )}
+
+                <button
+                  onClick={addLink}
+                  disabled={addLinkStatus === 'saving' || !newLink.title || !newLink.url}
+                  className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-30"
+                >
+                  {addLinkStatus === 'saving' ? 'Saving…' : addLinkStatus === 'saved' ? '✓ Added' : 'Add link'}
+                </button>
+              </div>
+
+              {/* Right: preview outside box */}
+              {newLink.thumbnail_url && (
+                <div className="flex-1 min-w-0" style={{ maxWidth: 500 }}>
+                  <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-2">Preview</p>
                   <div
-                    className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
-                    style={{ height: newLink.thumbnail_height, width: 320 }}
+                    className="rounded-2xl overflow-hidden relative border border-white/[0.06]"
+                    style={{
+                      height: newLink.thumbnail_height,
+                      background: creator.button_color || '#141414',
+                    }}
                   >
                     <img
                       src={newLink.thumbnail_url}
@@ -564,22 +590,17 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                       bottom: 0,
                       left: 0,
                       right: 0,
-                      padding: '30px 16px 14px',
-                      background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                      padding: '32px 16px 14px',
+                      background: 'linear-gradient(transparent, rgba(0,0,0,0.82))',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
                     }}>
-                      <span className="text-[13px] font-semibold text-white">{newLink.title || 'Link title'}</span>
+                      <span className="text-[14px] font-bold text-white flex-1">{newLink.title || 'Link title'}</span>
                     </div>
                   </div>
                 </div>
               )}
-
-              <button
-                onClick={addLink}
-                disabled={addLinkStatus === 'saving' || !newLink.title || !newLink.url}
-                className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-30"
-              >
-                {addLinkStatus === 'saving' ? 'Saving…' : addLinkStatus === 'saved' ? '✓ Added' : 'Add link'}
-              </button>
             </div>
           )}
 
