@@ -37,7 +37,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   const [links, setLinks] = useState<any[]>(initialLinks || [])
-  const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: 'center' })
+  const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: '50' })
   const [addLinkStatus, setAddLinkStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   function updateCreator(field: string, value: any) {
@@ -72,7 +72,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     if (res.ok) {
       const data = await res.json()
       setLinks(prev => [...prev, data])
-      setNewLink({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: 'center' })
+      setNewLink({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: '50' })
       setAddLinkStatus('saved')
       setTimeout(() => setAddLinkStatus('idle'), 2500)
     } else {
@@ -289,7 +289,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 </button>
               </div>
               {/* Per-link image settings */}
-              <div className="pl-7 space-y-2">
+              <div className="pl-7 space-y-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-white/30 w-20 shrink-0">Image URL:</span>
                   <input
@@ -301,22 +301,32 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   />
                 </div>
                 {link.thumbnail_url && (
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-white/30 w-20 shrink-0">Image crop:</span>
-                    {['top', 'center', 'bottom'].map(pos => (
-                      <button
-                        key={pos}
-                        onClick={() => updateLinkField(link.id, 'thumbnail_position', pos)}
-                        className={`px-2.5 py-1 text-xs rounded-lg capitalize transition ${
-                          (link.thumbnail_position || 'center') === pos
-                            ? 'bg-white text-black'
-                            : 'bg-white/10 text-white/50 hover:bg-white/20'
-                        }`}
-                      >
-                        {pos}
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-white/30 w-20 shrink-0">Crop: {link.thumbnail_position || '50'}%</span>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={parseInt(link.thumbnail_position) || 50}
+                        onChange={e => updateLinkField(link.id, 'thumbnail_position', e.target.value)}
+                        className="flex-1 h-1.5 accent-white cursor-pointer"
+                      />
+                      <span className="text-[10px] text-white/20 w-16 text-right">0 = top, 100 = bottom</span>
+                    </div>
+                    {/* Live preview */}
+                    <div className="rounded-lg overflow-hidden border border-white/10" style={{ height: 120 }}>
+                      <img
+                        src={link.thumbnail_url}
+                        alt="Preview"
+                        style={{
+                          width: '100%', height: '100%', objectFit: 'cover',
+                          objectPosition: `center ${parseInt(link.thumbnail_position) || 50}%`,
+                          display: 'block',
+                        }}
+                      />
+                    </div>
+                  </>
                 )}
               </div>
             </div>
@@ -331,23 +341,32 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
                 <Field label="Thumbnail Image URL (optional)" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="https://..." />
                 {newLink.thumbnail_url && (
-                  <div>
-                    <label className="text-xs text-white/40 mb-1.5 block">Thumbnail Crop</label>
-                    <div className="flex gap-2">
-                      {['top', 'center', 'bottom'].map(pos => (
-                        <button
-                          key={pos}
-                          type="button"
-                          onClick={() => setNewLink(p => ({ ...p, thumbnail_position: pos }))}
-                          className={`px-3 py-2 text-xs rounded-lg capitalize transition ${
-                            newLink.thumbnail_position === pos
-                              ? 'bg-white text-black'
-                              : 'bg-[#1a1a1a] border border-white/10 text-white/50 hover:bg-white/10'
-                          }`}
-                        >
-                          {pos}
-                        </button>
-                      ))}
+                  <div className="md:col-span-2 space-y-3">
+                    <div>
+                      <label className="text-xs text-white/40 mb-1.5 block">Image Crop: {newLink.thumbnail_position}%</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={parseInt(newLink.thumbnail_position) || 50}
+                          onChange={e => setNewLink(p => ({ ...p, thumbnail_position: e.target.value }))}
+                          className="flex-1 h-1.5 accent-white cursor-pointer"
+                        />
+                        <span className="text-[10px] text-white/20 w-16 text-right">0 = top, 100 = bottom</span>
+                      </div>
+                    </div>
+                    {/* Live preview */}
+                    <div className="rounded-lg overflow-hidden border border-white/10" style={{ height: 120 }}>
+                      <img
+                        src={newLink.thumbnail_url}
+                        alt="Preview"
+                        style={{
+                          width: '100%', height: '100%', objectFit: 'cover',
+                          objectPosition: `center ${parseInt(newLink.thumbnail_position) || 50}%`,
+                          display: 'block',
+                        }}
+                      />
                     </div>
                   </div>
                 )}
