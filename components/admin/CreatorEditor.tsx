@@ -476,14 +476,15 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   </div>
                 </div>
 
-                {/* Right: preview (outside the box, matches public page style) */}
+                {/* Right: preview (outside the box, matches public page exactly: 500px container - 32px padding = 468px) */}
                 {link.thumbnail_url && (
-                  <div className="flex-1 min-w-0" style={{ maxWidth: 500 }}>
+                  <div className="shrink-0" style={{ width: 468 }}>
                     <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-2">Preview</p>
                     <div
                       className="rounded-2xl overflow-hidden relative border border-white/[0.06]"
                       style={{
                         height: link.thumbnail_height || 200,
+                        width: 468,
                         background: creator.button_color || '#141414',
                       }}
                     >
@@ -563,14 +564,15 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 </button>
               </div>
 
-              {/* Right: preview outside box */}
+              {/* Right: preview outside box (468px = public page card width) */}
               {newLink.thumbnail_url && (
-                <div className="flex-1 min-w-0" style={{ maxWidth: 500 }}>
+                <div className="shrink-0" style={{ width: 468 }}>
                   <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-2">Preview</p>
                   <div
                     className="rounded-2xl overflow-hidden relative border border-white/[0.06]"
                     style={{
                       height: newLink.thumbnail_height,
+                      width: 468,
                       background: creator.button_color || '#141414',
                     }}
                   >
