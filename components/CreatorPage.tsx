@@ -8,7 +8,8 @@ interface Link {
   url: string
   icon: string
   thumbnail_url?: string
-  thumbnail_position?: string  // 'top' | 'center' | 'bottom'
+  thumbnail_position?: string  // 0-100 percentage (0=top, 50=center, 100=bottom)
+  thumbnail_height?: number    // display height in pixels (100-400)
   sort_order: number
   is_active: boolean
 }
@@ -188,7 +189,7 @@ export default function CreatorPage({ creator, links }: Props) {
                         alt={link.title}
                         style={{
                           width: '100%', height: '100%', objectFit: 'cover',
-                          objectPosition: `center ${parseInt(link.thumbnail_position) || 50}%`,
+                          objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
                           display: 'block'
                         }}
                       />

@@ -322,7 +322,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                           type="range"
                           min="0"
                           max="100"
-                          value={parseInt(link.thumbnail_position) || 50}
+                          value={parseInt(link.thumbnail_position || '50') || 50}
                           onChange={e => updateLinkField(link.id, 'thumbnail_position', e.target.value)}
                           className="flex-1 h-1.5 accent-white cursor-pointer"
                         />
@@ -340,7 +340,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                           alt="Preview"
                           style={{
                             width: '100%', height: '100%', objectFit: 'cover',
-                            objectPosition: `center ${parseInt(link.thumbnail_position) || 50}%`,
+                            objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
                             display: 'block',
                           }}
                         />
