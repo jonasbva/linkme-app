@@ -98,29 +98,37 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     setTimeout(() => setLinkSaveStatus('idle'), 2000)
   }
 
-  async function saveLinksOrder() {
+  async function saveAllLinks() {
     setLinkSaveStatus('saving')
-    // Re-save all links with updated sort_order
-    await Promise.all(
-      links.map((l, i) =>
-        fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sort_order: i }),
-        })
+    try {
+      await Promise.all(
+        links.map((l, i) =>
+          fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sort_order: i,
+              title: l.title,
+              url: l.url,
+              icon: l.icon,
+              thumbnail_url: l.thumbnail_url || null,
+              thumbnail_position: l.thumbnail_position || '50',
+              thumbnail_height: l.thumbnail_height || 200,
+              is_active: l.is_active,
+            }),
+          })
+        )
       )
-    )
-    setLinkSaveStatus('saved')
-    setTimeout(() => setLinkSaveStatus('idle'), 2000)
+      setLinkSaveStatus('saved')
+      setTimeout(() => setLinkSaveStatus('idle'), 2500)
+    } catch {
+      setLinkSaveStatus('idle')
+      alert('Failed to save links.')
+    }
   }
 
-  async function updateLinkField(id: string, field: string, value: any) {
+  function updateLinkField(id: string, field: string, value: any) {
     setLinks(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l))
-    await fetch(`/api/admin/creators/${creator.id}/links/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [field]: value }),
-    })
   }
 
   async function toggleLink(id: string, is_active: boolean) {
@@ -254,7 +262,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               {linkSaveStatus === 'saving' ? 'Saving…' : linkSaveStatus === 'saved' ? '✓ Changes saved' : `${links.length} link${links.length !== 1 ? 's' : ''}`}
             </span>
             <button
-              onClick={saveLinksOrder}
+              onClick={saveAllLinks}
               disabled={linkSaveStatus === 'saving'}
               className="px-4 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition disabled:opacity-40"
             >
