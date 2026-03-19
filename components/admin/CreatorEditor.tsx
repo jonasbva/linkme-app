@@ -37,7 +37,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   const [links, setLinks] = useState<any[]>(initialLinks || [])
-  const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '' })
+  const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: 'center' })
 
   function updateCreator(field: string, value: any) {
     setCreator((prev: any) => ({ ...prev, [field]: value }))
@@ -97,6 +97,15 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     )
     setLinkSaveStatus('saved')
     setTimeout(() => setLinkSaveStatus('idle'), 2000)
+  }
+
+  async function updateLinkField(id: string, field: string, value: any) {
+    setLinks(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l))
+    await fetch(`/api/admin/creators/${creator.id}/links/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [field]: value }),
+    })
   }
 
   async function toggleLink(id: string, is_active: boolean) {
@@ -240,28 +249,49 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
           {/* Existing links */}
           {links.map((link, i) => (
-            <div key={link.id} className="bg-[#111] rounded-2xl p-4 flex items-center gap-4">
-              <span className="text-white/20 text-sm w-4">{i + 1}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{link.title}</p>
-                <p className="text-xs text-white/40 truncate">{link.url}</p>
-                <p className="text-xs text-white/30 mt-0.5">icon: {link.icon}</p>
+            <div key={link.id} className="bg-[#111] rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-4">
+                <span className="text-white/20 text-sm w-4">{i + 1}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-white truncate">{link.title}</p>
+                  <p className="text-xs text-white/40 truncate">{link.url}</p>
+                  <p className="text-xs text-white/30 mt-0.5">icon: {link.icon}</p>
+                </div>
+                {analytics?.linkClicks[link.id] && (
+                  <span className="text-xs text-white/40">{analytics.linkClicks[link.id]} clicks</span>
+                )}
+                <button
+                  onClick={() => toggleLink(link.id, !link.is_active)}
+                  className={`px-2 py-1 text-xs rounded-full ${link.is_active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}
+                >
+                  {link.is_active ? 'On' : 'Off'}
+                </button>
+                <button
+                  onClick={() => deleteLink(link.id)}
+                  className="text-red-400/60 hover:text-red-400 text-xs transition"
+                >
+                  Delete
+                </button>
               </div>
-              {analytics?.linkClicks[link.id] && (
-                <span className="text-xs text-white/40">{analytics.linkClicks[link.id]} clicks</span>
+              {/* Per-link thumbnail crop — only show if thumbnail exists */}
+              {link.thumbnail_url && (
+                <div className="flex items-center gap-3 pl-7">
+                  <span className="text-xs text-white/30">Image crop:</span>
+                  {['top', 'center', 'bottom'].map(pos => (
+                    <button
+                      key={pos}
+                      onClick={() => updateLinkField(link.id, 'thumbnail_position', pos)}
+                      className={`px-2.5 py-1 text-xs rounded-lg capitalize transition ${
+                        (link.thumbnail_position || 'center') === pos
+                          ? 'bg-white text-black'
+                          : 'bg-white/10 text-white/50 hover:bg-white/20'
+                      }`}
+                    >
+                      {pos}
+                    </button>
+                  ))}
+                </div>
               )}
-              <button
-                onClick={() => toggleLink(link.id, !link.is_active)}
-                className={`px-2 py-1 text-xs rounded-full ${link.is_active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}
-              >
-                {link.is_active ? 'On' : 'Off'}
-              </button>
-              <button
-                onClick={() => deleteLink(link.id)}
-                className="text-red-400/60 hover:text-red-400 text-xs transition"
-              >
-                Delete
-              </button>
             </div>
           ))}
 
@@ -273,6 +303,27 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 <Field label="Title" value={newLink.title} onChange={v => setNewLink(p => ({ ...p, title: v }))} placeholder="OnlyFans (free for a short time)" />
                 <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
                 <Field label="Thumbnail Image URL (optional)" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="https://..." />
+                {newLink.thumbnail_url && (
+                  <div>
+                    <label className="text-xs text-white/40 mb-1.5 block">Thumbnail Crop</label>
+                    <div className="flex gap-2">
+                      {['top', 'center', 'bottom'].map(pos => (
+                        <button
+                          key={pos}
+                          type="button"
+                          onClick={() => setNewLink(p => ({ ...p, thumbnail_position: pos }))}
+                          className={`px-3 py-2 text-xs rounded-lg capitalize transition ${
+                            newLink.thumbnail_position === pos
+                              ? 'bg-white text-black'
+                              : 'bg-[#1a1a1a] border border-white/10 text-white/50 hover:bg-white/10'
+                          }`}
+                        >
+                          {pos}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-white/40 mb-1.5 block">Platform Icon</label>
                   <select

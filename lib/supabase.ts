@@ -46,6 +46,7 @@ export interface Link {
   url: string
   icon: string
   thumbnail_url?: string
+  thumbnail_position?: string
   sort_order: number
   is_active: boolean
   created_at: string
