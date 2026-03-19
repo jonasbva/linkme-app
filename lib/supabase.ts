@@ -6,8 +6,15 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 // Client-side supabase (for use in client components)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Server-side supabase (for use in server components and API routes)
+// Server-side supabase for admin API routes — uses service role key to bypass RLS
 export function createServerSupabaseClient() {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (serviceRoleKey) {
+    return createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false },
+    })
+  }
+  // Fallback to anon key if service role key not set
   return createClient(supabaseUrl, supabaseAnonKey)
 }
 
