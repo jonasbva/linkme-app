@@ -3,6 +3,9 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import CreatorPage from '@/components/CreatorPage'
 import type { Metadata } from 'next'
 
+// Always fetch fresh data — don't cache this page
+export const dynamic = 'force-dynamic'
+
 interface Props {
   params: { slug: string }
 }
