@@ -76,9 +76,17 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
   async function deleteLink(id: string) {
     // Optimistic update — remove from UI immediately
+    const removed = links.find(l => l.id === id)
     setLinks(prev => prev.filter(l => l.id !== id))
     setLinkSaveStatus('saving')
-    await fetch(`/api/admin/creators/${creator.id}/links/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/admin/creators/${creator.id}/links/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      // Restore the link if the API failed
+      if (removed) setLinks(prev => [...prev, removed].sort((a, b) => a.sort_order - b.sort_order))
+      setLinkSaveStatus('idle')
+      alert('Delete failed — check that SUPABASE_SERVICE_ROLE_KEY is set in Vercel environment variables.')
+      return
+    }
     setLinkSaveStatus('saved')
     setTimeout(() => setLinkSaveStatus('idle'), 2000)
   }

@@ -18,6 +18,10 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 export async function DELETE(req: NextRequest, { params }: { params: { id: string; linkId: string } }) {
   if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const supabase = createServerSupabaseClient()
-  await supabase.from('links').delete().eq('id', params.linkId)
+  const { error } = await supabase.from('links').delete().eq('id', params.linkId)
+  if (error) {
+    console.error('Delete link error:', error)
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
   return NextResponse.json({ ok: true })
 }
