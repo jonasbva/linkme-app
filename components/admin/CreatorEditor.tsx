@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts'
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts'
 
 const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'link']
 
@@ -19,23 +19,13 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const [activeTab, setActiveTab] = useState<'profile' | 'links' | 'analytics'>('profile')
 
   const [creator, setCreator] = useState(initialCreator || {
-    slug: '',
-    display_name: '',
-    username: '',
-    bio: '',
-    avatar_url: '',
-    background_color: '#080808',
-    button_color: '#1a1a1a',
-    text_color: '#ffffff',
-    button_style: 'rounded',
-    show_verified: true,
-    custom_domain: '',
-    avatar_position: 'top',
-    hero_height: 'large',
-    is_active: true,
+    slug: '', display_name: '', username: '', bio: '', avatar_url: '',
+    background_color: '#080808', button_color: '#1a1a1a', text_color: '#ffffff',
+    button_style: 'rounded', show_verified: true, custom_domain: '',
+    avatar_position: 'top', hero_height: 'large', is_active: true,
+    background_image_url: '',
   })
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-
   const [links, setLinks] = useState<any[]>(initialLinks || [])
   const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
   const [addLinkStatus, setAddLinkStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -44,21 +34,47 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     setCreator((prev: any) => ({ ...prev, [field]: value }))
   }
 
+  function updateLinkField(id: string, field: string, value: any) {
+    setLinks(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l))
+  }
+
   async function saveCreator() {
     setSaving(true)
     const method = isNew ? 'POST' : 'PUT'
     const url = isNew ? '/api/admin/creators' : `/api/admin/creators/${creator.id}`
-    const res = await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(creator),
-    })
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(creator) })
     if (res.ok) {
       const data = await res.json()
       if (isNew) router.push(`/admin/creators/${data.id}`)
       else router.refresh()
     }
     setSaving(false)
+  }
+
+  async function saveAllLinks() {
+    setLinkSaveStatus('saving')
+    try {
+      await Promise.all(
+        links.map((l: any, i: number) =>
+          fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sort_order: i, title: l.title, url: l.url, icon: l.icon,
+              thumbnail_url: l.thumbnail_url || null,
+              thumbnail_position: l.thumbnail_position || '50',
+              thumbnail_height: l.thumbnail_height || 200,
+              is_active: l.is_active,
+            }),
+          })
+        )
+      )
+      setLinkSaveStatus('saved')
+      setTimeout(() => setLinkSaveStatus('idle'), 2500)
+    } catch (err) {
+      setLinkSaveStatus('idle')
+      alert('Failed to save links.')
+    }
   }
 
   async function addLink() {
@@ -82,53 +98,18 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   }
 
   async function deleteLink(id: string) {
-    // Optimistic update — remove from UI immediately
     const removed = links.find(l => l.id === id)
     setLinks(prev => prev.filter(l => l.id !== id))
     setLinkSaveStatus('saving')
     const res = await fetch(`/api/admin/creators/${creator.id}/links/${id}`, { method: 'DELETE' })
     if (!res.ok) {
-      // Restore the link if the API failed
-      if (removed) setLinks(prev => [...prev, removed].sort((a, b) => a.sort_order - b.sort_order))
+      if (removed) setLinks(prev => [...prev, removed].sort((a: any, b: any) => a.sort_order - b.sort_order))
       setLinkSaveStatus('idle')
-      alert('Delete failed — check that SUPABASE_SERVICE_ROLE_KEY is set in Vercel environment variables.')
+      alert('Delete failed.')
       return
     }
     setLinkSaveStatus('saved')
     setTimeout(() => setLinkSaveStatus('idle'), 2000)
-  }
-
-  async function saveAllLinks() {
-    setLinkSaveStatus('saving')
-    try {
-      await Promise.all(
-        links.map((l, i) =>
-          fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sort_order: i,
-              title: l.title,
-              url: l.url,
-              icon: l.icon,
-              thumbnail_url: l.thumbnail_url || null,
-              thumbnail_position: l.thumbnail_position || '50',
-              thumbnail_height: l.thumbnail_height || 200,
-              is_active: l.is_active,
-            }),
-          })
-        )
-      )
-      setLinkSaveStatus('saved')
-      setTimeout(() => setLinkSaveStatus('idle'), 2500)
-    } catch {
-      setLinkSaveStatus('idle')
-      alert('Failed to save links.')
-    }
-  }
-
-  function updateLinkField(id: string, field: string, value: any) {
-    setLinks(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l))
   }
 
   async function toggleLink(id: string, is_active: boolean) {
@@ -141,12 +122,14 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <a href="/admin/creators" className="text-sm text-white/40 hover:text-white/60 mb-1 block">← Back</a>
-          <h1 className="text-2xl font-semibold">
+          <a href="/admin/creators" className="text-[12px] text-white/25 hover:text-white/50 transition-colors">
+            ← Back
+          </a>
+          <h1 className="text-xl font-semibold tracking-tight mt-1">
             {isNew ? 'New Creator' : creator.display_name}
           </h1>
         </div>
@@ -154,21 +137,23 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           <a
             href={`/${creator.slug}`}
             target="_blank"
-            className="px-4 py-2 bg-white/10 text-white text-sm rounded-lg hover:bg-white/20 transition"
+            className="px-4 py-1.5 text-[12px] text-white/40 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
           >
-            View Page →
+            View page →
           </a>
         )}
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 bg-[#111] p-1 rounded-xl w-fit">
+      <div className="flex gap-6 border-b border-white/[0.04] pb-px">
         {(['profile', 'links', ...(isNew ? [] : ['analytics'])] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium capitalize transition ${
-              activeTab === tab ? 'bg-white text-black' : 'text-white/50 hover:text-white'
+            className={`pb-2.5 text-[13px] font-medium capitalize transition-colors border-b-2 -mb-px ${
+              activeTab === tab
+                ? 'text-white border-white'
+                : 'text-white/30 border-transparent hover:text-white/50'
             }`}
           >
             {tab}
@@ -176,342 +161,265 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         ))}
       </div>
 
-      {/* Profile Tab */}
+      {/* ─── PROFILE TAB ─── */}
       {activeTab === 'profile' && (
-        <div className="bg-[#111] rounded-2xl p-6 space-y-5">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <Field label="Display Name" value={creator.display_name} onChange={v => updateCreator('display_name', v)} />
-            <Field label="Slug (URL)" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
-            <Field label="Username (@handle)" value={creator.username} onChange={v => updateCreator('username', v)} placeholder="lilybrown" />
-            <Field label="Bio" value={creator.bio} onChange={v => updateCreator('bio', v)} />
-            <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
-            <Field label="Custom Domain" value={creator.custom_domain} onChange={v => updateCreator('custom_domain', v)} placeholder="lilybrown.com" />
-            <Field label="Background Image URL" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <ColorField label="Background Color" value={creator.background_color} onChange={v => updateCreator('background_color', v)} />
-            <ColorField label="Button Color" value={creator.button_color} onChange={v => updateCreator('button_color', v)} />
-            <ColorField label="Text Color" value={creator.text_color} onChange={v => updateCreator('text_color', v)} />
-            <div>
-              <label className="text-xs text-white/40 mb-1.5 block">Button Style</label>
-              <select
-                value={creator.button_style}
-                onChange={e => updateCreator('button_style', e.target.value)}
-                className="w-full px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white"
-              >
-                <option value="rounded">Rounded</option>
-                <option value="pill">Pill</option>
-                <option value="sharp">Sharp</option>
-              </select>
+        <div className="space-y-8">
+          <Section title="General">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <Field label="Display Name" value={creator.display_name} onChange={v => updateCreator('display_name', v)} />
+              <Field label="Slug" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
+              <Field label="Username" value={creator.username} onChange={v => updateCreator('username', v)} placeholder="@lilybrown" />
+              <Field label="Bio" value={creator.bio} onChange={v => updateCreator('bio', v)} />
+              <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
+              <Field label="Custom Domain" value={creator.custom_domain} onChange={v => updateCreator('custom_domain', v)} placeholder="lilybrown.com" />
+              <Field label="Background Image" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
             </div>
-          </div>
+          </Section>
 
-          {/* Image controls */}
-          <div className="border-t border-white/5 pt-5">
-            <p className="text-xs text-white/40 mb-4 uppercase tracking-wider">Hero Image Settings</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div>
-                <label className="text-xs text-white/40 mb-1.5 block">Image Size</label>
-                <select
-                  value={creator.hero_height || 'large'}
-                  onChange={e => updateCreator('hero_height', e.target.value)}
-                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white"
-                >
-                  <option value="small">Small</option>
-                  <option value="medium">Medium</option>
-                  <option value="large">Large</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs text-white/40 mb-1.5 block">Image Focus / Crop</label>
-                <select
-                  value={creator.avatar_position || 'top'}
-                  onChange={e => updateCreator('avatar_position', e.target.value)}
-                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white"
-                >
-                  <option value="top">Top (face/head)</option>
-                  <option value="center">Center</option>
-                  <option value="bottom">Bottom</option>
-                </select>
-              </div>
+          <Section title="Appearance">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              <ColorField label="Background" value={creator.background_color} onChange={v => updateCreator('background_color', v)} />
+              <ColorField label="Buttons" value={creator.button_color} onChange={v => updateCreator('button_color', v)} />
+              <ColorField label="Text" value={creator.text_color} onChange={v => updateCreator('text_color', v)} />
+              <SelectField label="Button Style" value={creator.button_style} onChange={v => updateCreator('button_style', v)}
+                options={[['rounded', 'Rounded'], ['pill', 'Pill'], ['sharp', 'Sharp']]} />
             </div>
-          </div>
+          </Section>
 
-          <div className="flex items-center gap-6">
-            <Toggle label="Show Verified Badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
+          <Section title="Hero Image">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
+              <SelectField label="Size" value={creator.hero_height || 'large'} onChange={v => updateCreator('hero_height', v)}
+                options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]} />
+              <SelectField label="Focus" value={creator.avatar_position || 'top'} onChange={v => updateCreator('avatar_position', v)}
+                options={[['top', 'Top'], ['center', 'Center'], ['bottom', 'Bottom']]} />
+            </div>
+          </Section>
+
+          <div className="flex items-center gap-8">
+            <Toggle label="Verified badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
             <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
           </div>
 
           <button
             onClick={saveCreator}
             disabled={saving}
-            className="px-6 py-2.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition disabled:opacity-50"
+            className="px-5 py-2 bg-white text-black text-[13px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40"
           >
-            {saving ? 'Saving…' : isNew ? 'Create Creator' : 'Save Changes'}
+            {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
           </button>
         </div>
       )}
 
-      {/* Links Tab */}
+      {/* ─── LINKS TAB ─── */}
       {activeTab === 'links' && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           {/* Save bar */}
-          <div className="flex items-center justify-between bg-[#111] rounded-2xl px-5 py-3">
-            <span className="text-sm text-white/40">
-              {linkSaveStatus === 'saving' ? 'Saving…' : linkSaveStatus === 'saved' ? '✓ Changes saved' : `${links.length} link${links.length !== 1 ? 's' : ''}`}
+          <div className="flex items-center justify-between">
+            <span className="text-[12px] text-white/25">
+              {linkSaveStatus === 'saving' ? 'Saving…' : linkSaveStatus === 'saved' ? '✓ Saved' : `${links.length} link${links.length !== 1 ? 's' : ''}`}
             </span>
             <button
               onClick={saveAllLinks}
               disabled={linkSaveStatus === 'saving'}
-              className="px-4 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition disabled:opacity-40"
+              className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40"
             >
-              Save Links
+              Save links
             </button>
           </div>
 
           {/* Existing links */}
-          {links.map((link, i) => (
-            <div key={link.id} className="bg-[#111] rounded-2xl p-4 space-y-3">
-              <div className="flex items-center gap-4">
-                <span className="text-white/20 text-sm w-4">{i + 1}</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">{link.title}</p>
-                  <p className="text-xs text-white/40 truncate">{link.url}</p>
-                  <p className="text-xs text-white/30 mt-0.5">icon: {link.icon}</p>
+          <div className="space-y-3">
+            {links.map((link: any, i: number) => (
+              <div key={link.id} className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5 space-y-4">
+                {/* Link header */}
+                <div className="flex items-center gap-4">
+                  <span className="text-white/15 text-[12px] font-medium w-5 text-center">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium text-white/90 truncate">{link.title}</p>
+                    <p className="text-[11px] text-white/25 truncate mt-0.5">{link.url}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => toggleLink(link.id, !link.is_active)}
+                      className={`w-8 h-[18px] rounded-full transition-colors relative ${link.is_active ? 'bg-white/90' : 'bg-white/10'}`}
+                    >
+                      <div className={`w-3.5 h-3.5 rounded-full absolute top-[2px] transition-all ${
+                        link.is_active ? 'left-[17px] bg-black' : 'left-[2px] bg-white/30'
+                      }`} />
+                    </button>
+                    <button
+                      onClick={() => deleteLink(link.id)}
+                      className="text-white/15 hover:text-red-400/70 text-[11px] transition-colors ml-1"
+                    >
+                      Remove
+                    </button>
+                  </div>
                 </div>
-                {analytics?.linkClicks[link.id] && (
-                  <span className="text-xs text-white/40">{analytics.linkClicks[link.id]} clicks</span>
-                )}
-                <button
-                  onClick={() => toggleLink(link.id, !link.is_active)}
-                  className={`px-2 py-1 text-xs rounded-full ${link.is_active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}
-                >
-                  {link.is_active ? 'On' : 'Off'}
-                </button>
-                <button
-                  onClick={() => deleteLink(link.id)}
-                  className="text-red-400/60 hover:text-red-400 text-xs transition"
-                >
-                  Delete
-                </button>
-              </div>
-              {/* Per-link image settings */}
-              <div className="pl-7 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-white/30 w-20 shrink-0">Image URL:</span>
-                  <input
-                    type="text"
-                    value={link.thumbnail_url || ''}
-                    onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
-                    placeholder="https://... (optional thumbnail)"
-                    className="flex-1 px-3 py-1.5 bg-[#1a1a1a] border border-white/10 rounded-lg text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-white/30"
-                  />
-                </div>
-                {link.thumbnail_url && (
-                  <>
-                    {/* Sliders */}
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-white/30 w-28 shrink-0">Height: {link.thumbnail_height || 200}px</span>
-                        <input
-                          type="range"
-                          min="100"
-                          max="400"
-                          step="10"
+
+                {/* Image settings */}
+                <div className="pl-9 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-white/20 w-16 shrink-0">Image</span>
+                    <input
+                      type="text"
+                      value={link.thumbnail_url || ''}
+                      onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
+                      placeholder="Paste image URL…"
+                      className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                    />
+                  </div>
+
+                  {link.thumbnail_url && (
+                    <>
+                      <div className="space-y-2.5">
+                        <SliderField
+                          label="Height"
                           value={link.thumbnail_height || 200}
-                          onChange={e => updateLinkField(link.id, 'thumbnail_height', parseInt(e.target.value))}
-                          className="flex-1 h-1.5 accent-white cursor-pointer"
+                          min={100} max={400} step={10}
+                          suffix="px"
+                          onChange={v => updateLinkField(link.id, 'thumbnail_height', v)}
                         />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-white/30 w-28 shrink-0">Alignment: {link.thumbnail_position || '50'}%</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
+                        <SliderField
+                          label="Position"
                           value={parseInt(link.thumbnail_position || '50') || 50}
-                          onChange={e => updateLinkField(link.id, 'thumbnail_position', e.target.value)}
-                          className="flex-1 h-1.5 accent-white cursor-pointer"
+                          min={0} max={100}
+                          suffix="%"
+                          onChange={v => updateLinkField(link.id, 'thumbnail_position', String(v))}
                         />
                       </div>
-                    </div>
-                    {/* Live preview */}
-                    <div>
-                      <p className="text-[10px] text-white/20 mb-1.5 uppercase tracking-wider">Preview</p>
+
+                      {/* Preview */}
                       <div
-                        className="rounded-xl overflow-hidden border border-white/10 relative"
-                        style={{ height: link.thumbnail_height || 200, maxWidth: 380 }}
+                        className="rounded-xl overflow-hidden border border-white/[0.04] relative"
+                        style={{ height: link.thumbnail_height || 200, maxWidth: 400 }}
                       >
                         <img
                           src={link.thumbnail_url}
-                          alt="Preview"
+                          alt=""
                           style={{
                             width: '100%', height: '100%', objectFit: 'cover',
                             objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
                             display: 'block',
                           }}
                         />
-                        {/* Title overlay like the real page */}
                         <div style={{
                           position: 'absolute', bottom: 0, left: 0, right: 0,
-                          padding: '28px 14px 12px',
-                          background: 'linear-gradient(transparent, rgba(0,0,0,0.82))',
-                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '30px 16px 14px',
+                          background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
                         }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{link.title}</span>
+                          <span className="text-[13px] font-semibold text-white">{link.title}</span>
                         </div>
                       </div>
-                    </div>
-                  </>
-                )}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
 
           {/* Add new link */}
           {!isNew && (
-            <div className="bg-[#111] rounded-2xl p-5 space-y-4">
-              <h3 className="text-sm font-medium text-white/70">Add New Link</h3>
+            <div className="border border-dashed border-white/[0.06] rounded-xl p-5 space-y-4">
+              <p className="text-[12px] text-white/30 font-medium">Add link</p>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Title" value={newLink.title} onChange={v => setNewLink(p => ({ ...p, title: v }))} placeholder="OnlyFans (free for a short time)" />
                 <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
-                <Field label="Thumbnail Image URL (optional)" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="https://..." />
-                {newLink.thumbnail_url && (
-                  <div className="md:col-span-2 space-y-3">
-                    {/* Sliders */}
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-white/30 w-28 shrink-0">Height: {newLink.thumbnail_height}px</span>
-                        <input
-                          type="range"
-                          min="100"
-                          max="400"
-                          step="10"
-                          value={newLink.thumbnail_height}
-                          onChange={e => setNewLink(p => ({ ...p, thumbnail_height: parseInt(e.target.value) }))}
-                          className="flex-1 h-1.5 accent-white cursor-pointer"
-                        />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-white/30 w-28 shrink-0">Alignment: {newLink.thumbnail_position}%</span>
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={parseInt(newLink.thumbnail_position) || 50}
-                          onChange={e => setNewLink(p => ({ ...p, thumbnail_position: e.target.value }))}
-                          className="flex-1 h-1.5 accent-white cursor-pointer"
-                        />
-                      </div>
-                    </div>
-                    {/* Live preview */}
-                    <div>
-                      <p className="text-[10px] text-white/20 mb-1.5 uppercase tracking-wider">Preview</p>
-                      <div
-                        className="rounded-xl overflow-hidden border border-white/10 relative"
-                        style={{ height: newLink.thumbnail_height, maxWidth: 380 }}
-                      >
-                        <img
-                          src={newLink.thumbnail_url}
-                          alt="Preview"
-                          style={{
-                            width: '100%', height: '100%', objectFit: 'cover',
-                            objectPosition: `center ${parseInt(newLink.thumbnail_position) || 50}%`,
-                            display: 'block',
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          padding: '28px 14px 12px',
-                          background: 'linear-gradient(transparent, rgba(0,0,0,0.82))',
-                          display: 'flex', alignItems: 'center', gap: 8,
-                        }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: '#fff' }}>{newLink.title || 'Link title'}</span>
-                        </div>
-                      </div>
+                <Field label="Image URL" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional" />
+                <SelectField label="Icon" value={newLink.icon} onChange={v => setNewLink(p => ({ ...p, icon: v }))}
+                  options={ICON_OPTIONS.map(o => [o, o])} />
+              </div>
+
+              {newLink.thumbnail_url && (
+                <div className="space-y-3">
+                  <SliderField label="Height" value={newLink.thumbnail_height} min={100} max={400} step={10} suffix="px"
+                    onChange={v => setNewLink(p => ({ ...p, thumbnail_height: v }))} />
+                  <SliderField label="Position" value={parseInt(newLink.thumbnail_position) || 50} min={0} max={100} suffix="%"
+                    onChange={v => setNewLink(p => ({ ...p, thumbnail_position: String(v) }))} />
+                  <div
+                    className="rounded-xl overflow-hidden border border-white/[0.04] relative"
+                    style={{ height: newLink.thumbnail_height, maxWidth: 400 }}
+                  >
+                    <img
+                      src={newLink.thumbnail_url}
+                      alt=""
+                      style={{
+                        width: '100%', height: '100%', objectFit: 'cover',
+                        objectPosition: `center ${parseInt(newLink.thumbnail_position) || 50}%`,
+                        display: 'block',
+                      }}
+                    />
+                    <div style={{
+                      position: 'absolute', bottom: 0, left: 0, right: 0,
+                      padding: '30px 16px 14px',
+                      background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                    }}>
+                      <span className="text-[13px] font-semibold text-white">{newLink.title || 'Link title'}</span>
                     </div>
                   </div>
-                )}
-                <div>
-                  <label className="text-xs text-white/40 mb-1.5 block">Platform Icon</label>
-                  <select
-                    value={newLink.icon}
-                    onChange={e => setNewLink(p => ({ ...p, icon: e.target.value }))}
-                    className="w-full px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white"
-                  >
-                    {ICON_OPTIONS.map(o => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </select>
                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={addLink}
-                  disabled={addLinkStatus === 'saving'}
-                  className="px-5 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition disabled:opacity-50"
-                >
-                  {addLinkStatus === 'saving' ? 'Saving…' : addLinkStatus === 'saved' ? '✓ Link Saved!' : '+ Add Link'}
-                </button>
-                {addLinkStatus === 'saved' && (
-                  <span className="text-xs text-green-400">Link added successfully</span>
-                )}
-              </div>
+              )}
+
+              <button
+                onClick={addLink}
+                disabled={addLinkStatus === 'saving' || !newLink.title || !newLink.url}
+                className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-30"
+              >
+                {addLinkStatus === 'saving' ? 'Saving…' : addLinkStatus === 'saved' ? '✓ Added' : 'Add link'}
+              </button>
             </div>
           )}
+
           {isNew && (
-            <p className="text-white/30 text-sm">Save the creator first, then you can add links.</p>
+            <p className="text-white/20 text-[13px]">Save the creator first, then add links.</p>
           )}
         </div>
       )}
 
-      {/* Analytics Tab */}
+      {/* ─── ANALYTICS TAB ─── */}
       {activeTab === 'analytics' && analytics && (
         <div className="space-y-6">
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatCard label="Total Page Views" value={analytics.totalViews.toLocaleString()} />
-            <StatCard label="Total Link Clicks" value={analytics.totalClicks.toLocaleString()} />
-            <StatCard label="Views Last 30 Days" value={analytics.last30Views.toLocaleString()} />
-            <StatCard label="CTR" value={analytics.totalViews > 0 ? `${Math.round(analytics.totalClicks / analytics.totalViews * 100)}%` : '0%'} />
+            <Stat label="Page views" value={analytics.totalViews.toLocaleString()} />
+            <Stat label="Link clicks" value={analytics.totalClicks.toLocaleString()} />
+            <Stat label="Last 30 days" value={analytics.last30Views.toLocaleString()} />
+            <Stat label="CTR" value={analytics.totalViews > 0 ? `${Math.round(analytics.totalClicks / analytics.totalViews * 100)}%` : '—'} />
           </div>
 
-          {/* Daily chart */}
-          <div className="bg-[#111] rounded-2xl p-6">
-            <h3 className="text-sm font-medium text-white/60 mb-4">Views & Clicks — Last 30 Days</h3>
-            <ResponsiveContainer width="100%" height={200}>
+          <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-6">
+            <p className="text-[12px] text-white/25 mb-4">Last 30 days</p>
+            <ResponsiveContainer width="100%" height={180}>
               <LineChart data={analytics.dailyData}>
-                <XAxis dataKey="date" tick={{ fill: '#555', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#555', fontSize: 11 }} />
-                <Tooltip contentStyle={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: 8 }} />
-                <Line type="monotone" dataKey="views" stroke="#ffffff" strokeWidth={2} dot={false} name="Views" />
-                <Line type="monotone" dataKey="clicks" stroke="#4ade80" strokeWidth={2} dot={false} name="Clicks" />
+                <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.15)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'rgba(255,255,255,0.15)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, fontSize: 12 }}
+                  itemStyle={{ color: '#fff' }}
+                />
+                <Line type="monotone" dataKey="views" stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} dot={false} />
+                <Line type="monotone" dataKey="clicks" stroke="rgba(255,255,255,0.15)" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Countries */}
-            <div className="bg-[#111] rounded-2xl p-6">
-              <h3 className="text-sm font-medium text-white/60 mb-4">Top Countries</h3>
-              <div className="space-y-2.5">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
+              <p className="text-[12px] text-white/25 mb-3">Countries</p>
+              <div className="space-y-2">
                 {analytics.countries.map(([country, count]: [string, number]) => (
                   <div key={country} className="flex items-center justify-between">
-                    <span className="text-sm text-white/70">{country}</span>
-                    <span className="text-sm font-medium text-white">{count.toLocaleString()}</span>
+                    <span className="text-[13px] text-white/50">{country}</span>
+                    <span className="text-[13px] text-white/80 font-medium">{count.toLocaleString()}</span>
                   </div>
                 ))}
               </div>
             </div>
-
-            {/* Devices */}
-            <div className="bg-[#111] rounded-2xl p-6">
-              <h3 className="text-sm font-medium text-white/60 mb-4">Device Types</h3>
-              <div className="space-y-2.5">
+            <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
+              <p className="text-[12px] text-white/25 mb-3">Devices</p>
+              <div className="space-y-2">
                 {Object.entries(analytics.devices).map(([device, count]) => (
                   <div key={device} className="flex items-center justify-between">
-                    <span className="text-sm text-white/70 capitalize">{device}</span>
-                    <span className="text-sm font-medium text-white">{(count as number).toLocaleString()}</span>
+                    <span className="text-[13px] text-white/50 capitalize">{device}</span>
+                    <span className="text-[13px] text-white/80 font-medium">{(count as number).toLocaleString()}</span>
                   </div>
                 ))}
               </div>
@@ -519,6 +427,17 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── Shared Components ──────────────────────────── */
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-4">
+      <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium">{title}</p>
+      {children}
     </div>
   )
 }
@@ -526,14 +445,31 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 function Field({ label, value, onChange, placeholder }: { label: string; value?: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <div>
-      <label className="text-xs text-white/40 mb-1.5 block">{label}</label>
+      <label className="text-[11px] text-white/25 mb-1.5 block">{label}</label>
       <input
         type="text"
         value={value || ''}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-white/30"
+        className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
       />
+    </div>
+  )
+}
+
+function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) {
+  return (
+    <div>
+      <label className="text-[11px] text-white/25 mb-1.5 block">{label}</label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-white/80 focus:border-white/15 transition-colors"
+      >
+        {options.map(([val, lbl]) => (
+          <option key={val} value={val}>{lbl}</option>
+        ))}
+      </select>
     </div>
   )
 }
@@ -541,44 +477,61 @@ function Field({ label, value, onChange, placeholder }: { label: string; value?:
 function ColorField({ label, value, onChange }: { label: string; value?: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <label className="text-xs text-white/40 mb-1.5 block">{label}</label>
+      <label className="text-[11px] text-white/25 mb-1.5 block">{label}</label>
       <div className="flex gap-2 items-center">
         <input
           type="color"
           value={value || '#000000'}
           onChange={e => onChange(e.target.value)}
-          className="w-9 h-9 rounded cursor-pointer bg-transparent border-0"
+          className="w-8 h-8 rounded-md cursor-pointer bg-transparent border border-white/[0.06] p-0.5"
         />
         <input
           type="text"
           value={value || ''}
           onChange={e => onChange(e.target.value)}
-          className="flex-1 px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white focus:outline-none focus:border-white/30"
+          className="flex-1 px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-white/80 focus:border-white/15 transition-colors"
         />
       </div>
     </div>
   )
 }
 
-function Toggle({ label, checked, onChange }: { label: string; checked?: boolean; onChange: (v: boolean) => void }) {
+function SliderField({ label, value, min, max, step, suffix, onChange }: {
+  label: string; value: number; min: number; max: number; step?: number; suffix: string; onChange: (v: number) => void
+}) {
   return (
-    <div className="flex items-center gap-2">
-      <button
-        onClick={() => onChange(!checked)}
-        className={`w-10 h-6 rounded-full transition-colors ${checked ? 'bg-white' : 'bg-white/20'} relative`}
-      >
-        <div className={`w-4 h-4 rounded-full bg-black absolute top-1 transition-all ${checked ? 'left-5' : 'left-1'}`} />
-      </button>
-      <span className="text-sm text-white/60">{label}</span>
+    <div className="flex items-center gap-3">
+      <span className="text-[11px] text-white/20 w-16 shrink-0">{label}</span>
+      <input
+        type="range"
+        min={min} max={max} step={step || 1}
+        value={value}
+        onChange={e => onChange(parseInt(e.target.value))}
+        className="flex-1"
+      />
+      <span className="text-[11px] text-white/30 w-12 text-right tabular-nums">{value}{suffix}</span>
     </div>
   )
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function Toggle({ label, checked, onChange }: { label: string; checked?: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="bg-[#111] rounded-2xl p-5">
-      <p className="text-xs text-white/40 mb-1">{label}</p>
-      <p className="text-2xl font-semibold text-white">{value}</p>
+    <button onClick={() => onChange(!checked)} className="flex items-center gap-2.5 group">
+      <div className={`w-8 h-[18px] rounded-full transition-colors relative ${checked ? 'bg-white/90' : 'bg-white/10'}`}>
+        <div className={`w-3.5 h-3.5 rounded-full absolute top-[2px] transition-all ${
+          checked ? 'left-[17px] bg-black' : 'left-[2px] bg-white/30'
+        }`} />
+      </div>
+      <span className="text-[12px] text-white/40 group-hover:text-white/60 transition-colors">{label}</span>
+    </button>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
+      <p className="text-[11px] text-white/20 mb-1">{label}</p>
+      <p className="text-xl font-semibold text-white/90 tracking-tight">{value}</p>
     </div>
   )
 }

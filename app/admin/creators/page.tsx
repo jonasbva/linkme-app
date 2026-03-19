@@ -11,48 +11,50 @@ export default async function CreatorsPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">All Creators</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Creators</h1>
         <Link
           href="/admin/creators/new"
-          className="px-4 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition"
+          className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors"
         >
-          + Add Creator
+          Add creator
         </Link>
       </div>
 
-      <div className="grid gap-4">
+      <div className="space-y-2">
         {(creators || []).map(creator => (
-          <div key={creator.id} className="bg-[#111] rounded-2xl p-5 flex items-center justify-between">
-            <div className="flex items-center gap-4">
+          <div
+            key={creator.id}
+            className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.04]"
+          >
+            <div className="flex items-center gap-3">
               {creator.avatar_url ? (
-                <img src={creator.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover" />
+                <img src={creator.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />
               ) : (
-                <div className="w-12 h-12 rounded-full bg-[#2a2a2a] flex items-center justify-center text-lg font-bold text-white/40">
+                <div className="w-10 h-10 rounded-full bg-white/[0.04] flex items-center justify-center text-[13px] font-medium text-white/25">
                   {creator.display_name.charAt(0)}
                 </div>
               )}
               <div>
-                <p className="font-medium text-white">{creator.display_name}</p>
-                <p className="text-sm text-white/40">/{creator.slug}</p>
-                {creator.custom_domain && (
-                  <p className="text-xs text-blue-400 mt-0.5">{creator.custom_domain}</p>
-                )}
+                <p className="text-[14px] font-medium text-white/90">{creator.display_name}</p>
+                <p className="text-[12px] text-white/25">/{creator.slug}</p>
               </div>
             </div>
-            <div className="flex items-center gap-3">
-              <span className={`px-2 py-1 text-xs rounded-full ${creator.is_active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+            <div className="flex items-center gap-2">
+              <span className={`px-2 py-0.5 text-[11px] rounded-full ${
+                creator.is_active ? 'bg-white/[0.04] text-white/40' : 'bg-red-500/10 text-red-400/60'
+              }`}>
                 {creator.is_active ? 'Active' : 'Inactive'}
               </span>
               <Link
                 href={`/admin/creators/${creator.id}`}
-                className="px-3 py-1.5 bg-white/10 text-white text-xs rounded-lg hover:bg-white/20 transition"
+                className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
               >
                 Edit
               </Link>
               <Link
                 href={`/${creator.slug}`}
                 target="_blank"
-                className="px-3 py-1.5 bg-white/10 text-white text-xs rounded-lg hover:bg-white/20 transition"
+                className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
               >
                 View
               </Link>
@@ -60,8 +62,8 @@ export default async function CreatorsPage() {
           </div>
         ))}
         {(!creators || creators.length === 0) && (
-          <div className="bg-[#111] rounded-2xl p-10 text-center text-white/30">
-            No creators yet. Add your first creator!
+          <div className="text-center py-12 text-white/20 text-[13px]">
+            No creators yet
           </div>
         )}
       </div>
