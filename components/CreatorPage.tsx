@@ -160,39 +160,45 @@ export default function CreatorPage({ creator, links }: Props) {
 
   return (
     <div style={{ minHeight: '100vh', background: bg, display: 'flex', justifyContent: 'center' }}>
-      {/* Sticky top bar */}
+      {/* Sticky top bar — slides in when hero scrolls out of view */}
       {creator.avatar_url && (
         <div style={{
           position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50,
           display: 'flex', justifyContent: 'center',
-          pointerEvents: showBar ? 'auto' : 'none'
+          pointerEvents: showBar ? 'auto' : 'none',
+          transform: showBar ? 'translateY(0)' : 'translateY(-100%)',
+          transition: 'transform 0.35s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease-out',
+          opacity: showBar ? 1 : 0,
         }}>
           <div style={{
             width: '100%', maxWidth: 500,
-            height: 64, display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 16,
-            background: showBar ? 'rgba(8, 8, 8, 0.8)' : 'rgba(8, 8, 8, 0)',
-            backdropFilter: showBar ? 'blur(10px)' : 'blur(0px)',
-            borderBottom: showBar ? '1px solid rgba(255,255,255,0.05)' : '1px solid rgba(255,255,255,0)',
-            transition: 'all 0.3s ease-out',
-            opacity: showBar ? 1 : 0
+            height: 56, display: 'flex', alignItems: 'center', gap: 12, paddingLeft: 16, paddingRight: 16,
+            background: `${bg}e6`,
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            borderBottom: '1px solid rgba(255,255,255,0.06)',
           }}>
             <img
               src={creator.avatar_url}
               alt={creator.display_name}
               style={{
-                width: 32, height: 32, borderRadius: '50%', objectFit: 'cover', flexShrink: 0
+                width: 30, height: 30, borderRadius: '50%', objectFit: 'cover', flexShrink: 0,
+                border: '1px solid rgba(255,255,255,0.1)',
               }}
             />
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: '#fff' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
+              <span style={{ fontSize: 14, fontWeight: 600, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                 {creator.display_name}
               </span>
               {creator.show_verified && (
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="#a78bfa" style={{ flexShrink: 0 }}>
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="#a78bfa" style={{ flexShrink: 0 }}>
                   <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
                 </svg>
               )}
             </div>
+            <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', fontWeight: 500, flexShrink: 0 }}>
+              @{creator.username || creator.slug}
+            </span>
           </div>
         </div>
       )}
