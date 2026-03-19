@@ -3,7 +3,6 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Defs, Filter } from 'recharts'
-import CreatorPage from '@/components/CreatorPage'
 
 const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'snapchat', 'youtube', 'reddit', 'twitch', 'telegram', 'discord', 'spotify', 'link', 'custom']
 
@@ -304,80 +303,65 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* ─── PROFILE TAB ─── */}
       {activeTab === 'profile' && (
-        <div className="flex gap-8">
-          {/* Left: Settings */}
-          <div className="flex-1 min-w-0 space-y-8">
-            <Section title="General">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <Field label="Display Name" value={creator.display_name} onChange={v => updateCreator('display_name', v)} />
-                <Field label="Slug" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
-                <Field label="Username" value={creator.username} onChange={v => updateCreator('username', v)} placeholder="@lilybrown" />
-                <Field label="Bio" value={creator.bio} onChange={v => updateCreator('bio', v)} />
-                <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
-                <Field label="Custom Domain" value={creator.custom_domain} onChange={v => updateCreator('custom_domain', v)} placeholder="lilybrown.com" />
-                <Field label="Background Image" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
-              </div>
-            </Section>
-
-            <Section title="Appearance">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-                <ColorField label="Background" value={creator.background_color} onChange={v => updateCreator('background_color', v)} />
-                <ColorField label="Buttons" value={creator.button_color} onChange={v => updateCreator('button_color', v)} />
-                <ColorField label="Text" value={creator.text_color} onChange={v => updateCreator('text_color', v)} />
-                <SelectField label="Button Style" value={creator.button_style} onChange={v => updateCreator('button_style', v)}
-                  options={[['rounded', 'Rounded'], ['pill', 'Pill'], ['sharp', 'Sharp']]} />
-              </div>
-            </Section>
-
-            <Section title="Hero Image">
-              <div className="space-y-4">
-                <SelectField label="Size" value={creator.hero_height || 'large'} onChange={v => updateCreator('hero_height', v)}
-                  options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]} />
-                <SliderField
-                  label="Position"
-                  value={creator.hero_position !== undefined ? creator.hero_position : 50}
-                  min={0}
-                  max={100}
-                  suffix="%"
-                  onChange={v => updateCreator('hero_position', v)}
-                />
-                <SliderField
-                  label="Scale"
-                  value={creator.hero_scale !== undefined ? creator.hero_scale : 100}
-                  min={100}
-                  max={200}
-                  step={5}
-                  suffix="%"
-                  onChange={v => updateCreator('hero_scale', v)}
-                />
-              </div>
-            </Section>
-
-            <div className="flex items-center gap-8">
-              <Toggle label="Verified badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
-              <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
+        <div className="space-y-8">
+          <Section title="General">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <Field label="Display Name" value={creator.display_name} onChange={v => updateCreator('display_name', v)} />
+              <Field label="Slug" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
+              <Field label="Username" value={creator.username} onChange={v => updateCreator('username', v)} placeholder="@lilybrown" />
+              <Field label="Bio" value={creator.bio} onChange={v => updateCreator('bio', v)} />
+              <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
+              <Field label="Custom Domain" value={creator.custom_domain} onChange={v => updateCreator('custom_domain', v)} placeholder="lilybrown.com" />
+              <Field label="Background Image" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
             </div>
+          </Section>
 
-            <button
-              onClick={saveCreator}
-              disabled={saving}
-              className="px-5 py-2 bg-white text-black text-[13px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40"
-            >
-              {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
-            </button>
+          <Section title="Appearance">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+              <ColorField label="Background" value={creator.background_color} onChange={v => updateCreator('background_color', v)} />
+              <ColorField label="Buttons" value={creator.button_color} onChange={v => updateCreator('button_color', v)} />
+              <ColorField label="Text" value={creator.text_color} onChange={v => updateCreator('text_color', v)} />
+              <SelectField label="Button Style" value={creator.button_style} onChange={v => updateCreator('button_style', v)}
+                options={[['rounded', 'Rounded'], ['pill', 'Pill'], ['sharp', 'Sharp']]} />
+            </div>
+          </Section>
+
+          <Section title="Hero Image">
+            <div className="space-y-4">
+              <SelectField label="Size" value={creator.hero_height || 'large'} onChange={v => updateCreator('hero_height', v)}
+                options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]} />
+              <SliderField
+                label="Position"
+                value={creator.hero_position !== undefined ? creator.hero_position : 50}
+                min={0}
+                max={100}
+                suffix="%"
+                onChange={v => updateCreator('hero_position', v)}
+              />
+              <SliderField
+                label="Scale"
+                value={creator.hero_scale !== undefined ? creator.hero_scale : 100}
+                min={100}
+                max={200}
+                step={5}
+                suffix="%"
+                onChange={v => updateCreator('hero_scale', v)}
+              />
+            </div>
+          </Section>
+
+          <div className="flex items-center gap-8">
+            <Toggle label="Verified badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
+            <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
           </div>
 
-          {/* Right: Live preview (sticky) */}
-          <div className="w-[300px] shrink-0">
-            <div className="sticky top-24">
-              <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-4">Preview</p>
-              <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl overflow-hidden" style={{ height: 580 }}>
-                <div style={{ width: 375, height: 667, transform: 'scale(0.75)', transformOrigin: 'top left' }}>
-                  <CreatorPage creator={creator} links={links} />
-                </div>
-              </div>
-            </div>
-          </div>
+          <button
+            onClick={saveCreator}
+            disabled={saving}
+            className="px-5 py-2 bg-white text-black text-[13px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40"
+          >
+            {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
+          </button>
         </div>
       )}
 
@@ -427,52 +411,49 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   </div>
                 </div>
 
-                {/* Icon settings */}
-                <div className="pl-9 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] text-white/20 w-16 shrink-0">Icon</span>
-                    <select
-                      value={link.icon || 'link'}
-                      onChange={e => updateLinkField(link.id, 'icon', e.target.value)}
-                      className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
-                    >
-                      {ICON_OPTIONS.map(o => (
-                        <option key={o} value={o}>{o}</option>
-                      ))}
-                    </select>
-                  </div>
+                {/* Settings + Preview side by side */}
+                <div className="flex gap-5 pl-9">
+                  {/* Left block: all settings compact */}
+                  <div className="flex-1 min-w-0 space-y-2.5">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-white/20 w-14 shrink-0">Icon</span>
+                      <select
+                        value={link.icon || 'link'}
+                        onChange={e => updateLinkField(link.id, 'icon', e.target.value)}
+                        className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
+                      >
+                        {ICON_OPTIONS.map(o => (
+                          <option key={o} value={o}>{o}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                  {link.icon === 'custom' && (
-                    <div className="flex items-center gap-3">
-                      <span className="text-[11px] text-white/20 w-16 shrink-0">Icon URL</span>
+                    {link.icon === 'custom' && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-white/20 w-14 shrink-0">Icon URL</span>
+                        <input
+                          type="text"
+                          value={link.custom_icon_url || ''}
+                          onChange={e => updateLinkField(link.id, 'custom_icon_url', e.target.value)}
+                          placeholder="https://..."
+                          className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] text-white/20 w-14 shrink-0">Image</span>
                       <input
                         type="text"
-                        value={link.custom_icon_url || ''}
-                        onChange={e => updateLinkField(link.id, 'custom_icon_url', e.target.value)}
-                        placeholder="https://..."
-                        className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                        value={link.thumbnail_url || ''}
+                        onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
+                        placeholder="Paste image URL…"
+                        className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
                       />
                     </div>
-                  )}
-                </div>
 
-                {/* Image settings + preview */}
-                <div className="pl-9 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] text-white/20 w-16 shrink-0">Image</span>
-                    <input
-                      type="text"
-                      value={link.thumbnail_url || ''}
-                      onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
-                      placeholder="Paste image URL…"
-                      className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
-                    />
-                  </div>
-
-                  {link.thumbnail_url && (
-                    <div className="flex gap-5">
-                      {/* Left: sliders */}
-                      <div className="flex-1 min-w-0 space-y-2.5">
+                    {link.thumbnail_url && (
+                      <>
                         <SliderField
                           label="Height"
                           value={link.thumbnail_height || 200}
@@ -490,34 +471,36 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                           suffix="%"
                           onChange={v => updateLinkField(link.id, 'thumbnail_position', String(v))}
                         />
-                      </div>
+                      </>
+                    )}
+                  </div>
 
-                      {/* Right: wider preview */}
-                      <div
-                        className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
-                        style={{ height: link.thumbnail_height || 200, width: 320 }}
-                      >
-                        <img
-                          src={link.thumbnail_url}
-                          alt=""
-                          style={{
-                            width: '100%',
-                            height: '100%',
-                            objectFit: 'cover',
-                            objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
-                            display: 'block',
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute',
-                          bottom: 0,
-                          left: 0,
-                          right: 0,
-                          padding: '24px 16px 12px',
-                          background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-                        }}>
-                          <span className="text-[13px] font-semibold text-white line-clamp-1">{link.title}</span>
-                        </div>
+                  {/* Right block: preview */}
+                  {link.thumbnail_url && (
+                    <div
+                      className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
+                      style={{ height: link.thumbnail_height || 200, width: 320 }}
+                    >
+                      <img
+                        src={link.thumbnail_url}
+                        alt=""
+                        style={{
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'cover',
+                          objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
+                          display: 'block',
+                        }}
+                      />
+                      <div style={{
+                        position: 'absolute',
+                        bottom: 0,
+                        left: 0,
+                        right: 0,
+                        padding: '24px 16px 12px',
+                        background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                      }}>
+                        <span className="text-[13px] font-semibold text-white line-clamp-1">{link.title}</span>
                       </div>
                     </div>
                   )}
@@ -609,105 +592,115 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       {/* ─── ANALYTICS TAB ─── */}
       {activeTab === 'analytics' && (
         <div className="space-y-6">
-          {/* Date range bar — OF-style */}
-          <div className="space-y-3">
-            {/* Month slider */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
-              {monthOptions.map(m => {
-                const now = new Date()
-                const mStart = new Date(now.getFullYear(), now.getMonth() - m.offset, 1)
-                const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
-                const isActive = dateStart.getTime() === mStart.getTime() && dateEnd.getTime() === mEnd.getTime()
-                return (
-                  <button
-                    key={m.offset}
-                    onClick={() => selectMonth(m.offset)}
-                    className={`px-3.5 py-1.5 text-[12px] font-medium rounded-full whitespace-nowrap transition-all ${
-                      isActive
-                        ? 'bg-white text-black'
-                        : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
-                    }`}
-                  >
-                    {m.label}
-                  </button>
-                )
-              })}
-            </div>
+          {/* Date range trigger — popup only */}
+          <div className="relative inline-block">
+            <button
+              onClick={() => {
+                setCustomStart(dateStart.toISOString().split('T')[0])
+                setCustomEnd(dateEnd.toISOString().split('T')[0])
+                setShowDatePicker(!showDatePicker)
+              }}
+              className="flex items-center gap-2.5 px-4 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg hover:bg-white/[0.06] transition-all"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/30">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+              </svg>
+              <span className="text-[13px] text-white/70 font-medium">{dateLabel}</span>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-white/25">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
 
-            {/* Quick presets + custom trigger */}
-            <div className="flex items-center gap-2 relative">
-              {[
-                { label: '7d', fn: () => { const s = new Date(); s.setDate(s.getDate() - 7); applyPreset('Last 7 days', s, new Date()) } },
-                { label: '30d', fn: () => { const s = new Date(); s.setDate(s.getDate() - 30); applyPreset('Last 30 days', s, new Date()) } },
-                { label: '90d', fn: () => { const s = new Date(); s.setDate(s.getDate() - 90); applyPreset('Last 90 days', s, new Date()) } },
-                { label: 'All', fn: () => { applyPreset('All time', new Date(2000, 0, 1), new Date()) } },
-              ].map(p => (
-                <button
-                  key={p.label}
-                  onClick={p.fn}
-                  className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${
-                    dateLabel.toLowerCase().includes(p.label.toLowerCase().replace('d', ' day'))
-                    || (p.label === 'All' && dateLabel === 'All time')
-                      ? 'bg-white/[0.12] text-white/80'
-                      : 'bg-white/[0.03] text-white/30 hover:bg-white/[0.06] hover:text-white/50'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+            {showDatePicker && (
+              <div
+                ref={datePickerRef}
+                className="absolute left-0 top-full mt-2 z-50 bg-[#0e0e0e] border border-white/[0.08] rounded-2xl p-0 shadow-2xl shadow-black/60"
+                style={{ width: 340 }}
+              >
+                {/* Quick presets */}
+                <div className="p-4 pb-3 border-b border-white/[0.06]">
+                  <p className="text-[11px] text-white/25 uppercase tracking-widest font-medium mb-3">Quick select</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { label: 'Last 7 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 7); applyPreset('Last 7 days', s, new Date()) } },
+                      { label: 'Last 30 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 30); applyPreset('Last 30 days', s, new Date()) } },
+                      { label: 'Last 90 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 90); applyPreset('Last 90 days', s, new Date()) } },
+                      { label: 'All time', fn: () => { applyPreset('All time', new Date(2000, 0, 1), new Date()) } },
+                    ].map(p => (
+                      <button
+                        key={p.label}
+                        onClick={p.fn}
+                        className={`px-3 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
+                          dateLabel === p.label
+                            ? 'bg-white text-black'
+                            : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-              <div className="ml-auto flex items-center gap-2">
-                <span className="text-[11px] text-white/25">{dateLabel}</span>
-                <button
-                  onClick={() => {
-                    setCustomStart(dateStart.toISOString().split('T')[0])
-                    setCustomEnd(dateEnd.toISOString().split('T')[0])
-                    setShowDatePicker(!showDatePicker)
-                  }}
-                  className="px-3 py-1 text-[11px] font-medium rounded-md bg-white/[0.03] text-white/40 hover:bg-white/[0.06] hover:text-white/60 transition-all border border-white/[0.06]"
-                >
-                  Custom range
-                </button>
-              </div>
+                {/* Month grid */}
+                <div className="p-4 pb-3 border-b border-white/[0.06]">
+                  <p className="text-[11px] text-white/25 uppercase tracking-widest font-medium mb-3">By month</p>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {monthOptions.map(m => {
+                      const now = new Date()
+                      const mStart = new Date(now.getFullYear(), now.getMonth() - m.offset, 1)
+                      const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
+                      const isActive = dateStart.getTime() === mStart.getTime() && dateEnd.getTime() === mEnd.getTime()
+                      return (
+                        <button
+                          key={m.offset}
+                          onClick={() => selectMonth(m.offset)}
+                          className={`px-2 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
+                            isActive
+                              ? 'bg-white text-black'
+                              : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
 
-              {/* Custom date popup */}
-              {showDatePicker && (
-                <div
-                  ref={datePickerRef}
-                  className="absolute right-0 top-full mt-2 z-50 bg-[#111] border border-white/[0.08] rounded-xl p-5 shadow-2xl shadow-black/50"
-                  style={{ minWidth: 300 }}
-                >
-                  <p className="text-[12px] text-white/40 font-medium mb-4">Custom date range</p>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="text-[11px] text-white/25 mb-1.5 block">Start date</label>
+                {/* Custom dates */}
+                <div className="p-4">
+                  <p className="text-[11px] text-white/25 uppercase tracking-widest font-medium mb-3">Custom range</p>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <label className="text-[10px] text-white/20 mb-1 block">From</label>
                       <input
                         type="date"
                         value={customStart}
                         onChange={e => setCustomStart(e.target.value)}
-                        className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[13px] text-white/80 focus:border-white/20 transition-colors"
+                        className="w-full px-2.5 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 focus:border-white/20 transition-colors"
                       />
                     </div>
-                    <div>
-                      <label className="text-[11px] text-white/25 mb-1.5 block">End date</label>
+                    <div className="flex-1">
+                      <label className="text-[10px] text-white/20 mb-1 block">To</label>
                       <input
                         type="date"
                         value={customEnd}
                         onChange={e => setCustomEnd(e.target.value)}
-                        className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[13px] text-white/80 focus:border-white/20 transition-colors"
+                        className="w-full px-2.5 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 focus:border-white/20 transition-colors"
                       />
                     </div>
                     <button
                       onClick={applyCustomRange}
                       disabled={!customStart || !customEnd}
-                      className="w-full mt-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-30"
+                      className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-30 shrink-0"
                     >
                       Apply
                     </button>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Stats */}
@@ -857,8 +850,8 @@ function SliderField({ label, value, min, max, step, suffix, onChange }: {
   label: string; value: number; min: number; max: number; step?: number; suffix: string; onChange: (v: number) => void
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <span className="text-[11px] text-white/20 w-20 shrink-0">{label}</span>
+    <div className="flex items-center gap-2">
+      <span className="text-[11px] text-white/20 w-14 shrink-0">{label}</span>
       <input
         type="range"
         min={min}
@@ -868,7 +861,7 @@ function SliderField({ label, value, min, max, step, suffix, onChange }: {
         onChange={e => onChange(parseInt(e.target.value))}
         className="flex-1"
       />
-      <span className="text-[11px] text-white/30 w-12 text-right tabular-nums">{value}{suffix}</span>
+      <span className="text-[11px] text-white/30 w-11 text-right tabular-nums">{value}{suffix}</span>
     </div>
   )
 }
