@@ -1,19 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts'
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Defs, Filter } from 'recharts'
+import CreatorPage from '@/components/CreatorPage'
 
-const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'link']
+const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'snapchat', 'youtube', 'reddit', 'twitch', 'telegram', 'discord', 'spotify', 'link', 'custom']
 
 interface Props {
   creator: any
   links: any[]
   analytics: any
+  rawClicks: any[]
   isNew: boolean
 }
 
-export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, isNew }: Props) {
+export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, rawClicks = [], isNew }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
   const [activeTab, setActiveTab] = useState<'profile' | 'links' | 'analytics'>('profile')
@@ -22,13 +24,14 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     slug: '', display_name: '', username: '', bio: '', avatar_url: '',
     background_color: '#080808', button_color: '#1a1a1a', text_color: '#ffffff',
     button_style: 'rounded', show_verified: true, custom_domain: '',
-    avatar_position: 'top', hero_height: 'large', is_active: true,
+    avatar_position: 'top', hero_height: 'large', hero_position: 50, hero_scale: 100, is_active: true,
     background_image_url: '',
   })
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [links, setLinks] = useState<any[]>(initialLinks || [])
-  const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
+  const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', custom_icon_url: '', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
   const [addLinkStatus, setAddLinkStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [dateRange, setDateRange] = useState<'last7' | 'last30' | 'last90' | 'thisMonth' | 'lastMonth' | 'all'>('last30')
 
   function updateCreator(field: string, value: any) {
     setCreator((prev: any) => ({ ...prev, [field]: value }))
@@ -37,6 +40,96 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   function updateLinkField(id: string, field: string, value: any) {
     setLinks(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l))
   }
+
+  function getDateRangeFilter(range: string): { start: Date; end: Date } {
+    const now = new Date()
+    const end = new Date(now)
+    const start = new Date(now)
+
+    switch (range) {
+      case 'last7':
+        start.setDate(start.getDate() - 7)
+        break
+      case 'last30':
+        start.setDate(start.getDate() - 30)
+        break
+      case 'last90':
+        start.setDate(start.getDate() - 90)
+        break
+      case 'thisMonth':
+        start.setDate(1)
+        break
+      case 'lastMonth':
+        start.setMonth(start.getMonth() - 1)
+        start.setDate(1)
+        end.setDate(0)
+        break
+      case 'all':
+        start.setFullYear(2000)
+        break
+    }
+    return { start, end }
+  }
+
+  function countryFlag(code: string): string {
+    if (!code || code.length !== 2) return ''
+    return String.fromCodePoint(...[...code.toUpperCase()].map((c: string) => 0x1F1E6 + c.charCodeAt(0) - 65))
+  }
+
+  const filteredClicks = useMemo(() => {
+    const { start, end } = getDateRangeFilter(dateRange)
+    return rawClicks.filter((click: any) => {
+      const clickDate = new Date(click.created_at)
+      return clickDate >= start && clickDate <= end
+    })
+  }, [rawClicks, dateRange])
+
+  const computedAnalytics = useMemo(() => {
+    const totalViews = filteredClicks.length
+    const totalClicks = filteredClicks.filter((c: any) => c.type === 'click').length
+    const ctr = totalViews > 0 ? (totalClicks / totalViews) * 100 : 0
+
+    // Daily chart data
+    const dailyMap = new Map<string, { views: number; clicks: number }>()
+    filteredClicks.forEach((click: any) => {
+      const date = new Date(click.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+      const current = dailyMap.get(date) || { views: 0, clicks: 0 }
+      if (click.type === 'click') current.clicks++
+      current.views++
+      dailyMap.set(date, current)
+    })
+    const dailyData = Array.from(dailyMap.entries()).map(([date, data]) => ({ date, ...data }))
+
+    // Countries
+    const countriesMap = new Map<string, { code: string; count: number }>()
+    filteredClicks.forEach((click: any) => {
+      const country = click.country || 'Unknown'
+      const code = click.country_code || ''
+      const current = countriesMap.get(country) || { code, count: 0 }
+      current.count++
+      countriesMap.set(country, current)
+    })
+    const countries = Array.from(countriesMap.entries())
+      .map(([name, data]) => [name, data.code, data.count] as [string, string, number])
+      .sort((a, b) => b[2] - a[2])
+
+    // Devices
+    const devicesMap = new Map<string, number>()
+    filteredClicks.forEach((click: any) => {
+      const device = click.device || 'unknown'
+      devicesMap.set(device, (devicesMap.get(device) || 0) + 1)
+    })
+    const devices = Object.fromEntries(devicesMap)
+
+    return {
+      totalViews,
+      totalClicks,
+      ctr,
+      dailyData: dailyData.length > 0 ? dailyData : analytics?.dailyData || [],
+      countries,
+      devices,
+    }
+  }, [filteredClicks])
 
   async function saveCreator() {
     setSaving(true)
@@ -56,16 +149,23 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     try {
       const results = await Promise.all(
         links.map(async (l: any, i: number) => {
+          const payload: any = {
+            sort_order: i,
+            title: l.title,
+            url: l.url,
+            icon: l.icon,
+            thumbnail_url: l.thumbnail_url || null,
+            thumbnail_position: l.thumbnail_position || '50',
+            thumbnail_height: l.thumbnail_height || 200,
+            is_active: l.is_active,
+          }
+          if (l.custom_icon_url) {
+            payload.custom_icon_url = l.custom_icon_url
+          }
           const res = await fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sort_order: i, title: l.title, url: l.url, icon: l.icon,
-              thumbnail_url: l.thumbnail_url || null,
-              thumbnail_position: l.thumbnail_position || '50',
-              thumbnail_height: l.thumbnail_height || 200,
-              is_active: l.is_active,
-            }),
+            body: JSON.stringify(payload),
           })
           if (!res.ok) {
             const err = await res.json().catch(() => ({}))
@@ -85,15 +185,22 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   async function addLink() {
     if (!newLink.title || !newLink.url) return
     setAddLinkStatus('saving')
+    const payload: any = {
+      ...newLink,
+      sort_order: links.length,
+    }
+    if (!payload.custom_icon_url) {
+      delete payload.custom_icon_url
+    }
     const res = await fetch(`/api/admin/creators/${creator.id}/links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...newLink, sort_order: links.length }),
+      body: JSON.stringify(payload),
     })
     if (res.ok) {
       const data = await res.json()
       setLinks(prev => [...prev, data])
-      setNewLink({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
+      setNewLink({ title: '', url: '', icon: 'link', custom_icon_url: '', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
       setAddLinkStatus('saved')
       setTimeout(() => setAddLinkStatus('idle'), 2500)
     } else {
@@ -192,11 +299,26 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           </Section>
 
           <Section title="Hero Image">
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-5">
+            <div className="space-y-4">
               <SelectField label="Size" value={creator.hero_height || 'large'} onChange={v => updateCreator('hero_height', v)}
                 options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]} />
-              <SelectField label="Focus" value={creator.avatar_position || 'top'} onChange={v => updateCreator('avatar_position', v)}
-                options={[['top', 'Top'], ['center', 'Center'], ['bottom', 'Bottom']]} />
+              <SliderField
+                label="Position"
+                value={creator.hero_position !== undefined ? creator.hero_position : 50}
+                min={0}
+                max={100}
+                suffix="%"
+                onChange={v => updateCreator('hero_position', v)}
+              />
+              <SliderField
+                label="Scale"
+                value={creator.hero_scale !== undefined ? creator.hero_scale : 100}
+                min={100}
+                max={200}
+                step={5}
+                suffix="%"
+                onChange={v => updateCreator('hero_scale', v)}
+              />
             </div>
           </Section>
 
@@ -212,6 +334,16 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           >
             {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
           </button>
+
+          {/* Live preview */}
+          <div className="border-t border-white/[0.04] pt-8">
+            <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-4">Preview</p>
+            <div className="flex justify-center overflow-hidden">
+              <div style={{ width: 375, transform: 'scale(0.6)', transformOrigin: 'top center' }}>
+                <CreatorPage creator={creator} links={links} />
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -261,6 +393,35 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   </div>
                 </div>
 
+                {/* Icon settings */}
+                <div className="pl-9 space-y-3">
+                  <div className="flex items-center gap-3">
+                    <span className="text-[11px] text-white/20 w-16 shrink-0">Icon</span>
+                    <select
+                      value={link.icon || 'link'}
+                      onChange={e => updateLinkField(link.id, 'icon', e.target.value)}
+                      className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
+                    >
+                      {ICON_OPTIONS.map(o => (
+                        <option key={o} value={o}>{o}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {link.icon === 'custom' && (
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-white/20 w-16 shrink-0">Icon URL</span>
+                      <input
+                        type="text"
+                        value={link.custom_icon_url || ''}
+                        onChange={e => updateLinkField(link.id, 'custom_icon_url', e.target.value)}
+                        placeholder="https://..."
+                        className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                      />
+                    </div>
+                  )}
+                </div>
+
                 {/* Image settings */}
                 <div className="pl-9 space-y-3">
                   <div className="flex items-center gap-3">
@@ -276,43 +437,53 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
                   {link.thumbnail_url && (
                     <>
-                      <div className="space-y-2.5">
-                        <SliderField
-                          label="Height"
-                          value={link.thumbnail_height || 200}
-                          min={100} max={400} step={10}
-                          suffix="px"
-                          onChange={v => updateLinkField(link.id, 'thumbnail_height', v)}
-                        />
-                        <SliderField
-                          label="Position"
-                          value={parseInt(link.thumbnail_position || '50') || 50}
-                          min={0} max={100}
-                          suffix="%"
-                          onChange={v => updateLinkField(link.id, 'thumbnail_position', String(v))}
-                        />
-                      </div>
+                      <div className="flex items-start gap-4">
+                        <div className="flex-1 space-y-2.5">
+                          <SliderField
+                            label="Height"
+                            value={link.thumbnail_height || 200}
+                            min={100}
+                            max={400}
+                            step={10}
+                            suffix="px"
+                            onChange={v => updateLinkField(link.id, 'thumbnail_height', v)}
+                          />
+                          <SliderField
+                            label="Position"
+                            value={parseInt(link.thumbnail_position || '50') || 50}
+                            min={0}
+                            max={100}
+                            suffix="%"
+                            onChange={v => updateLinkField(link.id, 'thumbnail_position', String(v))}
+                          />
+                        </div>
 
-                      {/* Preview */}
-                      <div
-                        className="rounded-xl overflow-hidden border border-white/[0.04] relative"
-                        style={{ height: link.thumbnail_height || 200, maxWidth: 400 }}
-                      >
-                        <img
-                          src={link.thumbnail_url}
-                          alt=""
-                          style={{
-                            width: '100%', height: '100%', objectFit: 'cover',
-                            objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
-                            display: 'block',
-                          }}
-                        />
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          padding: '30px 16px 14px',
-                          background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-                        }}>
-                          <span className="text-[13px] font-semibold text-white">{link.title}</span>
+                        {/* Preview */}
+                        <div
+                          className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
+                          style={{ height: link.thumbnail_height || 200, width: 150 }}
+                        >
+                          <img
+                            src={link.thumbnail_url}
+                            alt=""
+                            style={{
+                              width: '100%',
+                              height: '100%',
+                              objectFit: 'cover',
+                              objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
+                              display: 'block',
+                            }}
+                          />
+                          <div style={{
+                            position: 'absolute',
+                            bottom: 0,
+                            left: 0,
+                            right: 0,
+                            padding: '20px 12px 10px',
+                            background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                          }}>
+                            <span className="text-[11px] font-semibold text-white line-clamp-1">{link.title}</span>
+                          </div>
                         </div>
                       </div>
                     </>
@@ -334,6 +505,19 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   options={ICON_OPTIONS.map(o => [o, o])} />
               </div>
 
+              {newLink.icon === 'custom' && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-white/20 w-16 shrink-0">Icon URL</span>
+                  <input
+                    type="text"
+                    value={newLink.custom_icon_url || ''}
+                    onChange={e => setNewLink(p => ({ ...p, custom_icon_url: e.target.value }))}
+                    placeholder="https://..."
+                    className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                  />
+                </div>
+              )}
+
               {newLink.thumbnail_url && (
                 <div className="space-y-3">
                   <SliderField label="Height" value={newLink.thumbnail_height} min={100} max={400} step={10} suffix="px"
@@ -348,13 +532,18 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                       src={newLink.thumbnail_url}
                       alt=""
                       style={{
-                        width: '100%', height: '100%', objectFit: 'cover',
+                        width: '100%',
+                        height: '100%',
+                        objectFit: 'cover',
                         objectPosition: `center ${parseInt(newLink.thumbnail_position) || 50}%`,
                         display: 'block',
                       }}
                     />
                     <div style={{
-                      position: 'absolute', bottom: 0, left: 0, right: 0,
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      right: 0,
                       padding: '30px 16px 14px',
                       background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
                     }}>
@@ -381,52 +570,99 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       )}
 
       {/* ─── ANALYTICS TAB ─── */}
-      {activeTab === 'analytics' && analytics && (
+      {activeTab === 'analytics' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Stat label="Page views" value={analytics.totalViews.toLocaleString()} />
-            <Stat label="Link clicks" value={analytics.totalClicks.toLocaleString()} />
-            <Stat label="Last 30 days" value={analytics.last30Views.toLocaleString()} />
-            <Stat label="CTR" value={analytics.totalViews > 0 ? `${Math.round(analytics.totalClicks / analytics.totalViews * 100)}%` : '—'} />
+          {/* Date range selector */}
+          <div className="flex gap-2 flex-wrap">
+            {(['last7', 'last30', 'last90', 'thisMonth', 'lastMonth', 'all'] as const).map(range => (
+              <button
+                key={range}
+                onClick={() => setDateRange(range)}
+                className={`px-3 py-1.5 text-[12px] font-medium rounded-full transition-all ${
+                  dateRange === range
+                    ? 'bg-white text-black'
+                    : 'bg-white/[0.05] text-white/50 border border-white/[0.08] hover:bg-white/[0.08]'
+                }`}
+              >
+                {range === 'last7' && 'Last 7 days'}
+                {range === 'last30' && 'Last 30 days'}
+                {range === 'last90' && 'Last 90 days'}
+                {range === 'thisMonth' && 'This month'}
+                {range === 'lastMonth' && 'Last month'}
+                {range === 'all' && 'All time'}
+              </button>
+            ))}
           </div>
 
+          {/* Stats */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Stat label="Page views" value={computedAnalytics.totalViews.toLocaleString()} />
+            <Stat label="Link clicks" value={computedAnalytics.totalClicks.toLocaleString()} />
+            <Stat label="CTR" value={computedAnalytics.totalViews > 0 ? `${Math.round(computedAnalytics.ctr)}%` : '—'} />
+            <Stat label="Date range" value={filteredClicks.length > 0 ? `${filteredClicks.length} events` : '—'} />
+          </div>
+
+          {/* Chart */}
           <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-6">
-            <p className="text-[12px] text-white/25 mb-4">Last 30 days</p>
-            <ResponsiveContainer width="100%" height={180}>
-              <LineChart data={analytics.dailyData}>
+            <p className="text-[12px] text-white/25 mb-4">Activity</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={computedAnalytics.dailyData}>
+                <Defs>
+                  <Filter id="glow">
+                    <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                    <feMerge>
+                      <feMergeNode in="coloredBlur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </Filter>
+                </Defs>
                 <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.15)', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: 'rgba(255,255,255,0.15)', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, fontSize: 12 }}
                   itemStyle={{ color: '#fff' }}
                 />
-                <Line type="monotone" dataKey="views" stroke="rgba(255,255,255,0.5)" strokeWidth={1.5} dot={false} />
-                <Line type="monotone" dataKey="clicks" stroke="rgba(255,255,255,0.15)" strokeWidth={1.5} dot={false} />
+                {/* Glow layer */}
+                <Line type="monotone" dataKey="views" stroke="rgba(255,255,255,0.1)" strokeWidth={6} dot={false} filter="url(#glow)" />
+                {/* Main line */}
+                <Line type="monotone" dataKey="views" stroke="rgba(255,255,255,0.8)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="clicks" stroke="rgba(255,255,255,0.2)" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
+          {/* Countries and Devices */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
               <p className="text-[12px] text-white/25 mb-3">Countries</p>
               <div className="space-y-2">
-                {analytics.countries.map(([country, count]: [string, number]) => (
-                  <div key={country} className="flex items-center justify-between">
-                    <span className="text-[13px] text-white/50">{country}</span>
-                    <span className="text-[13px] text-white/80 font-medium">{count.toLocaleString()}</span>
-                  </div>
-                ))}
+                {computedAnalytics.countries.length > 0 ? (
+                  computedAnalytics.countries.map(([country, code, count]: [string, string, number]) => (
+                    <div key={country} className="flex items-center justify-between">
+                      <span className="text-[13px] text-white/50">
+                        {countryFlag(code)} {country}
+                      </span>
+                      <span className="text-[13px] text-white/80 font-medium">{count.toLocaleString()}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[12px] text-white/20">No data</p>
+                )}
               </div>
             </div>
             <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
               <p className="text-[12px] text-white/25 mb-3">Devices</p>
               <div className="space-y-2">
-                {Object.entries(analytics.devices).map(([device, count]) => (
-                  <div key={device} className="flex items-center justify-between">
-                    <span className="text-[13px] text-white/50 capitalize">{device}</span>
-                    <span className="text-[13px] text-white/80 font-medium">{(count as number).toLocaleString()}</span>
-                  </div>
-                ))}
+                {Object.entries(computedAnalytics.devices).length > 0 ? (
+                  Object.entries(computedAnalytics.devices).map(([device, count]) => (
+                    <div key={device} className="flex items-center justify-between">
+                      <span className="text-[13px] text-white/50 capitalize">{device}</span>
+                      <span className="text-[13px] text-white/80 font-medium">{(count as number).toLocaleString()}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[12px] text-white/20">No data</p>
+                )}
               </div>
             </div>
           </div>
@@ -456,7 +692,7 @@ function Field({ label, value, onChange, placeholder }: { label: string; value?:
         value={value || ''}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+        className="w-full px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
       />
     </div>
   )
@@ -469,7 +705,7 @@ function SelectField({ label, value, onChange, options }: { label: string; value
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-white/80 focus:border-white/15 transition-colors"
+        className="w-full px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
       >
         {options.map(([val, lbl]) => (
           <option key={val} value={val}>{lbl}</option>
@@ -494,7 +730,7 @@ function ColorField({ label, value, onChange }: { label: string; value?: string;
           type="text"
           value={value || ''}
           onChange={e => onChange(e.target.value)}
-          className="flex-1 px-3 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[13px] text-white/80 focus:border-white/15 transition-colors"
+          className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
         />
       </div>
     </div>
@@ -506,10 +742,12 @@ function SliderField({ label, value, min, max, step, suffix, onChange }: {
 }) {
   return (
     <div className="flex items-center gap-3">
-      <span className="text-[11px] text-white/20 w-16 shrink-0">{label}</span>
+      <span className="text-[11px] text-white/20 w-20 shrink-0">{label}</span>
       <input
         type="range"
-        min={min} max={max} step={step || 1}
+        min={min}
+        max={max}
+        step={step || 1}
         value={value}
         onChange={e => onChange(parseInt(e.target.value))}
         className="flex-1"

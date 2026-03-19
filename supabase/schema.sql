@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS creators (
   button_color TEXT DEFAULT '#1a1a1a',
   text_color TEXT DEFAULT '#ffffff',
   show_verified BOOLEAN DEFAULT true,
+  avatar_position TEXT DEFAULT 'top',
+  hero_height TEXT DEFAULT 'large',
+  hero_position TEXT DEFAULT '30',     -- hero image vertical crop 0-100
+  hero_scale TEXT DEFAULT '100',       -- hero image zoom 100-200
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -32,6 +36,7 @@ CREATE TABLE IF NOT EXISTS links (
   thumbnail_url TEXT,                  -- optional preview image shown above the link button
   thumbnail_position TEXT DEFAULT '50', -- vertical crop 0-100 (0=top, 50=center, 100=bottom)
   thumbnail_height INT DEFAULT 200,     -- display height in pixels (100-400)
+  custom_icon_url TEXT,                 -- optional custom icon image URL
   sort_order INT DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()

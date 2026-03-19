@@ -11,13 +11,14 @@ export default async function EditCreatorPage({ params }: Props) {
   let creator = null
   let links: any[] = []
   let analytics = null
+  let rawClicks: any[] = []
 
   if (!isNew) {
     const supabase = createServerSupabaseClient()
     const [creatorRes, linksRes, clicksRes] = await Promise.all([
       supabase.from('creators').select('*').eq('id', params.id).single(),
       supabase.from('links').select('*').eq('creator_id', params.id).order('sort_order'),
-      supabase.from('clicks').select('type, country, device, created_at').eq('creator_id', params.id),
+      supabase.from('clicks').select('type, country, country_code, device, link_id, created_at').eq('creator_id', params.id),
     ])
 
     if (!creatorRes.data) notFound()
@@ -47,12 +48,18 @@ export default async function EditCreatorPage({ params }: Props) {
       ...v,
     }))
 
-    // Country breakdown
-    const countryMap: Record<string, number> = {}
+    // Country breakdown with codes
+    const countryDetailMap: Record<string, { count: number; code: string }> = {}
     clicks.forEach(c => {
-      if (c.country) countryMap[c.country] = (countryMap[c.country] || 0) + 1
+      if (c.country) {
+        if (!countryDetailMap[c.country]) countryDetailMap[c.country] = { count: 0, code: c.country_code || '' }
+        countryDetailMap[c.country].count++
+      }
     })
-    const countries = Object.entries(countryMap).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    const countryDetails = Object.entries(countryDetailMap)
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 10)
+      .map(([country, d]) => [country, d.code, d.count])
 
     // Device breakdown
     const deviceMap: Record<string, number> = {}
@@ -64,16 +71,26 @@ export default async function EditCreatorPage({ params }: Props) {
       if (c.link_id) linkClicks[c.link_id] = (linkClicks[c.link_id] || 0) + 1
     })
 
+    // Raw clicks for client-side date filtering
+    rawClicks = clicks.map(c => ({
+      type: c.type,
+      country: c.country,
+      country_code: c.country_code,
+      device: c.device,
+      link_id: c.link_id,
+      created_at: c.created_at,
+    }))
+
     analytics = {
       totalViews: clicks.filter(c => c.type === 'page_view').length,
       totalClicks: clicks.filter(c => c.type === 'link_click').length,
       last30Views: clicks.filter(c => c.type === 'page_view' && new Date(c.created_at) > last30).length,
       dailyData,
-      countries,
+      countryDetails,
       devices: deviceMap,
       linkClicks,
     }
   }
 
-  return <CreatorEditor creator={creator} links={links} analytics={analytics} isNew={isNew} />
+  return <CreatorEditor creator={creator} links={links} analytics={analytics} rawClicks={rawClicks} isNew={isNew} />
 }
