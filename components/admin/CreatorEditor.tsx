@@ -54,9 +54,9 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   async function saveAllLinks() {
     setLinkSaveStatus('saving')
     try {
-      await Promise.all(
-        links.map((l: any, i: number) =>
-          fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
+      const results = await Promise.all(
+        links.map(async (l: any, i: number) => {
+          const res = await fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -67,13 +67,18 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               is_active: l.is_active,
             }),
           })
-        )
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}))
+            throw new Error(err.error || `Failed to save "${l.title}"`)
+          }
+          return res.json()
+        })
       )
       setLinkSaveStatus('saved')
       setTimeout(() => setLinkSaveStatus('idle'), 2500)
-    } catch (err) {
+    } catch (err: any) {
       setLinkSaveStatus('idle')
-      alert('Failed to save links.')
+      alert('Save failed: ' + (err.message || 'Unknown error'))
     }
   }
 

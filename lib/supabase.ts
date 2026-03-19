@@ -6,16 +6,15 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 // Client-side supabase (for use in client components)
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
-// Server-side supabase for admin API routes — uses service role key to bypass RLS
+// Server-side supabase — bypasses Next.js fetch cache so data is always fresh
 export function createServerSupabaseClient() {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (serviceRoleKey) {
-    return createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    })
-  }
-  // Fallback to anon key if service role key not set
-  return createClient(supabaseUrl, supabaseAnonKey)
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey
+  return createClient(supabaseUrl, key, {
+    auth: { persistSession: false },
+    global: {
+      fetch: (url: any, options: any) => fetch(url, { ...options, cache: 'no-store' }),
+    },
+  })
 }
 
 // Types matching our DB schema
