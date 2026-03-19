@@ -38,6 +38,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
   const [links, setLinks] = useState<any[]>(initialLinks || [])
   const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: 'center' })
+  const [addLinkStatus, setAddLinkStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   function updateCreator(field: string, value: any) {
     setCreator((prev: any) => ({ ...prev, [field]: value }))
@@ -62,6 +63,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
   async function addLink() {
     if (!newLink.title || !newLink.url) return
+    setAddLinkStatus('saving')
     const res = await fetch(`/api/admin/creators/${creator.id}/links`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -70,7 +72,12 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     if (res.ok) {
       const data = await res.json()
       setLinks(prev => [...prev, data])
-      setNewLink({ title: '', url: '', icon: 'link', thumbnail_url: '' })
+      setNewLink({ title: '', url: '', icon: 'link', thumbnail_url: '', thumbnail_position: 'center' })
+      setAddLinkStatus('saved')
+      setTimeout(() => setAddLinkStatus('idle'), 2500)
+    } else {
+      setAddLinkStatus('idle')
+      alert('Failed to add link.')
     }
   }
 
@@ -281,25 +288,37 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   Delete
                 </button>
               </div>
-              {/* Per-link thumbnail crop — only show if thumbnail exists */}
-              {link.thumbnail_url && (
-                <div className="flex items-center gap-3 pl-7">
-                  <span className="text-xs text-white/30">Image crop:</span>
-                  {['top', 'center', 'bottom'].map(pos => (
-                    <button
-                      key={pos}
-                      onClick={() => updateLinkField(link.id, 'thumbnail_position', pos)}
-                      className={`px-2.5 py-1 text-xs rounded-lg capitalize transition ${
-                        (link.thumbnail_position || 'center') === pos
-                          ? 'bg-white text-black'
-                          : 'bg-white/10 text-white/50 hover:bg-white/20'
-                      }`}
-                    >
-                      {pos}
-                    </button>
-                  ))}
+              {/* Per-link image settings */}
+              <div className="pl-7 space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-white/30 w-20 shrink-0">Image URL:</span>
+                  <input
+                    type="text"
+                    value={link.thumbnail_url || ''}
+                    onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
+                    placeholder="https://... (optional thumbnail)"
+                    className="flex-1 px-3 py-1.5 bg-[#1a1a1a] border border-white/10 rounded-lg text-xs text-white placeholder:text-white/20 focus:outline-none focus:border-white/30"
+                  />
                 </div>
-              )}
+                {link.thumbnail_url && (
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-white/30 w-20 shrink-0">Image crop:</span>
+                    {['top', 'center', 'bottom'].map(pos => (
+                      <button
+                        key={pos}
+                        onClick={() => updateLinkField(link.id, 'thumbnail_position', pos)}
+                        className={`px-2.5 py-1 text-xs rounded-lg capitalize transition ${
+                          (link.thumbnail_position || 'center') === pos
+                            ? 'bg-white text-black'
+                            : 'bg-white/10 text-white/50 hover:bg-white/20'
+                        }`}
+                      >
+                        {pos}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           ))}
 
@@ -345,12 +364,18 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   </select>
                 </div>
               </div>
-              <button
-                onClick={addLink}
-                className="px-5 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition"
-              >
-                + Add Link
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={addLink}
+                  disabled={addLinkStatus === 'saving'}
+                  className="px-5 py-2 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition disabled:opacity-50"
+                >
+                  {addLinkStatus === 'saving' ? 'Saving…' : addLinkStatus === 'saved' ? '✓ Link Saved!' : '+ Add Link'}
+                </button>
+                {addLinkStatus === 'saved' && (
+                  <span className="text-xs text-green-400">Link added successfully</span>
+                )}
+              </div>
             </div>
           )}
           {isNew && (

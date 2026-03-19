@@ -36,10 +36,19 @@ export default async function CreatorSlugPage({ params }: Props) {
   const creator = await getCreator(params.slug)
   if (!creator) notFound()
 
-  // Sort links by sort_order
-  const links = (creator.links || [])
+  // Sort links by sort_order and deduplicate by URL
+  const allLinks = (creator.links || [])
     .filter((l: any) => l.is_active)
     .sort((a: any, b: any) => a.sort_order - b.sort_order)
+
+  // Remove duplicate links (same URL) — keep the first occurrence
+  const seenUrls = new Set<string>()
+  const links = allLinks.filter((l: any) => {
+    const normalizedUrl = l.url?.toLowerCase().replace(/\/+$/, '')
+    if (seenUrls.has(normalizedUrl)) return false
+    seenUrls.add(normalizedUrl)
+    return true
+  })
 
   return <CreatorPage creator={creator} links={links} />
 }

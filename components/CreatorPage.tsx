@@ -181,7 +181,7 @@ export default function CreatorPage({ creator, links }: Props) {
                   onMouseDown={e => (e.currentTarget.style.transform = 'scale(0.985)')}
                   onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
                 >
-                  {link.thumbnail_url && (
+                  {link.thumbnail_url ? (
                     <div style={{ width: '100%', height: 200, overflow: 'hidden', position: 'relative' }}>
                       <img
                         src={link.thumbnail_url}
@@ -192,24 +192,25 @@ export default function CreatorPage({ creator, links }: Props) {
                           display: 'block'
                         }}
                       />
-                      {/* Title overlay on thumbnail — no duplicate below */}
+                      {/* Title overlay on thumbnail */}
                       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '32px 16px 14px', background: 'linear-gradient(transparent, rgba(0,0,0,0.82))', display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div style={{ color: platform.color, width: 18, height: 18, flexShrink: 0 }} dangerouslySetInnerHTML={{ __html: platform.svg }} />
-                        <span style={{ fontSize: 14, fontWeight: 700, color: '#fff' }}>{link.title}</span>
+                        <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: '#fff' }}>{link.title}</span>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" style={{ flexShrink: 0 }}>
+                          <path d="M9 18l6-6-6-6"/>
+                        </svg>
                       </div>
                     </div>
-                  )}
-                  {/* Bottom row: only show title here if there is NO thumbnail */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px' }}>
-                    <div style={{ color: platform.color, width: 20, height: 20, flexShrink: 0 }} dangerouslySetInnerHTML={{ __html: platform.svg }} />
-                    {!link.thumbnail_url && (
+                  ) : (
+                    /* No thumbnail — show title in a normal row */
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px' }}>
+                      <div style={{ color: platform.color, width: 20, height: 20, flexShrink: 0 }} dangerouslySetInnerHTML={{ __html: platform.svg }} />
                       <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: creator.text_color || '#fff' }}>{link.title}</span>
-                    )}
-                    {link.thumbnail_url && <span style={{ flex: 1 }} />}
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2" style={{ flexShrink: 0 }}>
-                      <path d="M9 18l6-6-6-6"/>
-                    </svg>
-                  </div>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2" style={{ flexShrink: 0 }}>
+                        <path d="M9 18l6-6-6-6"/>
+                      </svg>
+                    </div>
+                  )}
                 </button>
               )
             })}
