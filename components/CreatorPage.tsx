@@ -182,13 +182,13 @@ export default function CreatorPage({ creator, links }: Props) {
                   onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
                 >
                   {link.thumbnail_url ? (
-                    <div style={{ width: '100%', height: 200, overflow: 'hidden', position: 'relative' }}>
+                    <div style={{ width: '100%', height: link.thumbnail_height || 200, overflow: 'hidden', position: 'relative' }}>
                       <img
                         src={link.thumbnail_url}
                         alt={link.title}
                         style={{
                           width: '100%', height: '100%', objectFit: 'cover',
-                          objectPosition: `center ${/^\d+$/.test(link.thumbnail_position) ? link.thumbnail_position + '%' : link.thumbnail_position || '50%'}`,
+                          objectPosition: `center ${parseInt(link.thumbnail_position) || 50}%`,
                           display: 'block'
                         }}
                       />

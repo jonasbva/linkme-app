@@ -30,6 +30,8 @@ CREATE TABLE IF NOT EXISTS links (
   url TEXT NOT NULL,
   icon TEXT DEFAULT 'link',           -- 'onlyfans' | 'fansly' | 'instagram' | 'twitter' | 'tiktok' | 'link'
   thumbnail_url TEXT,                  -- optional preview image shown above the link button
+  thumbnail_position TEXT DEFAULT '50', -- vertical crop 0-100 (0=top, 50=center, 100=bottom)
+  thumbnail_height INT DEFAULT 200,     -- display height in pixels (100-400)
   sort_order INT DEFAULT 0,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
