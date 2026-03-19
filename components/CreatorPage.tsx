@@ -25,6 +25,8 @@ interface Creator {
   button_style?: string
   button_color?: string
   text_color?: string
+  avatar_position?: string   // 'top' | 'center' | 'bottom'
+  hero_height?: string       // 'small' | 'medium' | 'large'
 }
 
 interface Props {
@@ -93,11 +95,19 @@ export default function CreatorPage({ creator, links }: Props) {
 
         {/* ── Hero image (full width, fades to bg at bottom) ── */}
         {creator.avatar_url ? (
-          <div style={{ width: '100%', position: 'relative', aspectRatio: '3/4', maxHeight: '72vh', overflow: 'hidden' }}>
+          <div style={{
+            width: '100%', position: 'relative', aspectRatio: '3/4',
+            maxHeight: creator.hero_height === 'small' ? '45vh' : creator.hero_height === 'medium' ? '60vh' : '72vh',
+            overflow: 'hidden'
+          }}>
             <img
               src={creator.avatar_url}
               alt={creator.display_name}
-              style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'top', display: 'block' }}
+              style={{
+                width: '100%', height: '100%', objectFit: 'cover',
+                objectPosition: creator.avatar_position || 'top',
+                display: 'block'
+              }}
             />
             {/* Gradient overlay fading to background color */}
             <div style={{
@@ -190,7 +200,6 @@ export default function CreatorPage({ creator, links }: Props) {
             })}
           </div>
 
-          <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.12)', marginTop: 8 }}>Powered by LinkMe</p>
         </div>
       </div>
     </div>

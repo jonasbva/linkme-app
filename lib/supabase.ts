@@ -33,6 +33,8 @@ export interface Creator {
   button_color?: string
   text_color?: string
   show_verified?: boolean
+  avatar_position?: string
+  hero_height?: string
   is_active: boolean
   created_at: string
 }

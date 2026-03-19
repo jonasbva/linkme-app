@@ -30,8 +30,11 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     button_style: 'rounded',
     show_verified: true,
     custom_domain: '',
+    avatar_position: 'top',
+    hero_height: 'large',
     is_active: true,
   })
+  const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
 
   const [links, setLinks] = useState<any[]>(initialLinks || [])
   const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', thumbnail_url: '' })
@@ -72,8 +75,28 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   }
 
   async function deleteLink(id: string) {
-    const res = await fetch(`/api/admin/creators/${creator.id}/links/${id}`, { method: 'DELETE' })
-    if (res.ok) setLinks(prev => prev.filter(l => l.id !== id))
+    // Optimistic update — remove from UI immediately
+    setLinks(prev => prev.filter(l => l.id !== id))
+    setLinkSaveStatus('saving')
+    await fetch(`/api/admin/creators/${creator.id}/links/${id}`, { method: 'DELETE' })
+    setLinkSaveStatus('saved')
+    setTimeout(() => setLinkSaveStatus('idle'), 2000)
+  }
+
+  async function saveLinksOrder() {
+    setLinkSaveStatus('saving')
+    // Re-save all links with updated sort_order
+    await Promise.all(
+      links.map((l, i) =>
+        fetch(`/api/admin/creators/${creator.id}/links/${l.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sort_order: i }),
+        })
+      )
+    )
+    setLinkSaveStatus('saved')
+    setTimeout(() => setLinkSaveStatus('idle'), 2000)
   }
 
   async function toggleLink(id: string, is_active: boolean) {
@@ -152,6 +175,37 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             </div>
           </div>
 
+          {/* Image controls */}
+          <div className="border-t border-white/5 pt-5">
+            <p className="text-xs text-white/40 mb-4 uppercase tracking-wider">Hero Image Settings</p>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs text-white/40 mb-1.5 block">Image Size</label>
+                <select
+                  value={creator.hero_height || 'large'}
+                  onChange={e => updateCreator('hero_height', e.target.value)}
+                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white"
+                >
+                  <option value="small">Small</option>
+                  <option value="medium">Medium</option>
+                  <option value="large">Large</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-white/40 mb-1.5 block">Image Focus / Crop</label>
+                <select
+                  value={creator.avatar_position || 'top'}
+                  onChange={e => updateCreator('avatar_position', e.target.value)}
+                  className="w-full px-3 py-2 bg-[#1a1a1a] border border-white/10 rounded-lg text-sm text-white"
+                >
+                  <option value="top">Top (face/head)</option>
+                  <option value="center">Center</option>
+                  <option value="bottom">Bottom</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
           <div className="flex items-center gap-6">
             <Toggle label="Show Verified Badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
             <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
@@ -170,6 +224,20 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       {/* Links Tab */}
       {activeTab === 'links' && (
         <div className="space-y-4">
+          {/* Save bar */}
+          <div className="flex items-center justify-between bg-[#111] rounded-2xl px-5 py-3">
+            <span className="text-sm text-white/40">
+              {linkSaveStatus === 'saving' ? 'Saving…' : linkSaveStatus === 'saved' ? '✓ Changes saved' : `${links.length} link${links.length !== 1 ? 's' : ''}`}
+            </span>
+            <button
+              onClick={saveLinksOrder}
+              disabled={linkSaveStatus === 'saving'}
+              className="px-4 py-1.5 bg-white text-black text-sm font-medium rounded-lg hover:bg-white/90 transition disabled:opacity-40"
+            >
+              Save Links
+            </button>
+          </div>
+
           {/* Existing links */}
           {links.map((link, i) => (
             <div key={link.id} className="bg-[#111] rounded-2xl p-4 flex items-center gap-4">
