@@ -66,6 +66,20 @@ input[type="range"]::-webkit-slider-thumb:active {
   transform: scale(0.95);
 }
 
+/* Hide scrollbar for month slider */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Date input styling */
+input[type="date"] {
+  color-scheme: dark;
+}
+
 /* Focus styles */
 input:focus, select:focus, textarea:focus {
   outline: none;

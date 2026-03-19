@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Defs, Filter } from 'recharts'
 import CreatorPage from '@/components/CreatorPage'
@@ -31,7 +31,67 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const [links, setLinks] = useState<any[]>(initialLinks || [])
   const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', custom_icon_url: '', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
   const [addLinkStatus, setAddLinkStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
-  const [dateRange, setDateRange] = useState<'last7' | 'last30' | 'last90' | 'thisMonth' | 'lastMonth' | 'all'>('last30')
+
+  // Date range state — default to last 30 days
+  const [dateStart, setDateStart] = useState<Date>(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30); return d
+  })
+  const [dateEnd, setDateEnd] = useState<Date>(new Date())
+  const [dateLabel, setDateLabel] = useState('Last 30 days')
+  const [showDatePicker, setShowDatePicker] = useState(false)
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+  const datePickerRef = useRef<HTMLDivElement>(null)
+
+  // Close popup on outside click
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (datePickerRef.current && !datePickerRef.current.contains(e.target as Node)) {
+        setShowDatePicker(false)
+      }
+    }
+    if (showDatePicker) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showDatePicker])
+
+  function applyPreset(label: string, start: Date, end: Date) {
+    setDateStart(start)
+    setDateEnd(end)
+    setDateLabel(label)
+    setShowDatePicker(false)
+  }
+
+  function applyCustomRange() {
+    if (!customStart || !customEnd) return
+    const s = new Date(customStart + 'T00:00:00')
+    const e = new Date(customEnd + 'T23:59:59')
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return
+    setDateStart(s)
+    setDateEnd(e)
+    setDateLabel(`${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`)
+    setShowDatePicker(false)
+  }
+
+  function selectMonth(monthOffset: number) {
+    const now = new Date()
+    const d = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1)
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
+    const label = d.toLocaleDateString('en-US', { month: 'long', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
+    applyPreset(label, d, end)
+  }
+
+  // Generate last 12 months for the slider
+  const monthOptions = useMemo(() => {
+    const now = new Date()
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+      return {
+        offset: i,
+        label: d.toLocaleDateString('en-US', { month: 'short' }),
+        fullLabel: d.toLocaleDateString('en-US', { month: 'long', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined }),
+      }
+    })
+  }, [])
 
   function updateCreator(field: string, value: any) {
     setCreator((prev: any) => ({ ...prev, [field]: value }))
@@ -41,48 +101,17 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     setLinks(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l))
   }
 
-  function getDateRangeFilter(range: string): { start: Date; end: Date } {
-    const now = new Date()
-    const end = new Date(now)
-    const start = new Date(now)
-
-    switch (range) {
-      case 'last7':
-        start.setDate(start.getDate() - 7)
-        break
-      case 'last30':
-        start.setDate(start.getDate() - 30)
-        break
-      case 'last90':
-        start.setDate(start.getDate() - 90)
-        break
-      case 'thisMonth':
-        start.setDate(1)
-        break
-      case 'lastMonth':
-        start.setMonth(start.getMonth() - 1)
-        start.setDate(1)
-        end.setDate(0)
-        break
-      case 'all':
-        start.setFullYear(2000)
-        break
-    }
-    return { start, end }
-  }
-
   function countryFlag(code: string): string {
     if (!code || code.length !== 2) return ''
     return String.fromCodePoint(...[...code.toUpperCase()].map((c: string) => 0x1F1E6 + c.charCodeAt(0) - 65))
   }
 
   const filteredClicks = useMemo(() => {
-    const { start, end } = getDateRangeFilter(dateRange)
     return rawClicks.filter((click: any) => {
       const clickDate = new Date(click.created_at)
-      return clickDate >= start && clickDate <= end
+      return clickDate >= dateStart && clickDate <= dateEnd
     })
-  }, [rawClicks, dateRange])
+  }, [rawClicks, dateStart, dateEnd])
 
   const computedAnalytics = useMemo(() => {
     const totalViews = filteredClicks.length
@@ -275,72 +304,77 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* ─── PROFILE TAB ─── */}
       {activeTab === 'profile' && (
-        <div className="space-y-8">
-          <Section title="General">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <Field label="Display Name" value={creator.display_name} onChange={v => updateCreator('display_name', v)} />
-              <Field label="Slug" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
-              <Field label="Username" value={creator.username} onChange={v => updateCreator('username', v)} placeholder="@lilybrown" />
-              <Field label="Bio" value={creator.bio} onChange={v => updateCreator('bio', v)} />
-              <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
-              <Field label="Custom Domain" value={creator.custom_domain} onChange={v => updateCreator('custom_domain', v)} placeholder="lilybrown.com" />
-              <Field label="Background Image" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
-            </div>
-          </Section>
+        <div className="flex gap-8">
+          {/* Left: Settings */}
+          <div className="flex-1 min-w-0 space-y-8">
+            <Section title="General">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                <Field label="Display Name" value={creator.display_name} onChange={v => updateCreator('display_name', v)} />
+                <Field label="Slug" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
+                <Field label="Username" value={creator.username} onChange={v => updateCreator('username', v)} placeholder="@lilybrown" />
+                <Field label="Bio" value={creator.bio} onChange={v => updateCreator('bio', v)} />
+                <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
+                <Field label="Custom Domain" value={creator.custom_domain} onChange={v => updateCreator('custom_domain', v)} placeholder="lilybrown.com" />
+                <Field label="Background Image" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
+              </div>
+            </Section>
 
-          <Section title="Appearance">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
-              <ColorField label="Background" value={creator.background_color} onChange={v => updateCreator('background_color', v)} />
-              <ColorField label="Buttons" value={creator.button_color} onChange={v => updateCreator('button_color', v)} />
-              <ColorField label="Text" value={creator.text_color} onChange={v => updateCreator('text_color', v)} />
-              <SelectField label="Button Style" value={creator.button_style} onChange={v => updateCreator('button_style', v)}
-                options={[['rounded', 'Rounded'], ['pill', 'Pill'], ['sharp', 'Sharp']]} />
-            </div>
-          </Section>
+            <Section title="Appearance">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+                <ColorField label="Background" value={creator.background_color} onChange={v => updateCreator('background_color', v)} />
+                <ColorField label="Buttons" value={creator.button_color} onChange={v => updateCreator('button_color', v)} />
+                <ColorField label="Text" value={creator.text_color} onChange={v => updateCreator('text_color', v)} />
+                <SelectField label="Button Style" value={creator.button_style} onChange={v => updateCreator('button_style', v)}
+                  options={[['rounded', 'Rounded'], ['pill', 'Pill'], ['sharp', 'Sharp']]} />
+              </div>
+            </Section>
 
-          <Section title="Hero Image">
-            <div className="space-y-4">
-              <SelectField label="Size" value={creator.hero_height || 'large'} onChange={v => updateCreator('hero_height', v)}
-                options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]} />
-              <SliderField
-                label="Position"
-                value={creator.hero_position !== undefined ? creator.hero_position : 50}
-                min={0}
-                max={100}
-                suffix="%"
-                onChange={v => updateCreator('hero_position', v)}
-              />
-              <SliderField
-                label="Scale"
-                value={creator.hero_scale !== undefined ? creator.hero_scale : 100}
-                min={100}
-                max={200}
-                step={5}
-                suffix="%"
-                onChange={v => updateCreator('hero_scale', v)}
-              />
-            </div>
-          </Section>
+            <Section title="Hero Image">
+              <div className="space-y-4">
+                <SelectField label="Size" value={creator.hero_height || 'large'} onChange={v => updateCreator('hero_height', v)}
+                  options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]} />
+                <SliderField
+                  label="Position"
+                  value={creator.hero_position !== undefined ? creator.hero_position : 50}
+                  min={0}
+                  max={100}
+                  suffix="%"
+                  onChange={v => updateCreator('hero_position', v)}
+                />
+                <SliderField
+                  label="Scale"
+                  value={creator.hero_scale !== undefined ? creator.hero_scale : 100}
+                  min={100}
+                  max={200}
+                  step={5}
+                  suffix="%"
+                  onChange={v => updateCreator('hero_scale', v)}
+                />
+              </div>
+            </Section>
 
-          <div className="flex items-center gap-8">
-            <Toggle label="Verified badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
-            <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
+            <div className="flex items-center gap-8">
+              <Toggle label="Verified badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
+              <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
+            </div>
+
+            <button
+              onClick={saveCreator}
+              disabled={saving}
+              className="px-5 py-2 bg-white text-black text-[13px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40"
+            >
+              {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
+            </button>
           </div>
 
-          <button
-            onClick={saveCreator}
-            disabled={saving}
-            className="px-5 py-2 bg-white text-black text-[13px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40"
-          >
-            {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
-          </button>
-
-          {/* Live preview */}
-          <div className="border-t border-white/[0.04] pt-8">
-            <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-4">Preview</p>
-            <div className="flex justify-center overflow-hidden">
-              <div style={{ width: 375, transform: 'scale(0.6)', transformOrigin: 'top center' }}>
-                <CreatorPage creator={creator} links={links} />
+          {/* Right: Live preview (sticky) */}
+          <div className="w-[300px] shrink-0">
+            <div className="sticky top-24">
+              <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-4">Preview</p>
+              <div className="bg-white/[0.02] border border-white/[0.04] rounded-2xl overflow-hidden" style={{ height: 580 }}>
+                <div style={{ width: 375, height: 667, transform: 'scale(0.75)', transformOrigin: 'top left' }}>
+                  <CreatorPage creator={creator} links={links} />
+                </div>
               </div>
             </div>
           </div>
@@ -422,7 +456,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   )}
                 </div>
 
-                {/* Image settings */}
+                {/* Image settings + preview */}
                 <div className="pl-9 space-y-3">
                   <div className="flex items-center gap-3">
                     <span className="text-[11px] text-white/20 w-16 shrink-0">Image</span>
@@ -436,57 +470,56 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   </div>
 
                   {link.thumbnail_url && (
-                    <>
-                      <div className="flex items-start gap-4">
-                        <div className="flex-1 space-y-2.5">
-                          <SliderField
-                            label="Height"
-                            value={link.thumbnail_height || 200}
-                            min={100}
-                            max={400}
-                            step={10}
-                            suffix="px"
-                            onChange={v => updateLinkField(link.id, 'thumbnail_height', v)}
-                          />
-                          <SliderField
-                            label="Position"
-                            value={parseInt(link.thumbnail_position || '50') || 50}
-                            min={0}
-                            max={100}
-                            suffix="%"
-                            onChange={v => updateLinkField(link.id, 'thumbnail_position', String(v))}
-                          />
-                        </div>
+                    <div className="flex gap-5">
+                      {/* Left: sliders */}
+                      <div className="flex-1 min-w-0 space-y-2.5">
+                        <SliderField
+                          label="Height"
+                          value={link.thumbnail_height || 200}
+                          min={100}
+                          max={400}
+                          step={10}
+                          suffix="px"
+                          onChange={v => updateLinkField(link.id, 'thumbnail_height', v)}
+                        />
+                        <SliderField
+                          label="Position"
+                          value={parseInt(link.thumbnail_position || '50') || 50}
+                          min={0}
+                          max={100}
+                          suffix="%"
+                          onChange={v => updateLinkField(link.id, 'thumbnail_position', String(v))}
+                        />
+                      </div>
 
-                        {/* Preview */}
-                        <div
-                          className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
-                          style={{ height: link.thumbnail_height || 200, width: 150 }}
-                        >
-                          <img
-                            src={link.thumbnail_url}
-                            alt=""
-                            style={{
-                              width: '100%',
-                              height: '100%',
-                              objectFit: 'cover',
-                              objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
-                              display: 'block',
-                            }}
-                          />
-                          <div style={{
-                            position: 'absolute',
-                            bottom: 0,
-                            left: 0,
-                            right: 0,
-                            padding: '20px 12px 10px',
-                            background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
-                          }}>
-                            <span className="text-[11px] font-semibold text-white line-clamp-1">{link.title}</span>
-                          </div>
+                      {/* Right: wider preview */}
+                      <div
+                        className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
+                        style={{ height: link.thumbnail_height || 200, width: 320 }}
+                      >
+                        <img
+                          src={link.thumbnail_url}
+                          alt=""
+                          style={{
+                            width: '100%',
+                            height: '100%',
+                            objectFit: 'cover',
+                            objectPosition: `center ${parseInt(link.thumbnail_position || '50') || 50}%`,
+                            display: 'block',
+                          }}
+                        />
+                        <div style={{
+                          position: 'absolute',
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          padding: '24px 16px 12px',
+                          background: 'linear-gradient(transparent, rgba(0,0,0,0.8))',
+                        }}>
+                          <span className="text-[13px] font-semibold text-white line-clamp-1">{link.title}</span>
                         </div>
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
               </div>
@@ -519,14 +552,18 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               )}
 
               {newLink.thumbnail_url && (
-                <div className="space-y-3">
-                  <SliderField label="Height" value={newLink.thumbnail_height} min={100} max={400} step={10} suffix="px"
-                    onChange={v => setNewLink(p => ({ ...p, thumbnail_height: v }))} />
-                  <SliderField label="Position" value={parseInt(newLink.thumbnail_position) || 50} min={0} max={100} suffix="%"
-                    onChange={v => setNewLink(p => ({ ...p, thumbnail_position: String(v) }))} />
+                <div className="flex gap-5">
+                  {/* Left: sliders */}
+                  <div className="flex-1 min-w-0 space-y-2.5">
+                    <SliderField label="Height" value={newLink.thumbnail_height} min={100} max={400} step={10} suffix="px"
+                      onChange={v => setNewLink(p => ({ ...p, thumbnail_height: v }))} />
+                    <SliderField label="Position" value={parseInt(newLink.thumbnail_position) || 50} min={0} max={100} suffix="%"
+                      onChange={v => setNewLink(p => ({ ...p, thumbnail_position: String(v) }))} />
+                  </div>
+                  {/* Right: wider preview */}
                   <div
-                    className="rounded-xl overflow-hidden border border-white/[0.04] relative"
-                    style={{ height: newLink.thumbnail_height, maxWidth: 400 }}
+                    className="rounded-xl overflow-hidden border border-white/[0.04] relative shrink-0"
+                    style={{ height: newLink.thumbnail_height, width: 320 }}
                   >
                     <img
                       src={newLink.thumbnail_url}
@@ -572,26 +609,105 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       {/* ─── ANALYTICS TAB ─── */}
       {activeTab === 'analytics' && (
         <div className="space-y-6">
-          {/* Date range selector */}
-          <div className="flex gap-2 flex-wrap">
-            {(['last7', 'last30', 'last90', 'thisMonth', 'lastMonth', 'all'] as const).map(range => (
-              <button
-                key={range}
-                onClick={() => setDateRange(range)}
-                className={`px-3 py-1.5 text-[12px] font-medium rounded-full transition-all ${
-                  dateRange === range
-                    ? 'bg-white text-black'
-                    : 'bg-white/[0.05] text-white/50 border border-white/[0.08] hover:bg-white/[0.08]'
-                }`}
-              >
-                {range === 'last7' && 'Last 7 days'}
-                {range === 'last30' && 'Last 30 days'}
-                {range === 'last90' && 'Last 90 days'}
-                {range === 'thisMonth' && 'This month'}
-                {range === 'lastMonth' && 'Last month'}
-                {range === 'all' && 'All time'}
-              </button>
-            ))}
+          {/* Date range bar — OF-style */}
+          <div className="space-y-3">
+            {/* Month slider */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-hide">
+              {monthOptions.map(m => {
+                const now = new Date()
+                const mStart = new Date(now.getFullYear(), now.getMonth() - m.offset, 1)
+                const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
+                const isActive = dateStart.getTime() === mStart.getTime() && dateEnd.getTime() === mEnd.getTime()
+                return (
+                  <button
+                    key={m.offset}
+                    onClick={() => selectMonth(m.offset)}
+                    className={`px-3.5 py-1.5 text-[12px] font-medium rounded-full whitespace-nowrap transition-all ${
+                      isActive
+                        ? 'bg-white text-black'
+                        : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
+                    }`}
+                  >
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Quick presets + custom trigger */}
+            <div className="flex items-center gap-2 relative">
+              {[
+                { label: '7d', fn: () => { const s = new Date(); s.setDate(s.getDate() - 7); applyPreset('Last 7 days', s, new Date()) } },
+                { label: '30d', fn: () => { const s = new Date(); s.setDate(s.getDate() - 30); applyPreset('Last 30 days', s, new Date()) } },
+                { label: '90d', fn: () => { const s = new Date(); s.setDate(s.getDate() - 90); applyPreset('Last 90 days', s, new Date()) } },
+                { label: 'All', fn: () => { applyPreset('All time', new Date(2000, 0, 1), new Date()) } },
+              ].map(p => (
+                <button
+                  key={p.label}
+                  onClick={p.fn}
+                  className={`px-3 py-1 text-[11px] font-medium rounded-md transition-all ${
+                    dateLabel.toLowerCase().includes(p.label.toLowerCase().replace('d', ' day'))
+                    || (p.label === 'All' && dateLabel === 'All time')
+                      ? 'bg-white/[0.12] text-white/80'
+                      : 'bg-white/[0.03] text-white/30 hover:bg-white/[0.06] hover:text-white/50'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-[11px] text-white/25">{dateLabel}</span>
+                <button
+                  onClick={() => {
+                    setCustomStart(dateStart.toISOString().split('T')[0])
+                    setCustomEnd(dateEnd.toISOString().split('T')[0])
+                    setShowDatePicker(!showDatePicker)
+                  }}
+                  className="px-3 py-1 text-[11px] font-medium rounded-md bg-white/[0.03] text-white/40 hover:bg-white/[0.06] hover:text-white/60 transition-all border border-white/[0.06]"
+                >
+                  Custom range
+                </button>
+              </div>
+
+              {/* Custom date popup */}
+              {showDatePicker && (
+                <div
+                  ref={datePickerRef}
+                  className="absolute right-0 top-full mt-2 z-50 bg-[#111] border border-white/[0.08] rounded-xl p-5 shadow-2xl shadow-black/50"
+                  style={{ minWidth: 300 }}
+                >
+                  <p className="text-[12px] text-white/40 font-medium mb-4">Custom date range</p>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="text-[11px] text-white/25 mb-1.5 block">Start date</label>
+                      <input
+                        type="date"
+                        value={customStart}
+                        onChange={e => setCustomStart(e.target.value)}
+                        className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[13px] text-white/80 focus:border-white/20 transition-colors"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] text-white/25 mb-1.5 block">End date</label>
+                      <input
+                        type="date"
+                        value={customEnd}
+                        onChange={e => setCustomEnd(e.target.value)}
+                        className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[13px] text-white/80 focus:border-white/20 transition-colors"
+                      />
+                    </div>
+                    <button
+                      onClick={applyCustomRange}
+                      disabled={!customStart || !customEnd}
+                      className="w-full mt-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-30"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Stats */}
