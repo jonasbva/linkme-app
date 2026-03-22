@@ -104,7 +104,22 @@ function getPlatform(icon: string) {
 
 export default function CreatorPage({ creator, links }: Props) {
   const [showBar, setShowBar] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
   const heroRef = useRef<HTMLDivElement>(null)
+
+  // Detect in-app browser and bounce to native browser immediately
+  useEffect(() => {
+    const ua = navigator.userAgent || ''
+    const isInApp = /Instagram|FBAN|FBAV|Twitter|Line\//i.test(ua)
+    // Only redirect if we haven't already been opened via the bounce
+    const alreadyBounced = window.location.search.includes('ref=browser')
+    if (isInApp && !alreadyBounced) {
+      setRedirecting(true)
+      // Redirect to bounce page with the current page URL
+      const currentUrl = window.location.href + (window.location.search ? '&' : '?') + 'ref=browser'
+      window.location.href = `/api/redirect?url=${encodeURIComponent(currentUrl)}`
+    }
+  }, [])
 
   useEffect(() => {
     fetch('/api/track', {
@@ -132,13 +147,25 @@ export default function CreatorPage({ creator, links }: Props) {
     creator.button_style === 'pill' ? 'rounded-full' :
     creator.button_style === 'sharp' ? 'rounded-none' : 'rounded-2xl'
 
+  function isInAppBrowser() {
+    if (typeof navigator === 'undefined') return false
+    const ua = navigator.userAgent || ''
+    return /Instagram|FBAN|FBAV|Twitter|Line\//i.test(ua)
+  }
+
   function handleLinkClick(link: Link) {
     fetch('/api/track', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ creator_id: creator.id, link_id: link.id, type: 'link_click' }),
     }).catch(() => {})
-    window.open(link.url, '_blank', 'noopener,noreferrer')
+
+    if (isInAppBrowser()) {
+      // Redirect to bounce page that opens in native browser
+      window.location.href = `/api/redirect?url=${encodeURIComponent(link.url)}`
+    } else {
+      window.open(link.url, '_blank', 'noopener,noreferrer')
+    }
   }
 
   const bg = creator.background_color || '#080808'
@@ -162,6 +189,27 @@ export default function CreatorPage({ creator, links }: Props) {
     const platform = getPlatform(link.icon)
     return (
       <div style={{ color: platform.color, width: size, height: size, flexShrink: 0 }} dangerouslySetInnerHTML={{ __html: platform.svg }} />
+    )
+  }
+
+  // Show loading screen while redirecting to native browser
+  if (redirecting) {
+    return (
+      <div style={{
+        minHeight: '100vh', background: bg,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexDirection: 'column', gap: 16,
+      }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{
+          width: 28, height: 28,
+          border: '2.5px solid rgba(255,255,255,0.08)',
+          borderTopColor: 'rgba(255,255,255,0.7)',
+          borderRadius: '50%',
+          animation: 'spin 0.6s linear infinite',
+        }} />
+        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Opening in browser...</p>
+      </div>
     )
   }
 

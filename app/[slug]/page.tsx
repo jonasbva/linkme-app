@@ -27,6 +27,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     title: creator.display_name,
     description: creator.bio || `${creator.display_name}'s links`,
+    robots: { index: false, follow: false },
     openGraph: {
       title: creator.display_name,
       description: creator.bio || '',

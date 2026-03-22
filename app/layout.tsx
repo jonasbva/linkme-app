@@ -4,6 +4,7 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'LinkMe',
   description: 'Your links, your way.',
+  robots: { index: false, follow: false },
 }
 
 export default function RootLayout({
