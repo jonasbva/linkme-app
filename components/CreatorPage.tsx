@@ -104,22 +104,7 @@ function getPlatform(icon: string) {
 
 export default function CreatorPage({ creator, links }: Props) {
   const [showBar, setShowBar] = useState(false)
-  const [redirecting, setRedirecting] = useState(false)
   const heroRef = useRef<HTMLDivElement>(null)
-
-  // Detect in-app browser and bounce to native browser immediately
-  useEffect(() => {
-    const ua = navigator.userAgent || ''
-    const isInApp = /Instagram|FBAN|FBAV|Twitter|Line\//i.test(ua)
-    // Only redirect if we haven't already been opened via the bounce
-    const alreadyBounced = window.location.search.includes('ref=browser')
-    if (isInApp && !alreadyBounced) {
-      setRedirecting(true)
-      // Redirect to bounce page with the current page URL
-      const currentUrl = window.location.href + (window.location.search ? '&' : '?') + 'ref=browser'
-      window.location.href = `/api/redirect?url=${encodeURIComponent(currentUrl)}`
-    }
-  }, [])
 
   useEffect(() => {
     fetch('/api/track', {
@@ -189,27 +174,6 @@ export default function CreatorPage({ creator, links }: Props) {
     const platform = getPlatform(link.icon)
     return (
       <div style={{ color: platform.color, width: size, height: size, flexShrink: 0 }} dangerouslySetInnerHTML={{ __html: platform.svg }} />
-    )
-  }
-
-  // Show loading screen while redirecting to native browser
-  if (redirecting) {
-    return (
-      <div style={{
-        minHeight: '100vh', background: bg,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexDirection: 'column', gap: 16,
-      }}>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        <div style={{
-          width: 28, height: 28,
-          border: '2.5px solid rgba(255,255,255,0.08)',
-          borderTopColor: 'rgba(255,255,255,0.7)',
-          borderRadius: '50%',
-          animation: 'spin 0.6s linear infinite',
-        }} />
-        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', margin: 0 }}>Opening in browser...</p>
-      </div>
     )
   }
 
