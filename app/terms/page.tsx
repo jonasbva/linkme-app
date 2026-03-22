@@ -1,8 +1,10 @@
+'use client'
+
 export default function TermsPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#080808', display: 'flex', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: 640, padding: '48px 20px 80px' }}>
-        <a href="/" style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', textDecoration: 'none' }}>← Back</a>
+        <button onClick={() => window.history.back()} style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>← Back</button>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginTop: 16, marginBottom: 32 }}>Terms of Service</h1>
 
         <div style={{ fontSize: 14, lineHeight: 1.8, color: 'rgba(255,255,255,0.55)' }}>

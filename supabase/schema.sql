@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS creators (
   link_font_size INT DEFAULT 14,       -- link title font size (10-22)
   link_text_align TEXT DEFAULT 'left', -- 'left' | 'center'
   link_icon_style TEXT DEFAULT 'inline', -- 'inline' (next to text) | 'large' (top-left)
+  show_footer BOOLEAN DEFAULT true,     -- show privacy/terms/report footer
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );

@@ -75,6 +75,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     avatar_position: 'top', hero_height: 'large', hero_position: 50, hero_scale: 100, is_active: true,
     background_image_url: '',
     link_font_size: 14, link_text_align: 'left', link_icon_style: 'inline',
+    show_footer: true,
   })
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [links, setLinks] = useState<any[]>(initialLinks || [])
@@ -369,8 +370,8 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* ─── PROFILE TAB ─── */}
       {activeTab === 'profile' && (
-        <div className="space-y-8">
-          <Section title="General">
+        <div className="space-y-3">
+          <Section title="General" defaultOpen={true}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               <Field label="Display Name" value={creator.display_name} onChange={v => updateCreator('display_name', v)} />
               <Field label="Slug" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
@@ -382,7 +383,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             </div>
           </Section>
 
-          <Section title="Appearance">
+          <Section title="Appearance" defaultOpen={false}>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
               <ColorField label="Background" value={creator.background_color} onChange={v => updateCreator('background_color', v)} />
               <ColorField label="Buttons" value={creator.button_color} onChange={v => updateCreator('button_color', v)} />
@@ -392,7 +393,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             </div>
           </Section>
 
-          <Section title="Link Text">
+          <Section title="Link Text & Icons" defaultOpen={false}>
             <div className="space-y-4">
               <SliderField
                 label="Font size"
@@ -409,7 +410,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             </div>
           </Section>
 
-          <Section title="Hero Image">
+          <Section title="Hero Image" defaultOpen={false}>
             <div className="space-y-4">
               <SelectField label="Size" value={creator.hero_height || 'large'} onChange={v => updateCreator('hero_height', v)}
                 options={[['small', 'Small'], ['medium', 'Medium'], ['large', 'Large']]} />
@@ -433,15 +434,18 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             </div>
           </Section>
 
-          <div className="flex items-center gap-8">
-            <Toggle label="Verified badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
-            <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
-          </div>
+          <Section title="Options" defaultOpen={false}>
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+              <Toggle label="Verified badge" checked={creator.show_verified} onChange={v => updateCreator('show_verified', v)} />
+              <Toggle label="Active" checked={creator.is_active} onChange={v => updateCreator('is_active', v)} />
+              <Toggle label="Footer links" checked={creator.show_footer !== false} onChange={v => updateCreator('show_footer', v)} />
+            </div>
+          </Section>
 
           <button
             onClick={saveCreator}
             disabled={saving}
-            className="px-5 py-2 bg-white text-black text-[13px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40"
+            className="px-5 py-2 bg-white text-black text-[13px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40 mt-4"
           >
             {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
           </button>
@@ -889,11 +893,27 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
 /* ── Shared Components ──────────────────────────── */
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="space-y-4">
-      <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium">{title}</p>
-      {children}
+    <div className="border border-white/[0.04] rounded-xl overflow-hidden">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors"
+      >
+        <span className="text-[11px] text-white/25 uppercase tracking-widest font-medium">{title}</span>
+        <svg
+          width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          className={`text-white/20 transition-transform ${open ? 'rotate-180' : ''}`}
+        >
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 pt-1">
+          {children}
+        </div>
+      )}
     </div>
   )
 }

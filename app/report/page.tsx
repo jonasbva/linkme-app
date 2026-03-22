@@ -17,7 +17,7 @@ export default function ReportPage() {
   return (
     <div style={{ minHeight: '100vh', background: '#080808', display: 'flex', justifyContent: 'center' }}>
       <div style={{ width: '100%', maxWidth: 640, padding: '48px 20px 80px' }}>
-        <a href="/" style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', textDecoration: 'none' }}>← Back</a>
+        <button onClick={() => window.history.back()} style={{ fontSize: 12, color: 'rgba(255,255,255,0.25)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>← Back</button>
         <h1 style={{ fontSize: 22, fontWeight: 700, color: '#fff', marginTop: 16, marginBottom: 8 }}>Report Content</h1>
         <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', marginBottom: 32, lineHeight: 1.6 }}>
           If you believe content on this page violates our terms of service or is harmful, please let us know.

@@ -35,6 +35,7 @@ interface Creator {
   link_font_size?: number    // font size for link titles (10-22)
   link_text_align?: string   // 'left' | 'center'
   link_icon_style?: string   // 'inline' | 'large'
+  show_footer?: boolean      // show privacy/terms/report footer
 }
 
 interface Props {
@@ -45,7 +46,7 @@ interface Props {
 const PLATFORM_ICONS: Record<string, { color: string; svg: string }> = {
   onlyfans: {
     color: '#00AFF0',
-    svg: `<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm0 4.5c4.142 0 7.5 3.358 7.5 7.5s-3.358 7.5-7.5 7.5S4.5 16.142 4.5 12 7.858 4.5 12 4.5zm0 2.25c-2.9 0-5.25 2.35-5.25 5.25S9.1 17.25 12 17.25 17.25 14.9 17.25 12 14.9 6.75 12 6.75zm0 2.25c1.657 0 3 1.343 3 3s-1.343 3-3 3-3-1.343-3-3 1.343-3 3-3z"/></svg>`,
+    svg: `<svg viewBox="0 0 24 24" width="100%" height="100%"><circle cx="12" cy="12" r="11.5" fill="#00AFF0"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="12" r="3" fill="#fff"/></svg>`,
   },
   fansly: {
     color: '#1DA1F2',
@@ -364,13 +365,15 @@ export default function CreatorPage({ creator, links }: Props) {
           </div>
 
           {/* Footer */}
-          <div style={{ display: 'flex', justifyContent: 'center', gap: 16, paddingTop: 24 }}>
-            <a href="/privacy" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textDecoration: 'none' }}>Privacy Policy</a>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.1)' }}>|</span>
-            <a href="/terms" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textDecoration: 'none' }}>Terms</a>
-            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.1)' }}>|</span>
-            <a href="/report" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textDecoration: 'none' }}>Report</a>
-          </div>
+          {creator.show_footer !== false && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, paddingTop: 24 }}>
+              <a href="/privacy" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textDecoration: 'none' }}>Privacy Policy</a>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.1)' }}>|</span>
+              <a href="/terms" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textDecoration: 'none' }}>Terms</a>
+              <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.1)' }}>|</span>
+              <a href="/report" style={{ fontSize: 12, color: 'rgba(255,255,255,0.2)', textDecoration: 'none' }}>Report</a>
+            </div>
+          )}
 
         </div>
       </div>
