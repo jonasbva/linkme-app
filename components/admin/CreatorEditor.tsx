@@ -74,6 +74,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     button_style: 'rounded', show_verified: true, custom_domain: '',
     avatar_position: 'top', hero_height: 'large', hero_position: 50, hero_scale: 100, is_active: true,
     background_image_url: '',
+    link_font_size: 14, link_text_align: 'left', link_icon_style: 'inline',
   })
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [links, setLinks] = useState<any[]>(initialLinks || [])
@@ -388,6 +389,23 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               <ColorField label="Text" value={creator.text_color} onChange={v => updateCreator('text_color', v)} />
               <SelectField label="Button Style" value={creator.button_style} onChange={v => updateCreator('button_style', v)}
                 options={[['rounded', 'Rounded'], ['pill', 'Pill'], ['sharp', 'Sharp']]} />
+            </div>
+          </Section>
+
+          <Section title="Link Text">
+            <div className="space-y-4">
+              <SliderField
+                label="Font size"
+                value={creator.link_font_size !== undefined ? creator.link_font_size : 14}
+                min={10}
+                max={22}
+                suffix="px"
+                onChange={v => updateCreator('link_font_size', v)}
+              />
+              <SelectField label="Text alignment" value={creator.link_text_align || 'left'} onChange={v => updateCreator('link_text_align', v)}
+                options={[['left', 'Left'], ['center', 'Centered']]} />
+              <SelectField label="Icon style" value={creator.link_icon_style || 'inline'} onChange={v => updateCreator('link_icon_style', v)}
+                options={[['inline', 'Inline (next to text)'], ['large', 'Large (top-left)']]} />
             </div>
           </Section>
 

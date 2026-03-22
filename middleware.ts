@@ -30,6 +30,11 @@ export async function middleware(req: NextRequest) {
     return new NextResponse('Not found', { status: 404 })
   }
 
+  // Allow legal/static pages through on custom domains
+  if (pathname === '/privacy' || pathname === '/terms' || pathname === '/report') {
+    return NextResponse.next()
+  }
+
   // Look up creator by custom_domain directly from Supabase REST API
   const slug = await resolveCustomDomain(domain)
 

@@ -22,6 +22,9 @@ CREATE TABLE IF NOT EXISTS creators (
   hero_height TEXT DEFAULT 'large',
   hero_position TEXT DEFAULT '30',     -- hero image vertical crop 0-100
   hero_scale TEXT DEFAULT '100',       -- hero image zoom 100-200
+  link_font_size INT DEFAULT 14,       -- link title font size (10-22)
+  link_text_align TEXT DEFAULT 'left', -- 'left' | 'center'
+  link_icon_style TEXT DEFAULT 'inline', -- 'inline' (next to text) | 'large' (top-left)
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT now()
 );
