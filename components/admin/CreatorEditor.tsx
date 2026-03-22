@@ -6,6 +6,50 @@ import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Defs, Filt
 
 const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'snapchat', 'youtube', 'reddit', 'twitch', 'telegram', 'discord', 'spotify', 'link', 'custom']
 
+type Toast = { message: string; type: 'success' | 'error' }
+
+function ToastNotification({ toast, onDismiss }: { toast: Toast | null; onDismiss: () => void }) {
+  useEffect(() => {
+    if (toast) {
+      const t = setTimeout(onDismiss, 4000)
+      return () => clearTimeout(t)
+    }
+  }, [toast, onDismiss])
+
+  if (!toast) return null
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 32,
+        right: 32,
+        zIndex: 100,
+        animation: 'toast-in 0.3s ease-out',
+      }}
+    >
+      <div className={`px-5 py-3 rounded-xl text-[13px] font-medium shadow-xl backdrop-blur-xl border ${
+        toast.type === 'success'
+          ? 'bg-emerald-500/15 border-emerald-500/20 text-emerald-400'
+          : 'bg-red-500/15 border-red-500/20 text-red-400'
+      }`}>
+        <div className="flex items-center gap-2.5">
+          {toast.type === 'success' ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10" /><line x1="15" y1="9" x2="9" y2="15" /><line x1="9" y1="9" x2="15" y2="15" />
+            </svg>
+          )}
+          {toast.message}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 interface Props {
   creator: any
   links: any[]
@@ -17,7 +61,12 @@ interface Props {
 export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, rawClicks = [], isNew }: Props) {
   const router = useRouter()
   const [saving, setSaving] = useState(false)
+  const [toast, setToast] = useState<Toast | null>(null)
   const [activeTab, setActiveTab] = useState<'profile' | 'links' | 'analytics'>('profile')
+
+  function showToast(message: string, type: 'success' | 'error') {
+    setToast({ message, type })
+  }
 
   const [creator, setCreator] = useState(initialCreator || {
     slug: '', display_name: '', username: '', bio: '', avatar_url: '',
@@ -160,14 +209,25 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   }, [filteredClicks])
 
   async function saveCreator() {
+    if (!creator.display_name || !creator.slug) {
+      showToast('Display name and slug are required', 'error')
+      return
+    }
     setSaving(true)
-    const method = isNew ? 'POST' : 'PUT'
-    const url = isNew ? '/api/admin/creators' : `/api/admin/creators/${creator.id}`
-    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(creator) })
-    if (res.ok) {
+    try {
+      const method = isNew ? 'POST' : 'PUT'
+      const url = isNew ? '/api/admin/creators' : `/api/admin/creators/${creator.id}`
+      const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(creator) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || `Failed to ${isNew ? 'create' : 'save'} creator`)
+      }
       const data = await res.json()
+      showToast(isNew ? 'Creator created' : 'Changes saved', 'success')
       if (isNew) router.push(`/admin/creators/${data.id}`)
       else router.refresh()
+    } catch (err: any) {
+      showToast(err.message || 'Something went wrong', 'error')
     }
     setSaving(false)
   }
@@ -203,10 +263,11 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         })
       )
       setLinkSaveStatus('saved')
+      showToast('Links saved', 'success')
       setTimeout(() => setLinkSaveStatus('idle'), 2500)
     } catch (err: any) {
       setLinkSaveStatus('idle')
-      alert('Save failed: ' + (err.message || 'Unknown error'))
+      showToast('Save failed: ' + (err.message || 'Unknown error'), 'error')
     }
   }
 
@@ -230,10 +291,12 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       setLinks(prev => [...prev, data])
       setNewLink({ title: '', url: '', icon: 'link', custom_icon_url: '', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
       setAddLinkStatus('saved')
+      showToast('Link added', 'success')
       setTimeout(() => setAddLinkStatus('idle'), 2500)
     } else {
+      const err = await res.json().catch(() => ({}))
       setAddLinkStatus('idle')
-      alert('Failed to add link.')
+      showToast('Failed to add link: ' + (err.error || 'Unknown error'), 'error')
     }
   }
 
@@ -245,9 +308,10 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     if (!res.ok) {
       if (removed) setLinks(prev => [...prev, removed].sort((a: any, b: any) => a.sort_order - b.sort_order))
       setLinkSaveStatus('idle')
-      alert('Delete failed.')
+      showToast('Failed to delete link', 'error')
       return
     }
+    showToast('Link removed', 'success')
     setLinkSaveStatus('saved')
     setTimeout(() => setLinkSaveStatus('idle'), 2000)
   }
@@ -263,6 +327,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
   return (
     <div className="space-y-8">
+      <ToastNotification toast={toast} onDismiss={() => setToast(null)} />
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
