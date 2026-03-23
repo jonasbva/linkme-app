@@ -846,15 +846,15 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             <p className="text-[12px] text-white/35 mb-4">Activity</p>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={computedAnalytics.dailyData}>
-                <Defs>
-                  <Filter id="glow">
+                <defs>
+                  <filter id="glow">
                     <feGaussianBlur stdDeviation="3" result="coloredBlur" />
                     <feMerge>
                       <feMergeNode in="coloredBlur" />
                       <feMergeNode in="SourceGraphic" />
                     </feMerge>
-                  </Filter>
-                </Defs>
+                  </filter>
+                </defs>
                 <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
