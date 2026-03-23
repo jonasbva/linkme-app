@@ -168,16 +168,36 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     const totalClicks = filteredClicks.filter((c: any) => c.type === 'link_click').length
     const ctr = totalViews > 0 ? (totalClicks / totalViews) * 100 : 0
 
-    // Daily chart data
-    const dailyMap = new Map<string, { views: number; clicks: number }>()
-    filteredClicks.forEach((click: any) => {
-      const date = new Date(click.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-      const current = dailyMap.get(date) || { views: 0, clicks: 0 }
-      if (click.type === 'link_click') current.clicks++
-      current.views++
-      dailyMap.set(date, current)
-    })
-    const dailyData = Array.from(dailyMap.entries()).map(([date, data]) => ({ date, ...data }))
+    // Detect if single day selected (less than 36 hours between start and end)
+    const isSingleDay = (dateEnd.getTime() - dateStart.getTime()) < 36 * 60 * 60 * 1000
+
+    // Chart data — hourly for single day, daily otherwise
+    const chartMap = new Map<string, { views: number; clicks: number }>()
+
+    if (isSingleDay) {
+      // Pre-fill all 24 hours so chart has no gaps
+      for (let h = 0; h < 24; h++) {
+        const label = `${h.toString().padStart(2, '0')}:00`
+        chartMap.set(label, { views: 0, clicks: 0 })
+      }
+      filteredClicks.forEach((click: any) => {
+        const d = new Date(click.created_at)
+        const label = `${d.getHours().toString().padStart(2, '0')}:00`
+        const current = chartMap.get(label) || { views: 0, clicks: 0 }
+        if (click.type === 'link_click') current.clicks++
+        current.views++
+        chartMap.set(label, current)
+      })
+    } else {
+      filteredClicks.forEach((click: any) => {
+        const date = new Date(click.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        const current = chartMap.get(date) || { views: 0, clicks: 0 }
+        if (click.type === 'link_click') current.clicks++
+        current.views++
+        chartMap.set(date, current)
+      })
+    }
+    const dailyData = Array.from(chartMap.entries()).map(([date, data]) => ({ date, ...data }))
 
     // Countries
     const countriesMap = new Map<string, { code: string; count: number }>()
@@ -732,10 +752,10 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   <p className="text-[11px] text-white/25 uppercase tracking-widest font-medium mb-3">Quick select</p>
                   <div className="flex flex-wrap gap-1.5">
                     {[
+                      { label: 'Today', fn: () => { const s = new Date(); s.setHours(0,0,0,0); applyPreset('Today', s, new Date()) } },
+                      { label: 'Yesterday', fn: () => { const s = new Date(); s.setDate(s.getDate() - 1); s.setHours(0,0,0,0); const e = new Date(s); e.setHours(23,59,59,999); applyPreset('Yesterday', s, e) } },
                       { label: 'Last 7 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 7); applyPreset('Last 7 days', s, new Date()) } },
                       { label: 'Last 30 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 30); applyPreset('Last 30 days', s, new Date()) } },
-                      { label: 'Last 90 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 90); applyPreset('Last 90 days', s, new Date()) } },
-                      { label: 'All time', fn: () => { applyPreset('All time', new Date(2000, 0, 1), new Date()) } },
                     ].map(p => (
                       <button
                         key={p.label}
