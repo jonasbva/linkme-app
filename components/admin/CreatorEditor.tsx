@@ -66,7 +66,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const isLight = themeMode === 'light'
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [activeTab, setActiveTab] = useState<'edit' | 'analysis' | 'preview'>('edit')
+  const [activeTab, setActiveTab] = useState<'edit' | 'analysis'>('edit')
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
@@ -398,8 +398,8 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-6 border-b border-white/[0.08] pb-px">
-        {(['edit', ...(isNew ? [] : ['analysis', 'preview'])] as const).map(tab => (
+      <div className="flex items-center gap-6 border-b border-white/[0.08] pb-px">
+        {(['edit', ...(isNew ? [] : ['analysis'])] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
@@ -409,9 +409,19 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 : 'text-white/40 border-transparent hover:text-white/60'
             }`}
           >
-            {tab === 'edit' ? 'Edit' : tab === 'analysis' ? 'Analysis' : 'Preview LinkMe'}
+            {tab === 'edit' ? 'Edit' : 'Analysis'}
           </button>
         ))}
+        {!isNew && (
+          <a
+            href={creator.custom_domain ? `https://${creator.custom_domain}` : `/${creator.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="pb-2.5 text-[13px] font-medium text-white/40 border-b-2 border-transparent hover:text-white/60 transition-colors -mb-px ml-auto"
+          >
+            Preview ↗
+          </a>
+        )}
       </div>
 
       {/* ─── EDIT TAB (Profile + Links) ─── */}
@@ -972,20 +982,6 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         </div>
       )}
 
-      {/* ─── PREVIEW LINKME TAB ─── */}
-      {activeTab === 'preview' && !isNew && (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <p className="text-white/40 text-[13px]">Opens your public LinkMe page in a new tab.</p>
-          <a
-            href={`/${creator.slug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-6 py-3 bg-white text-black text-[13px] font-medium rounded-xl hover:bg-white/90 transition-colors"
-          >
-            Open /{creator.slug} →
-          </a>
-        </div>
-      )}
     </div>
   )
 }
