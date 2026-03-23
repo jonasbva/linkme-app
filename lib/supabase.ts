@@ -63,3 +63,25 @@ export interface Click {
   referrer?: string
   created_at: string
 }
+
+export interface SocialAccount {
+  id: string
+  creator_id: string
+  platform: 'instagram' | 'tiktok'
+  username: string
+  is_active: boolean
+  created_at: string
+}
+
+export interface SocialSnapshot {
+  id: string
+  social_account_id: string
+  scraped_at: string
+  followers?: number
+  following?: number
+  post_count?: number
+  total_views?: number
+  total_likes?: number
+  total_comments?: number
+  raw_data?: Record<string, unknown>
+}

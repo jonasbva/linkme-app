@@ -66,30 +66,41 @@ export async function GET(req: NextRequest) {
       font-size: 14px; color: rgba(255,255,255,0.5);
       line-height: 1.6; margin-bottom: 20px;
     }
-    .ios-msg .arrow-hint {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      padding: 10px 18px;
-      font-size: 13px; color: rgba(255,255,255,0.6);
+    .ios-msg .safari-cta {
+      background: rgba(0,122,255,0.12);
+      border: 1.5px solid rgba(0,122,255,0.4);
+      border-radius: 16px;
+      padding: 18px 20px;
       margin-bottom: 24px;
+      text-align: center;
+    }
+    .ios-msg .cta-arrow {
+      font-size: 24px;
+      color: #007AFF;
+      margin-bottom: 8px;
+      animation: bounce 1.5s ease infinite;
+    }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(6px); }
+    }
+    .ios-msg .cta-text {
+      font-size: 14px;
+      color: rgba(255,255,255,0.7);
+      line-height: 1.6;
+    }
+    .ios-msg .cta-text strong {
+      color: #007AFF;
+      font-weight: 600;
     }
     .ios-msg .dots-icon {
-      font-size: 20px; letter-spacing: 1px; font-weight: 700;
+      font-size: 18px; letter-spacing: 1px; font-weight: 700;
       color: #fff;
+      background: rgba(255,255,255,0.12);
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-family: monospace;
     }
-    .btn {
-      display: block; width: 100%;
-      padding: 14px 24px;
-      background: #fff; color: #000;
-      text-decoration: none;
-      border-radius: 14px;
-      font-size: 15px; font-weight: 600;
-      border: none; cursor: pointer;
-      transition: opacity 0.15s;
-    }
-    .btn:active { opacity: 0.8; }
     .btn-secondary {
       background: rgba(255,255,255,0.06);
       color: rgba(255,255,255,0.6);
@@ -114,13 +125,10 @@ export async function GET(req: NextRequest) {
     <div class="ios-msg" id="iosPrompt">
       <h2>Open in Safari</h2>
       <p>Instagram's browser blocks external links.<br>Tap the menu below to continue:</p>
-      <div class="arrow-hint">
-        <span class="dots-icon">···</span>
-        <span>→ Open in Safari</span>
+      <div class="safari-cta">
+        <div class="cta-arrow">↓</div>
+        <div class="cta-text">Tap <span class="dots-icon">···</span> at the top right, then <strong>"Open in Safari"</strong></div>
       </div>
-      <a href="${escapedUrl}" class="btn" target="_blank" rel="noopener noreferrer">
-        Or tap here to try anyway
-      </a>
       <button class="btn btn-secondary" onclick="copyLink()">Copy link</button>
       <p id="copyFeedback" style="font-size:12px; color:rgba(255,255,255,0.3); margin-top:8px; min-height:18px;"></p>
     </div>
