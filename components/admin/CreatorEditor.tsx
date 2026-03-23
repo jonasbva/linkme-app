@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts'
 import { useTheme } from './ThemeProvider'
+import SocialTab from './SocialTab'
 
 const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'snapchat', 'youtube', 'reddit', 'twitch', 'telegram', 'discord', 'spotify', 'link', 'custom']
 
@@ -65,7 +66,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const isLight = themeMode === 'light'
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [activeTab, setActiveTab] = useState<'profile' | 'links' | 'analytics'>('profile')
+  const [activeTab, setActiveTab] = useState<'profile' | 'links' | 'analytics' | 'social'>('profile')
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
@@ -81,6 +82,27 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     show_footer: true,
   })
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [uploadingField, setUploadingField] = useState<string | null>(null)
+
+  async function uploadImage(file: File, field: string) {
+    setUploadingField(field)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('bucket', 'images')
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: form })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Upload failed')
+      }
+      const { url } = await res.json()
+      updateCreator(field, url)
+      showToast('Image uploaded', 'success')
+    } catch (e: any) {
+      showToast(e.message || 'Upload failed', 'error')
+    }
+    setUploadingField(null)
+  }
   const [links, setLinks] = useState<any[]>(initialLinks || [])
   const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', custom_icon_url: '', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
   const [addLinkStatus, setAddLinkStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -377,7 +399,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* Tabs */}
       <div className="flex gap-6 border-b border-white/[0.08] pb-px">
-        {(['profile', 'links', ...(isNew ? [] : ['analytics'])] as const).map(tab => (
+        {(['profile', 'links', ...(isNew ? [] : ['analytics', 'social'])] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
@@ -401,9 +423,25 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               <Field label="Slug" value={creator.slug} onChange={v => updateCreator('slug', v.toLowerCase().replace(/\s/g, ''))} placeholder="lilybrown" />
               <Field label="Username" value={creator.username} onChange={v => updateCreator('username', v)} placeholder="@lilybrown" />
               <Field label="Bio" value={creator.bio} onChange={v => updateCreator('bio', v)} />
-              <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
+              <div className="space-y-1">
+                <Field label="Avatar URL" value={creator.avatar_url} onChange={v => updateCreator('avatar_url', v)} placeholder="https://..." />
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadImage(f, 'avatar_url') }} />
+                  <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
+                    {uploadingField === 'avatar_url' ? 'Uploading…' : '↑ Upload image instead'}
+                  </span>
+                </label>
+              </div>
               <Field label="Custom Domain" value={creator.custom_domain} onChange={v => updateCreator('custom_domain', v)} placeholder="lilybrown.com" />
-              <Field label="Background Image" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
+              <div className="space-y-1">
+                <Field label="Background Image" value={creator.background_image_url} onChange={v => updateCreator('background_image_url', v)} placeholder="https://..." />
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadImage(f, 'background_image_url') }} />
+                  <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
+                    {uploadingField === 'background_image_url' ? 'Uploading…' : '↑ Upload image instead'}
+                  </span>
+                </label>
+              </div>
             </div>
           </Section>
 
@@ -926,6 +964,11 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             </div>
           </div>
         </div>
+      )}
+
+      {/* ─── SOCIAL TAB ─── */}
+      {activeTab === 'social' && !isNew && (
+        <SocialTab creatorId={creator.id} />
       )}
     </div>
   )

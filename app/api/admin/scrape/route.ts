@@ -6,54 +6,52 @@ function isAdmin() {
   return cookies().get('admin_auth')?.value === 'true'
 }
 
-// Scrapes public Instagram profile stats for a given username
+// Scrapes public Instagram profile stats via Apify
 async function scrapeInstagram(username: string) {
-  const url = `https://i.instagram.com/api/v1/users/web_profile_info/?username=${username}`
+  const token = process.env.APIFY_API_TOKEN
+  if (!token) throw new Error('APIFY_API_TOKEN is not set')
 
-  const res = await fetch(url, {
-    headers: {
-      'x-ig-app-id': '936619743392459',
-      'User-Agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
-      Accept: '*/*',
-      'Accept-Language': 'en-US,en;q=0.9',
-      Referer: 'https://www.instagram.com/',
-    },
-    cache: 'no-store',
-  })
+  const res = await fetch(
+    `https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=${token}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usernames: [username] }),
+      cache: 'no-store',
+    }
+  )
 
   if (!res.ok) {
-    throw new Error(`Instagram returned ${res.status} for @${username}`)
+    throw new Error(`Apify returned ${res.status} for @${username}`)
   }
 
-  const json = await res.json()
-  const user = json?.data?.user
+  const items = await res.json()
+  const profile = items?.[0]
 
-  if (!user) {
-    throw new Error(`No user data found for @${username}`)
+  if (!profile) {
+    throw new Error(`No data returned from Apify for @${username}`)
   }
 
-  // Pull aggregate stats from recent media (reels + posts)
-  const edges: any[] = user.edge_owner_to_timeline_media?.edges ?? []
+  // Aggregate stats from latest posts
+  const posts: any[] = profile.latestPosts ?? []
   let totalViews = 0
   let totalLikes = 0
   let totalComments = 0
 
-  for (const edge of edges) {
-    const node = edge.node
-    totalViews += node.video_view_count ?? 0
-    totalLikes += node.edge_liked_by?.count ?? 0
-    totalComments += node.edge_media_to_comment?.count ?? 0
+  for (const post of posts) {
+    totalViews += post.videoViewCount ?? 0
+    totalLikes += post.likesCount ?? 0
+    totalComments += post.commentsCount ?? 0
   }
 
   return {
-    followers: user.edge_followed_by?.count ?? null,
-    following: user.edge_follow?.count ?? null,
-    post_count: user.edge_owner_to_timeline_media?.count ?? null,
+    followers: profile.followersCount ?? null,
+    following: profile.followsCount ?? null,
+    post_count: profile.postsCount ?? null,
     total_views: totalViews,
     total_likes: totalLikes,
     total_comments: totalComments,
-    raw_data: user,
+    raw_data: profile,
   }
 }
 
