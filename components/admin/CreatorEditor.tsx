@@ -528,6 +528,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           >
             {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
           </button>
+        </div>
       )}
 
       {/* ─── LINKS SUB-TAB ─── */}
