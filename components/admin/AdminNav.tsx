@@ -11,6 +11,7 @@ export default function AdminNav() {
   const navItems = [
     { href: '/admin', label: 'Dashboard' },
     { href: '/admin/creators', label: 'Creators' },
+    { href: '/admin/domains', label: 'Domains' },
   ]
 
   function cycleTheme() {
@@ -30,7 +31,7 @@ export default function AdminNav() {
                 key={item.href}
                 href={item.href}
                 className={`px-3 py-1 rounded-md text-[13px] transition-colors ${
-                  path === item.href
+                  path === item.href || (item.href !== '/admin' && path.startsWith(item.href))
                     ? 'admin-text'
                     : 'admin-text-muted'
                 }`}
