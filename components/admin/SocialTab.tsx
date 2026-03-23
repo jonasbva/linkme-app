@@ -72,8 +72,8 @@ function PostCard({ post }: { post: any }) {
           <p className="text-white text-[11px] leading-tight line-clamp-2">{post.caption}</p>
         </div>
       )}
-      {/* Stats bar */}
-      <div className="flex items-center justify-between px-3 py-2 bg-black/60 text-[11px] text-white/80 gap-1">
+      {/* Stats bar — always dark bg, always white text */}
+      <div className="flex items-center justify-between px-3 py-2 bg-black/70 text-[11px] text-white gap-1">
         <span className="flex items-center gap-1">▶ {fmt(post.videoViewCount)}</span>
         <span className="flex items-center gap-1">♥ {fmt(post.likesCount)}</span>
         <span className="flex items-center gap-1">💬 {fmt(post.commentsCount)}</span>
