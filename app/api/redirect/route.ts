@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     if (!['http:', 'https:'].includes(parsed.protocol)) {
       return new NextResponse('Invalid URL', { status: 400 })
     }
-  } catch {
+  } catch (_) {
     return new NextResponse('Invalid URL', { status: 400 })
   }
 
