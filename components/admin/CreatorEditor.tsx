@@ -66,7 +66,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const isLight = themeMode === 'light'
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [activeTab, setActiveTab] = useState<'profile' | 'links' | 'analytics' | 'social'>('profile')
+  const [activeTab, setActiveTab] = useState<'edit' | 'analysis' | 'preview'>('edit')
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
@@ -399,23 +399,23 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* Tabs */}
       <div className="flex gap-6 border-b border-white/[0.08] pb-px">
-        {(['profile', 'links', ...(isNew ? [] : ['analytics', 'social'])] as const).map(tab => (
+        {(['edit', ...(isNew ? [] : ['analysis', 'preview'])] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab as any)}
-            className={`pb-2.5 text-[13px] font-medium capitalize transition-colors border-b-2 -mb-px ${
+            className={`pb-2.5 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
               activeTab === tab
                 ? 'text-white border-white'
                 : 'text-white/40 border-transparent hover:text-white/60'
             }`}
           >
-            {tab}
+            {tab === 'edit' ? 'Edit' : tab === 'analysis' ? 'Analysis' : 'Preview LinkMe'}
           </button>
         ))}
       </div>
 
-      {/* ─── PROFILE TAB ─── */}
-      {activeTab === 'profile' && (
+      {/* ─── EDIT TAB (Profile + Links) ─── */}
+      {activeTab === 'edit' && (
         <div className="space-y-3">
           <Section title="General" defaultOpen={true}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -512,10 +512,9 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
           </button>
         </div>
-      )}
 
-      {/* ─── LINKS TAB ─── */}
-      {activeTab === 'links' && (
+        {/* ─── LINKS SECTION (within Edit tab) ─── */}
+        <div className="border-t border-white/[0.08] pt-6 space-y-5">(
         <div className="space-y-5">
           {/* Save bar */}
           <div className="flex items-center justify-between">
@@ -759,10 +758,11 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             <p className="text-white/20 text-[13px]">Save the creator first, then add links.</p>
           )}
         </div>
+      </div>
       )}
 
-      {/* ─── ANALYTICS TAB ─── */}
-      {activeTab === 'analytics' && (
+      {/* ─── ANALYSIS TAB (Analytics + Social) ─── */}
+      {activeTab === 'analysis' && (
         <div className="space-y-6">
           {/* Date range trigger — popup only */}
           <div className="relative inline-block">
@@ -966,9 +966,24 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         </div>
       )}
 
-      {/* ─── SOCIAL TAB ─── */}
-      {activeTab === 'social' && !isNew && (
-        <SocialTab creatorId={creator.id} />
+          {/* Social Media section within Analysis tab */}
+          {!isNew && (
+            <div className="border-t border-white/[0.08] pt-6">
+              <SocialTab creatorId={creator.id} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── PREVIEW LINKME TAB ─── */}
+      {activeTab === 'preview' && !isNew && (
+        <div className="rounded-2xl overflow-hidden border border-white/[0.08]" style={{ height: '75vh' }}>
+          <iframe
+            src={`/${creator.slug}`}
+            className="w-full h-full"
+            title="LinkMe Preview"
+          />
+        </div>
       )}
     </div>
   )

@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase
     .from('social_snapshots')
-    .select('id, scraped_at, followers, following, post_count, total_views, total_likes, total_comments')
+    .select('id, scraped_at, followers, following, post_count, total_views, total_likes, total_comments, raw_data')
     .eq('social_account_id', accountId)
     .order('scraped_at', { ascending: false })
     .limit(limit)
