@@ -31,7 +31,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
       if (saved && ['light', 'dark', 'system'].includes(saved)) {
         setThemeState(saved)
       }
-    } catch {}
+    } catch (_) {}
   }, [])
 
   // Listen to system preference changes
@@ -52,7 +52,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     setThemeState(t)
     try {
       localStorage.setItem('admin-theme', t)
-    } catch {}
+    } catch (_) {}
   }
 
   return (
