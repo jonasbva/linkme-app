@@ -58,16 +58,18 @@ interface Props {
   analytics: any
   rawClicks: any[]
   isNew: boolean
-  defaultTab?: 'edit' | 'analysis'
+  mode?: 'edit' | 'analysis'
 }
 
-export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, rawClicks = [], isNew, defaultTab = 'edit' }: Props) {
+export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, rawClicks = [], isNew, mode = 'edit' }: Props) {
   const router = useRouter()
   const { resolved: themeMode } = useTheme()
   const isLight = themeMode === 'light'
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [activeTab, setActiveTab] = useState<'edit' | 'analysis'>(defaultTab)
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'links' | 'social' | 'analytics'>(
+    mode === 'analysis' ? 'social' : 'profile'
+  )
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
@@ -387,47 +389,50 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             {isNew ? 'New Creator' : creator.display_name}
           </h1>
         </div>
-        {!isNew && (
-          <a
-            href={`/${creator.slug}`}
-            target="_blank"
-            className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
-          >
-            View page →
-          </a>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex items-center gap-6 border-b border-white/[0.08] pb-px">
-        {(['edit', ...(isNew ? [] : ['analysis'])] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab as any)}
-            className={`pb-2.5 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === tab
-                ? 'text-white border-white'
-                : 'text-white/40 border-transparent hover:text-white/60'
-            }`}
-          >
-            {tab === 'edit' ? 'Edit' : 'Analysis'}
-          </button>
-        ))}
-        {!isNew && (
+        {!isNew && mode === 'edit' && (
           <a
             href={creator.custom_domain ? `https://${creator.custom_domain}` : `/${creator.slug}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="pb-2.5 text-[13px] font-medium text-white/40 border-b-2 border-transparent hover:text-white/60 transition-colors -mb-px ml-auto"
+            className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
           >
             Preview ↗
           </a>
         )}
       </div>
 
-      {/* ─── EDIT TAB (Profile + Links) ─── */}
-      {activeTab === 'edit' && (
-        <>
+      {/* Sub-tabs */}
+      <div className="flex items-center gap-6 border-b border-white/[0.08] pb-px">
+        {mode === 'edit' && (['profile', 'links'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveSubTab(tab)}
+            className={`pb-2.5 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
+              activeSubTab === tab
+                ? 'text-white border-white'
+                : 'text-white/40 border-transparent hover:text-white/60'
+            }`}
+          >
+            {tab === 'profile' ? 'Profile' : 'Links'}
+          </button>
+        ))}
+        {mode === 'analysis' && (['social', 'analytics'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveSubTab(tab)}
+            className={`pb-2.5 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
+              activeSubTab === tab
+                ? 'text-white border-white'
+                : 'text-white/40 border-transparent hover:text-white/60'
+            }`}
+          >
+            {tab === 'social' ? 'Social Media' : 'Link Analysis'}
+          </button>
+        ))}
+      </div>
+
+      {/* ─── PROFILE SUB-TAB ─── */}
+      {mode === 'edit' && activeSubTab === 'profile' && (
         <div className="space-y-3">
           <Section title="General" defaultOpen={true}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -523,9 +528,10 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           >
             {saving ? 'Saving…' : isNew ? 'Create' : 'Save changes'}
           </button>
-        </div>
+      )}
 
-        {/* ─── LINKS SECTION (within Edit tab) ─── */}
+      {/* ─── LINKS SUB-TAB ─── */}
+      {mode === 'edit' && activeSubTab === 'links' && (
         <div className="border-t border-white/[0.08] pt-6 space-y-5">
           {/* Save bar */}
           <div className="flex items-center justify-between">
@@ -769,11 +775,10 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             <p className="text-white/20 text-[13px]">Save the creator first, then add links.</p>
           )}
         </div>
-        </>
       )}
 
-      {/* ─── ANALYSIS TAB (Analytics + Social) ─── */}
-      {activeTab === 'analysis' && (
+      {/* ─── LINK ANALYSIS SUB-TAB ─── */}
+      {mode === 'analysis' && activeSubTab === 'analytics' && (
         <div className="space-y-6">
           {/* Date range trigger — popup only */}
           <div className="relative inline-block">
@@ -974,13 +979,12 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               </div>
             </div>
           </div>
-          {/* Social Media section within Analysis tab */}
-          {!isNew && (
-            <div className="border-t border-white/[0.08] pt-6">
-              <SocialTab creatorId={creator.id} />
-            </div>
-          )}
         </div>
+      )}
+
+      {/* ─── SOCIAL MEDIA SUB-TAB ─── */}
+      {mode === 'analysis' && activeSubTab === 'social' && !isNew && (
+        <SocialTab creatorId={creator.id} />
       )}
 
     </div>
