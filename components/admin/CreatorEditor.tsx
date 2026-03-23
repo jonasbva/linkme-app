@@ -642,16 +642,19 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   </div>
                 </div>
 
-                {/* Right: preview (outside the box, matches public page exactly: 500px container - 32px padding = 468px) */}
+                {/* Right: preview — always uses creator's profile settings, never theme */}
                 {link.thumbnail_url && (
                   <div className="shrink-0" style={{ width: 468 }}>
-                    <p className="text-[11px] text-white/30 uppercase tracking-widest font-medium mb-2">Preview</p>
+                    <p style={{ fontSize: 11, color: 'rgba(128,128,128,0.6)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 500, marginBottom: 8 }}>Preview</p>
                     <div
-                      className="rounded-2xl overflow-hidden relative border border-white/[0.08]"
                       style={{
                         height: link.thumbnail_height || 200,
                         width: 468,
                         background: creator.button_color || '#141414',
+                        borderRadius: 16,
+                        overflow: 'hidden',
+                        position: 'relative',
+                        border: '1px solid rgba(128,128,128,0.15)',
                       }}
                     >
                       <img
@@ -676,7 +679,13 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                         alignItems: 'center',
                         gap: 10,
                       }}>
-                        <span className="text-[14px] font-bold text-white flex-1">{link.title}</span>
+                        <span style={{
+                          flex: 1,
+                          fontSize: creator.link_font_size || 14,
+                          fontWeight: 'bold',
+                          color: creator.text_color || '#ffffff',
+                          textAlign: (creator.link_text_align as any) || 'left',
+                        }}>{link.title}</span>
                       </div>
                     </div>
                   </div>
@@ -730,16 +739,19 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 </button>
               </div>
 
-              {/* Right: preview outside box (468px = public page card width) */}
+              {/* Right: preview outside box — always uses creator's profile settings, never theme */}
               {newLink.thumbnail_url && (
                 <div className="shrink-0" style={{ width: 468 }}>
-                  <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-2">Preview</p>
+                  <p style={{ fontSize: 11, color: 'rgba(128,128,128,0.6)', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 500, marginBottom: 8 }}>Preview</p>
                   <div
-                    className="rounded-2xl overflow-hidden relative border border-white/[0.08]"
                     style={{
                       height: newLink.thumbnail_height,
                       width: 468,
                       background: creator.button_color || '#141414',
+                      borderRadius: 16,
+                      overflow: 'hidden',
+                      position: 'relative',
+                      border: '1px solid rgba(128,128,128,0.15)',
                     }}
                   >
                     <img
@@ -764,7 +776,13 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                       alignItems: 'center',
                       gap: 10,
                     }}>
-                      <span className="text-[14px] font-bold text-white flex-1">{newLink.title || 'Link title'}</span>
+                      <span style={{
+                        flex: 1,
+                        fontSize: creator.link_font_size || 14,
+                        fontWeight: 'bold',
+                        color: creator.text_color || '#ffffff',
+                        textAlign: (creator.link_text_align as any) || 'left',
+                      }}>{newLink.title || 'Link title'}</span>
                     </div>
                   </div>
                 </div>
