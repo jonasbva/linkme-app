@@ -514,8 +514,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         </div>
 
         {/* ─── LINKS SECTION (within Edit tab) ─── */}
-        <div className="border-t border-white/[0.08] pt-6 space-y-5">(
-        <div className="space-y-5">
+        <div className="border-t border-white/[0.08] pt-6 space-y-5">
           {/* Save bar */}
           <div className="flex items-center justify-between">
             <span className="text-[12px] text-white/40">
@@ -758,7 +757,6 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             <p className="text-white/20 text-[13px]">Save the creator first, then add links.</p>
           )}
         </div>
-      </div>
       )}
 
       {/* ─── ANALYSIS TAB (Analytics + Social) ─── */}
@@ -977,12 +975,16 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* ─── PREVIEW LINKME TAB ─── */}
       {activeTab === 'preview' && !isNew && (
-        <div className="rounded-2xl overflow-hidden border border-white/[0.08]" style={{ height: '75vh' }}>
-          <iframe
-            src={`/${creator.slug}`}
-            className="w-full h-full"
-            title="LinkMe Preview"
-          />
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <p className="text-white/40 text-[13px]">Opens your public LinkMe page in a new tab.</p>
+          <a
+            href={`/${creator.slug}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-6 py-3 bg-white text-black text-[13px] font-medium rounded-xl hover:bg-white/90 transition-colors"
+          >
+            Open /{creator.slug} →
+          </a>
         </div>
       )}
     </div>
