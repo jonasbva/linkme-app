@@ -963,9 +963,6 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               </div>
             </div>
           </div>
-        </div>
-      )}
-
           {/* Social Media section within Analysis tab */}
           {!isNew && (
             <div className="border-t border-white/[0.08] pt-6">
