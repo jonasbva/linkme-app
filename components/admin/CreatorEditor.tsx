@@ -353,7 +353,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <a href="/admin/creators" className="text-[12px] text-white/25 hover:text-white/50 transition-colors">
+          <a href="/admin/creators" className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
             ← Back
           </a>
           <h1 className="text-xl font-semibold tracking-tight mt-1">
@@ -364,7 +364,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           <a
             href={`/${creator.slug}`}
             target="_blank"
-            className="px-4 py-1.5 text-[12px] text-white/40 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
+            className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
           >
             View page →
           </a>
@@ -372,7 +372,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-6 border-b border-white/[0.04] pb-px">
+      <div className="flex gap-6 border-b border-white/[0.08] pb-px">
         {(['profile', 'links', ...(isNew ? [] : ['analytics'])] as const).map(tab => (
           <button
             key={tab}
@@ -380,7 +380,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             className={`pb-2.5 text-[13px] font-medium capitalize transition-colors border-b-2 -mb-px ${
               activeTab === tab
                 ? 'text-white border-white'
-                : 'text-white/30 border-transparent hover:text-white/50'
+                : 'text-white/40 border-transparent hover:text-white/60'
             }`}
           >
             {tab}
@@ -477,7 +477,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         <div className="space-y-5">
           {/* Save bar */}
           <div className="flex items-center justify-between">
-            <span className="text-[12px] text-white/25">
+            <span className="text-[12px] text-white/40">
               {linkSaveStatus === 'saving' ? 'Saving…' : linkSaveStatus === 'saved' ? '✓ Saved' : `${links.length} link${links.length !== 1 ? 's' : ''}`}
             </span>
             <button
@@ -494,13 +494,13 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             {links.map((link: any, i: number) => (
               <div key={link.id} className="flex gap-5 items-start">
                 {/* Left: settings box (max 50%) */}
-                <div className="w-1/2 max-w-[50%] bg-white/[0.02] border border-white/[0.04] rounded-xl p-5 space-y-3">
+                <div className="w-1/2 max-w-[50%] bg-white/[0.03] border border-white/[0.07] rounded-xl p-5 space-y-3">
                   {/* Link header */}
                   <div className="flex items-center gap-3">
-                    <span className="text-white/15 text-[12px] font-medium w-5 text-center shrink-0">{i + 1}</span>
+                    <span className="text-white/25 text-[12px] font-medium w-5 text-center shrink-0">{i + 1}</span>
                     <div className="flex-1 min-w-0">
                       <p className="text-[13px] font-medium text-white/90 truncate">{link.title}</p>
-                      <p className="text-[11px] text-white/25 truncate mt-0.5">{link.url}</p>
+                      <p className="text-[11px] text-white/35 truncate mt-0.5">{link.url}</p>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
                       <button
@@ -513,7 +513,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                       </button>
                       <button
                         onClick={() => deleteLink(link.id)}
-                        className="text-white/15 hover:text-red-400/70 text-[11px] transition-colors ml-1"
+                        className="text-white/25 hover:text-red-400/70 text-[11px] transition-colors ml-1"
                       >
                         Remove
                       </button>
@@ -523,11 +523,11 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   {/* Settings */}
                   <div className="space-y-2.5 pt-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-white/20 w-14 shrink-0">Icon</span>
+                      <span className="text-[11px] text-white/35 w-14 shrink-0">Icon</span>
                       <select
                         value={link.icon || 'link'}
                         onChange={e => updateLinkField(link.id, 'icon', e.target.value)}
-                        className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
+                        className="flex-1 px-2.5 py-1 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
                       >
                         {ICON_OPTIONS.map(o => (
                           <option key={o} value={o}>{o}</option>
@@ -537,25 +537,25 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
                     {link.icon === 'custom' && (
                       <div className="flex items-center gap-2">
-                        <span className="text-[11px] text-white/20 w-14 shrink-0">Icon URL</span>
+                        <span className="text-[11px] text-white/35 w-14 shrink-0">Icon URL</span>
                         <input
                           type="text"
                           value={link.custom_icon_url || ''}
                           onChange={e => updateLinkField(link.id, 'custom_icon_url', e.target.value)}
                           placeholder="https://..."
-                          className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                          className="flex-1 px-2.5 py-1 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
                         />
                       </div>
                     )}
 
                     <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-white/20 w-14 shrink-0">Image</span>
+                      <span className="text-[11px] text-white/35 w-14 shrink-0">Image</span>
                       <input
                         type="text"
                         value={link.thumbnail_url || ''}
                         onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
                         placeholder="Paste image URL…"
-                        className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                        className="flex-1 px-2.5 py-1 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
                       />
                     </div>
 
@@ -586,9 +586,9 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 {/* Right: preview (outside the box, matches public page exactly: 500px container - 32px padding = 468px) */}
                 {link.thumbnail_url && (
                   <div className="shrink-0" style={{ width: 468 }}>
-                    <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-2">Preview</p>
+                    <p className="text-[11px] text-white/30 uppercase tracking-widest font-medium mb-2">Preview</p>
                     <div
-                      className="rounded-2xl overflow-hidden relative border border-white/[0.06]"
+                      className="rounded-2xl overflow-hidden relative border border-white/[0.08]"
                       style={{
                         height: link.thumbnail_height || 200,
                         width: 468,
@@ -630,8 +630,8 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           {!isNew && (
             <div className="flex gap-5 items-start">
               {/* Left: add form in box (max 50%) */}
-              <div className="w-1/2 max-w-[50%] border border-dashed border-white/[0.06] rounded-xl p-5 space-y-4">
-                <p className="text-[12px] text-white/30 font-medium">Add link</p>
+              <div className="w-1/2 max-w-[50%] border border-dashed border-white/[0.1] rounded-xl p-5 space-y-4">
+                <p className="text-[12px] text-white/40 font-medium">Add link</p>
                 <div className="grid grid-cols-1 gap-3">
                   <Field label="Title" value={newLink.title} onChange={v => setNewLink(p => ({ ...p, title: v }))} placeholder="OnlyFans (free for a short time)" />
                   <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
@@ -648,7 +648,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                       value={newLink.custom_icon_url || ''}
                       onChange={e => setNewLink(p => ({ ...p, custom_icon_url: e.target.value }))}
                       placeholder="https://..."
-                      className="flex-1 px-2.5 py-1 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                      className="flex-1 px-2.5 py-1 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
                     />
                   </div>
                 )}
@@ -676,7 +676,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 <div className="shrink-0" style={{ width: 468 }}>
                   <p className="text-[11px] text-white/20 uppercase tracking-widest font-medium mb-2">Preview</p>
                   <div
-                    className="rounded-2xl overflow-hidden relative border border-white/[0.06]"
+                    className="rounded-2xl overflow-hidden relative border border-white/[0.08]"
                     style={{
                       height: newLink.thumbnail_height,
                       width: 468,
@@ -916,15 +916,15 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 function Section({ title, children, defaultOpen = true }: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   const [open, setOpen] = useState(defaultOpen)
   return (
-    <div className="border border-white/[0.04] rounded-xl overflow-hidden">
+    <div className="border border-white/[0.08] rounded-xl overflow-hidden bg-white/[0.02]">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors"
+        className="w-full flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.04] transition-colors"
       >
-        <span className="text-[11px] text-white/25 uppercase tracking-widest font-medium">{title}</span>
+        <span className="text-[11px] text-white/40 uppercase tracking-widest font-medium">{title}</span>
         <svg
           width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-          className={`text-white/20 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`text-white/30 transition-transform ${open ? 'rotate-180' : ''}`}
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -941,13 +941,13 @@ function Section({ title, children, defaultOpen = true }: { title: string; child
 function Field({ label, value, onChange, placeholder }: { label: string; value?: string; onChange: (v: string) => void; placeholder?: string }) {
   return (
     <div>
-      <label className="text-[11px] text-white/25 mb-1.5 block">{label}</label>
+      <label className="text-[11px] text-white/40 mb-1.5 block">{label}</label>
       <input
         type="text"
         value={value || ''}
         onChange={e => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+        className="w-full px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 placeholder:text-white/20 focus:border-white/20 transition-colors"
       />
     </div>
   )
@@ -956,11 +956,11 @@ function Field({ label, value, onChange, placeholder }: { label: string; value?:
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: string[][] }) {
   return (
     <div>
-      <label className="text-[11px] text-white/25 mb-1.5 block">{label}</label>
+      <label className="text-[11px] text-white/40 mb-1.5 block">{label}</label>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
-        className="w-full px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
+        className="w-full px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 focus:border-white/20 transition-colors"
       >
         {options.map(([val, lbl]) => (
           <option key={val} value={val}>{lbl}</option>
@@ -973,19 +973,19 @@ function SelectField({ label, value, onChange, options }: { label: string; value
 function ColorField({ label, value, onChange }: { label: string; value?: string; onChange: (v: string) => void }) {
   return (
     <div>
-      <label className="text-[11px] text-white/25 mb-1.5 block">{label}</label>
+      <label className="text-[11px] text-white/40 mb-1.5 block">{label}</label>
       <div className="flex gap-2 items-center">
         <input
           type="color"
           value={value || '#000000'}
           onChange={e => onChange(e.target.value)}
-          className="w-8 h-8 rounded-md cursor-pointer bg-transparent border border-white/[0.06] p-0.5"
+          className="w-8 h-8 rounded-md cursor-pointer bg-transparent border border-white/[0.08] p-0.5"
         />
         <input
           type="text"
           value={value || ''}
           onChange={e => onChange(e.target.value)}
-          className="flex-1 px-3 py-1.5 bg-white/[0.03] border border-white/[0.06] rounded-lg text-[12px] text-white/80 focus:border-white/15 transition-colors"
+          className="flex-1 px-3 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 focus:border-white/20 transition-colors"
         />
       </div>
     </div>
@@ -997,7 +997,7 @@ function SliderField({ label, value, min, max, step, suffix, onChange }: {
 }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[11px] text-white/20 w-14 shrink-0">{label}</span>
+      <span className="text-[11px] text-white/35 w-14 shrink-0">{label}</span>
       <input
         type="range"
         min={min}
@@ -1007,7 +1007,7 @@ function SliderField({ label, value, min, max, step, suffix, onChange }: {
         onChange={e => onChange(parseInt(e.target.value))}
         className="flex-1"
       />
-      <span className="text-[11px] text-white/30 w-11 text-right tabular-nums">{value}{suffix}</span>
+      <span className="text-[11px] text-white/40 w-11 text-right tabular-nums">{value}{suffix}</span>
     </div>
   )
 }
@@ -1020,7 +1020,7 @@ function Toggle({ label, checked, onChange }: { label: string; checked?: boolean
           checked ? 'left-[17px] bg-black' : 'left-[2px] bg-white/30'
         }`} />
       </div>
-      <span className="text-[12px] text-white/40 group-hover:text-white/60 transition-colors">{label}</span>
+      <span className="text-[12px] text-white/50 group-hover:text-white/70 transition-colors">{label}</span>
     </button>
   )
 }

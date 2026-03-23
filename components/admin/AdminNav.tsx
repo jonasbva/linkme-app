@@ -12,7 +12,7 @@ export default function AdminNav() {
   ]
 
   return (
-    <nav className="border-b border-white/[0.04] bg-[#0a0a0a]/80 backdrop-blur-xl sticky top-0 z-50">
+    <nav className="border-b border-white/[0.08] bg-[#0a0a0a]/80 backdrop-blur-xl sticky top-0 z-50">
       <div className="max-w-5xl mx-auto px-6 flex items-center justify-between h-12">
         <div className="flex items-center gap-8">
           <span className="font-semibold text-white/90 text-[13px] tracking-tight">LinkMe</span>
@@ -24,7 +24,7 @@ export default function AdminNav() {
                 className={`px-3 py-1 rounded-md text-[13px] transition-colors ${
                   path === item.href
                     ? 'text-white'
-                    : 'text-white/35 hover:text-white/60'
+                    : 'text-white/45 hover:text-white/70'
                 }`}
               >
                 {item.label}
@@ -34,7 +34,7 @@ export default function AdminNav() {
         </div>
         <a
           href="/api/admin/logout"
-          className="text-[12px] text-white/20 hover:text-white/50 transition-colors"
+          className="text-[12px] text-white/30 hover:text-white/60 transition-colors"
         >
           Log out
         </a>
