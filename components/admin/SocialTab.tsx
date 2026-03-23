@@ -44,16 +44,20 @@ function StatPill({ label, value, highlight }: { label: string; value: string; h
   )
 }
 
+function proxy(url: string | undefined) {
+  if (!url) return undefined
+  return `/api/admin/proxy-image?url=${encodeURIComponent(url)}`
+}
+
 function PostCard({ post }: { post: any }) {
   return (
     <div className="relative flex-shrink-0 w-[260px] rounded-xl overflow-hidden bg-white/[0.05] group">
       {post.displayUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={post.displayUrl}
+          src={proxy(post.displayUrl)}
           alt={post.caption?.slice(0, 40) || 'Post'}
           className="w-full h-[320px] object-cover"
-          referrerPolicy="no-referrer"
           onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
       ) : (
@@ -107,10 +111,9 @@ function AccountSection({
           {profilePic ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={profilePic}
+              src={proxy(profilePic)}
               alt={account.username}
               className="w-full h-full object-cover"
-              referrerPolicy="no-referrer"
               onError={e => {
                 const el = e.target as HTMLImageElement
                 el.style.display = 'none'
