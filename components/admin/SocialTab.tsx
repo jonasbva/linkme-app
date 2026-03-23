@@ -50,7 +50,7 @@ function StatPill({ label, value, highlight, isLight }: { label: string; value: 
   )
 }
 
-function PostCard({ post }: { post: any }) {
+function PostCard({ post, isLight }: { post: any; isLight: boolean }) {
   return (
     <div className="relative flex-shrink-0 w-[260px] rounded-xl overflow-hidden bg-black/10 group">
       {post.displayUrl ? (
@@ -66,14 +66,16 @@ function PostCard({ post }: { post: any }) {
           <span className="text-black/20 text-xs">No image</span>
         </div>
       )}
-      {/* Caption overlay */}
+      {/* Caption overlay — text always white so it shows over the image */}
       {post.caption && (
-        <div className="absolute bottom-8 left-0 right-0 bg-gradient-to-t from-black/75 to-transparent px-3 pt-8 pb-2">
-          <p className="text-white text-[11px] leading-tight line-clamp-2">{post.caption}</p>
+        <div className="absolute bottom-8 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 pt-8 pb-2">
+          <p style={{ color: 'white' }} className="text-[11px] leading-tight line-clamp-2">{post.caption}</p>
         </div>
       )}
-      {/* Stats bar — always dark bg, always white text */}
-      <div className="flex items-center justify-between px-3 py-2 bg-black/70 text-[11px] text-white gap-1">
+      {/* Stats bar — responds to theme */}
+      <div className={`flex items-center justify-between px-3 py-2 text-[11px] gap-1 ${
+        isLight ? 'bg-black/[0.06] text-black/60' : 'bg-black/70 text-white'
+      }`}>
         <span className="flex items-center gap-1">▶ {fmt(post.videoViewCount)}</span>
         <span className="flex items-center gap-1">♥ {fmt(post.likesCount)}</span>
         <span className="flex items-center gap-1">💬 {fmt(post.commentsCount)}</span>
@@ -208,7 +210,7 @@ function AccountSection({
               style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
             >
               {posts.map((post: any) => (
-                <PostCard key={post.id} post={post} />
+                <PostCard key={post.id} post={post} isLight={isLight} />
               ))}
             </div>
             <button
