@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts'
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts'
+import { useTheme } from './ThemeProvider'
 
 const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'snapchat', 'youtube', 'reddit', 'twitch', 'telegram', 'discord', 'spotify', 'link', 'custom']
 
@@ -60,6 +61,8 @@ interface Props {
 
 export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, rawClicks = [], isNew }: Props) {
   const router = useRouter()
+  const { resolved: themeMode } = useTheme()
+  const isLight = themeMode === 'light'
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const [activeTab, setActiveTab] = useState<'profile' | 'links' | 'analytics'>('profile')
@@ -227,6 +230,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       dailyData: dailyData.length > 0 ? dailyData : analytics?.dailyData || [],
       countries,
       devices,
+      isSingleDay,
     }
   }, [filteredClicks])
 
@@ -855,12 +859,28 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                     </feMerge>
                   </filter>
                 </defs>
-                <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="date" tick={{ fill: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: isLight ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                  itemStyle={{ color: '#fff' }}
+                  contentStyle={{
+                    background: isLight ? '#fff' : '#111',
+                    border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: 8,
+                    fontSize: 12,
+                    color: isLight ? '#1a1a1a' : '#fff',
+                  }}
+                  itemStyle={{ color: isLight ? '#1a1a1a' : '#fff' }}
+                  labelStyle={{ color: isLight ? 'rgba(0,0,0,0.5)' : 'rgba(255,255,255,0.5)' }}
                 />
+                {/* Current time indicator for single-day view */}
+                {computedAnalytics.isSingleDay && (
+                  <ReferenceLine
+                    x={`${new Date().getHours().toString().padStart(2, '0')}:00`}
+                    stroke={isLight ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)'}
+                    strokeDasharray="4 4"
+                    label={{ value: 'Now', position: 'top', fill: isLight ? 'rgba(0,0,0,0.4)' : 'rgba(255,255,255,0.4)', fontSize: 10 }}
+                  />
+                )}
                 {/* Glow layer */}
                 <Line type="monotone" dataKey="views" stroke="rgba(96,165,250,0.15)" strokeWidth={6} dot={false} filter="url(#glow)" />
                 {/* Main line */}
