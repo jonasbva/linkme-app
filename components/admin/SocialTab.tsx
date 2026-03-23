@@ -46,31 +46,32 @@ function StatPill({ label, value, highlight }: { label: string; value: string; h
 
 function PostCard({ post }: { post: any }) {
   return (
-    <div className="relative flex-shrink-0 w-[160px] rounded-xl overflow-hidden bg-white/[0.05] group">
+    <div className="relative flex-shrink-0 w-[260px] rounded-xl overflow-hidden bg-white/[0.05] group">
       {post.displayUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={post.displayUrl}
           alt={post.caption?.slice(0, 40) || 'Post'}
-          className="w-full h-[200px] object-cover"
+          className="w-full h-[320px] object-cover"
+          referrerPolicy="no-referrer"
           onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
         />
       ) : (
-        <div className="w-full h-[200px] bg-white/[0.05] flex items-center justify-center">
+        <div className="w-full h-[320px] bg-white/[0.05] flex items-center justify-center">
           <span className="text-white/20 text-xs">No image</span>
         </div>
       )}
       {/* Caption overlay */}
       {post.caption && (
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 pt-6 pb-2">
-          <p className="text-white text-[10px] leading-tight line-clamp-2">{post.caption}</p>
+        <div className="absolute bottom-8 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent px-3 pt-8 pb-2">
+          <p className="text-white text-[11px] leading-tight line-clamp-2">{post.caption}</p>
         </div>
       )}
       {/* Stats bar */}
-      <div className="flex items-center justify-between px-2 py-2 bg-black/60 text-[10px] text-white/70 gap-1">
-        <span className="flex items-center gap-0.5">▶ {fmt(post.videoViewCount)}</span>
-        <span className="flex items-center gap-0.5">♥ {fmt(post.likesCount)}</span>
-        <span className="flex items-center gap-0.5">💬 {fmt(post.commentsCount)}</span>
+      <div className="flex items-center justify-between px-3 py-2 bg-black/50 text-[11px] text-white/70 gap-1">
+        <span className="flex items-center gap-1">▶ {fmt(post.videoViewCount)}</span>
+        <span className="flex items-center gap-1">♥ {fmt(post.likesCount)}</span>
+        <span className="flex items-center gap-1">💬 {fmt(post.commentsCount)}</span>
       </div>
     </div>
   )
@@ -94,7 +95,7 @@ function AccountSection({
 
   function scroll(dir: 'left' | 'right') {
     if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: dir === 'right' ? 180 : -180, behavior: 'smooth' })
+      scrollRef.current.scrollBy({ left: dir === 'right' ? 280 : -280, behavior: 'smooth' })
     }
   }
 
@@ -105,7 +106,17 @@ function AccountSection({
         <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10 flex-shrink-0">
           {profilePic ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={profilePic} alt={account.username} className="w-full h-full object-cover" />
+            <img
+              src={profilePic}
+              alt={account.username}
+              className="w-full h-full object-cover"
+              referrerPolicy="no-referrer"
+              onError={e => {
+                const el = e.target as HTMLImageElement
+                el.style.display = 'none'
+                el.parentElement!.innerHTML = account.platform === 'instagram' ? '📸' : '🎵'
+              }}
+            />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white/30 text-lg">
               {account.platform === 'instagram' ? '📸' : '🎵'}
