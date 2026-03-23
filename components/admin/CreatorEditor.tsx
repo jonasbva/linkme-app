@@ -164,8 +164,8 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   }, [rawClicks, dateStart, dateEnd])
 
   const computedAnalytics = useMemo(() => {
-    const totalViews = filteredClicks.length
-    const totalClicks = filteredClicks.filter((c: any) => c.type === 'click').length
+    const totalViews = filteredClicks.filter((c: any) => c.type === 'page_view').length
+    const totalClicks = filteredClicks.filter((c: any) => c.type === 'link_click').length
     const ctr = totalViews > 0 ? (totalClicks / totalViews) * 100 : 0
 
     // Daily chart data
@@ -173,7 +173,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     filteredClicks.forEach((click: any) => {
       const date = new Date(click.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
       const current = dailyMap.get(date) || { views: 0, clicks: 0 }
-      if (click.type === 'click') current.clicks++
+      if (click.type === 'link_click') current.clicks++
       current.views++
       dailyMap.set(date, current)
     })

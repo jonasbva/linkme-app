@@ -139,14 +139,20 @@ export default function CreatorPage({ creator, links }: Props) {
   }
 
   function handleLinkClick(link: Link) {
-    fetch('/api/track', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ creator_id: creator.id, link_id: link.id, type: 'link_click' }),
-    }).catch(() => {})
+    // Use sendBeacon so the request survives page navigation
+    const payload = JSON.stringify({ creator_id: creator.id, link_id: link.id, type: 'link_click' })
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon('/api/track', new Blob([payload], { type: 'application/json' }))
+    } else {
+      fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      }).catch(() => {})
+    }
 
     if (isInAppBrowser()) {
-      // Redirect to bounce page that opens in native browser
       window.location.href = `/api/redirect?url=${encodeURIComponent(link.url)}`
     } else {
       window.open(link.url, '_blank', 'noopener,noreferrer')
