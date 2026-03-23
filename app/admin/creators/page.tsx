@@ -46,17 +46,23 @@ export default async function CreatorsPage() {
                 {creator.is_active ? 'Active' : 'Inactive'}
               </span>
               <Link
-                href={`/admin/creators/${creator.id}`}
+                href={`/admin/creators/${creator.id}?tab=edit`}
                 className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
               >
                 Edit
               </Link>
               <Link
-                href={`/${creator.slug}`}
+                href={`/admin/creators/${creator.id}?tab=analysis`}
+                className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
+              >
+                Analysis
+              </Link>
+              <Link
+                href={creator.custom_domain ? `https://${creator.custom_domain}` : `/${creator.slug}`}
                 target="_blank"
                 className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
               >
-                View
+                Preview ↗
               </Link>
             </div>
           </div>

@@ -4,9 +4,10 @@ import CreatorEditor from '@/components/admin/CreatorEditor'
 
 interface Props {
   params: { id: string }
+  searchParams: { tab?: string }
 }
 
-export default async function EditCreatorPage({ params }: Props) {
+export default async function EditCreatorPage({ params, searchParams }: Props) {
   const isNew = params.id === 'new'
   let creator = null
   let links: any[] = []
@@ -92,5 +93,6 @@ export default async function EditCreatorPage({ params }: Props) {
     }
   }
 
-  return <CreatorEditor creator={creator} links={links} analytics={analytics} rawClicks={rawClicks} isNew={isNew} />
+  const defaultTab = searchParams.tab === 'analysis' ? 'analysis' : 'edit'
+  return <CreatorEditor creator={creator} links={links} analytics={analytics} rawClicks={rawClicks} isNew={isNew} defaultTab={defaultTab} />
 }

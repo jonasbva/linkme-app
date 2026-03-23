@@ -58,15 +58,16 @@ interface Props {
   analytics: any
   rawClicks: any[]
   isNew: boolean
+  defaultTab?: 'edit' | 'analysis'
 }
 
-export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, rawClicks = [], isNew }: Props) {
+export default function CreatorEditor({ creator: initialCreator, links: initialLinks, analytics, rawClicks = [], isNew, defaultTab = 'edit' }: Props) {
   const router = useRouter()
   const { resolved: themeMode } = useTheme()
   const isLight = themeMode === 'light'
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [activeTab, setActiveTab] = useState<'edit' | 'analysis'>('edit')
+  const [activeTab, setActiveTab] = useState<'edit' | 'analysis'>(defaultTab)
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
