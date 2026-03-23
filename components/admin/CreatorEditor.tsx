@@ -842,8 +842,8 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           </div>
 
           {/* Chart */}
-          <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-6">
-            <p className="text-[12px] text-white/25 mb-4">Activity</p>
+          <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-6">
+            <p className="text-[12px] text-white/35 mb-4">Activity</p>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={computedAnalytics.dailyData}>
                 <Defs>
@@ -855,33 +855,33 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                     </feMerge>
                   </Filter>
                 </Defs>
-                <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.15)', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: 'rgba(255,255,255,0.15)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="date" tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: 'rgba(255,255,255,0.25)', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8, fontSize: 12 }}
+                  contentStyle={{ background: '#111', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                   itemStyle={{ color: '#fff' }}
                 />
                 {/* Glow layer */}
-                <Line type="monotone" dataKey="views" stroke="rgba(255,255,255,0.1)" strokeWidth={6} dot={false} filter="url(#glow)" />
+                <Line type="monotone" dataKey="views" stroke="rgba(96,165,250,0.15)" strokeWidth={6} dot={false} filter="url(#glow)" />
                 {/* Main line */}
-                <Line type="monotone" dataKey="views" stroke="rgba(255,255,255,0.8)" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="clicks" stroke="rgba(255,255,255,0.2)" strokeWidth={1.5} dot={false} />
+                <Line type="monotone" dataKey="views" stroke="rgba(96,165,250,0.9)" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="clicks" stroke="rgba(167,139,250,0.5)" strokeWidth={1.5} dot={false} />
               </LineChart>
             </ResponsiveContainer>
           </div>
 
           {/* Countries and Devices */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
-              <p className="text-[12px] text-white/25 mb-3">Countries</p>
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-5">
+              <p className="text-[12px] text-white/35 mb-3">Countries</p>
               <div className="space-y-2">
                 {computedAnalytics.countries.length > 0 ? (
                   computedAnalytics.countries.map(([country, code, count]: [string, string, number]) => (
                     <div key={country} className="flex items-center justify-between">
-                      <span className="text-[13px] text-white/50">
+                      <span className="text-[13px] text-white/60">
                         {countryFlag(code)} {country}
                       </span>
-                      <span className="text-[13px] text-white/80 font-medium">{count.toLocaleString()}</span>
+                      <span className="text-[13px] text-white/85 font-medium">{count.toLocaleString()}</span>
                     </div>
                   ))
                 ) : (
@@ -889,14 +889,14 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 )}
               </div>
             </div>
-            <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
-              <p className="text-[12px] text-white/25 mb-3">Devices</p>
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-5">
+              <p className="text-[12px] text-white/35 mb-3">Devices</p>
               <div className="space-y-2">
                 {Object.entries(computedAnalytics.devices).length > 0 ? (
                   Object.entries(computedAnalytics.devices).map(([device, count]) => (
                     <div key={device} className="flex items-center justify-between">
-                      <span className="text-[13px] text-white/50 capitalize">{device}</span>
-                      <span className="text-[13px] text-white/80 font-medium">{(count as number).toLocaleString()}</span>
+                      <span className="text-[13px] text-white/60 capitalize">{device}</span>
+                      <span className="text-[13px] text-white/85 font-medium">{(count as number).toLocaleString()}</span>
                     </div>
                   ))
                 ) : (
@@ -1027,8 +1027,8 @@ function Toggle({ label, checked, onChange }: { label: string; checked?: boolean
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
-      <p className="text-[11px] text-white/20 mb-1">{label}</p>
+    <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+      <p className="text-[11px] text-white/30 mb-1">{label}</p>
       <p className="text-xl font-semibold text-white/90 tracking-tight">{value}</p>
     </div>
   )
