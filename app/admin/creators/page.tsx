@@ -52,6 +52,12 @@ export default async function CreatorsPage() {
                 Edit
               </Link>
               <Link
+                href={`/admin/creators/${creator.id}/links`}
+                className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
+              >
+                Links
+              </Link>
+              <Link
                 href={`/admin/creators/${creator.id}/analysis`}
                 className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
               >
