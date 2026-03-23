@@ -416,6 +416,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* ─── EDIT TAB (Profile + Links) ─── */}
       {activeTab === 'edit' && (
+        <>
         <div className="space-y-3">
           <Section title="General" defaultOpen={true}>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -757,6 +758,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             <p className="text-white/20 text-[13px]">Save the creator first, then add links.</p>
           )}
         </div>
+        </>
       )}
 
       {/* ─── ANALYSIS TAB (Analytics + Social) ─── */}
