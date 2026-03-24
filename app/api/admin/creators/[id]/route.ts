@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  return cookies().get('admin_auth')?.value === 'true'
-}
+import { getSessionUser } from '@/lib/auth'
 
 export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json()
   const { id, created_at, ...updates } = body
   const supabase = createServerSupabaseClient()
@@ -17,7 +14,8 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const supabase = createServerSupabaseClient()
   await supabase.from('creators').delete().eq('id', params.id)
   return NextResponse.json({ ok: true })

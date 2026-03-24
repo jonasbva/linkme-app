@@ -1,23 +1,19 @@
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import AdminNav from '@/components/admin/AdminNav'
 import ThemeProvider from '@/components/admin/ThemeProvider'
 import ErrorBoundary from '@/components/ErrorBoundary'
+import { getSessionUser } from '@/lib/auth'
 
-function isAuthenticated() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
-
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  if (!isAuthenticated()) {
+export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  const user = await getSessionUser()
+  if (!user) {
     redirect('/login')
   }
 
   return (
     <ThemeProvider>
       <div className="min-h-screen bg-[#060606] text-white">
-        <AdminNav />
+        <AdminNav isSuperAdmin={user.is_super_admin} displayName={user.display_name} />
         <main className="max-w-7xl mx-auto px-6 py-8">
           <ErrorBoundary context="admin">
             {children}

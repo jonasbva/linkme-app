@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
-
-function isAdmin() {
-  return cookies().get('admin_auth')?.value === 'true'
-}
+import { getSessionUser } from '@/lib/auth'
 
 // Use a clean Supabase client for storage (no custom fetch override)
 function createStorageClient() {
@@ -23,7 +19,8 @@ export const maxDuration = 30
 // Accepts multipart form data with a "file" field
 // Returns { url: string } — the public Supabase Storage URL
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
     const formData = await req.formData()

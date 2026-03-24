@@ -4,7 +4,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useTheme } from './ThemeProvider'
 
-export default function AdminNav() {
+interface AdminNavProps {
+  isSuperAdmin?: boolean
+  displayName?: string
+}
+
+export default function AdminNav({ isSuperAdmin, displayName }: AdminNavProps) {
   const path = usePathname()
   const { theme, setTheme, resolved } = useTheme()
   const isLight = resolved === 'light'
@@ -14,6 +19,10 @@ export default function AdminNav() {
     { href: '/admin/creators', label: 'Creators' },
     { href: '/admin/conversions', label: 'Conversions' },
     { href: '/admin/domains', label: 'Domains' },
+    ...(isSuperAdmin ? [
+      { href: '/admin/team', label: 'Team' },
+      { href: '/admin/roles', label: 'Roles' },
+    ] : []),
   ]
 
   function isActive(item: { href: string; exact?: boolean }) {
@@ -90,6 +99,11 @@ export default function AdminNav() {
             )}
             <span>{theme === 'system' ? 'System' : theme === 'light' ? 'Light' : 'Dark'}</span>
           </button>
+          {displayName && (
+            <span className={`text-[12px] px-2 ${isLight ? 'text-black/30' : 'text-white/25'}`}>
+              {displayName}
+            </span>
+          )}
           <a
             href="/api/admin/logout"
             className={`px-2.5 py-1.5 rounded-lg text-[12px] transition-all duration-150 ${

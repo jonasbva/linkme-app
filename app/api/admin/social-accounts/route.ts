@@ -1,14 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  return cookies().get('admin_auth')?.value === 'true'
-}
+import { getSessionUser } from '@/lib/auth'
 
 // GET /api/admin/social-accounts?creator_id=xxx
 export async function GET(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const creatorId = req.nextUrl.searchParams.get('creator_id')
   if (!creatorId) return NextResponse.json({ error: 'creator_id required' }, { status: 400 })
 
@@ -25,7 +22,8 @@ export async function GET(req: NextRequest) {
 
 // POST /api/admin/social-accounts — add a social account to track
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { creator_id, platform, username } = await req.json()
 
   if (!creator_id || !platform || !username) {
@@ -45,7 +43,8 @@ export async function POST(req: NextRequest) {
 
 // DELETE /api/admin/social-accounts?id=xxx
 export async function DELETE(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const id = req.nextUrl.searchParams.get('id')
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 })
 

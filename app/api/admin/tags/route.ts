@@ -1,14 +1,11 @@
-import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  return cookies().get('admin_auth')?.value === 'true'
-}
+import { getSessionUser } from '@/lib/auth'
 
 // GET /api/admin/tags — list all tags, optionally with creator assignments
 export async function GET() {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase.from('tags').select('*').order('name')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -17,7 +14,8 @@ export async function GET() {
 
 // POST /api/admin/tags — create tag, assign/unassign tag, update tag, delete tag
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const supabase = createServerSupabaseClient()
   const body = await req.json()
 

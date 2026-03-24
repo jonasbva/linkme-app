@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  return cookies().get('admin_auth')?.value === 'true'
-}
+import { getSessionUser } from '@/lib/auth'
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string; linkId: string } }) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json()
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase.from('links').update(body).eq('id', params.linkId).select().single()
@@ -16,7 +13,8 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: { id: string; linkId: string } }) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const supabase = createServerSupabaseClient()
   const { error } = await supabase.from('links').delete().eq('id', params.linkId)
   if (error) {

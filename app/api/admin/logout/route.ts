@@ -1,7 +1,9 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
-export async function GET() {
-  const res = NextResponse.redirect(new URL('/admin/login', 'http://localhost'))
+export async function GET(req: NextRequest) {
+  const url = new URL('/login', req.url)
+  const res = NextResponse.redirect(url)
   res.cookies.delete('admin_auth')
+  res.cookies.delete('admin_session')
   return res
 }

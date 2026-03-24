@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 
@@ -29,6 +29,7 @@ interface Props {
   weeklyPageViews: number
   topCountries: [string, number][]
   tags: Tag[]
+  isSuperAdmin?: boolean
 }
 
 export default function DashboardClient({
@@ -38,12 +39,58 @@ export default function DashboardClient({
   weeklyPageViews,
   topCountries,
   tags,
+  isSuperAdmin,
 }: Props) {
   const router = useRouter()
   const [creators, setCreators] = useState(initialStats)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [filterTag, setFilterTag] = useState<string>('all')
   const [search, setSearch] = useState('')
+
+  // Scrape all state
+  const [scraping, setScraping] = useState(false)
+  const [scrapeProgress, setScrapeProgress] = useState<{ index: number; total: number; username: string } | null>(null)
+  const [scrapeResult, setScrapeResult] = useState<{ success: number; errors: number; total: number } | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  async function scrapeAll() {
+    setScraping(true)
+    setScrapeProgress(null)
+    setScrapeResult(null)
+    const controller = new AbortController()
+    abortRef.current = controller
+
+    try {
+      const res = await fetch('/api/admin/scrape-all', { method: 'POST', signal: controller.signal })
+      const reader = res.body?.getReader()
+      if (!reader) return
+      const decoder = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.type === 'progress') setScrapeProgress({ index: data.index, total: data.total, username: data.username })
+            if (data.type === 'calculating') setScrapeProgress(prev => prev ? { ...prev, username: 'Calculating conversions...' } : null)
+            if (data.type === 'done') {
+              setScrapeResult({ success: data.success, errors: data.errors, total: data.total })
+              setScrapeProgress(null)
+            }
+          } catch {}
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') setScrapeResult({ success: 0, errors: 1, total: 0 })
+    }
+    setScraping(false)
+  }
 
   const filtered = useMemo(() => {
     let list = creators
@@ -77,12 +124,50 @@ export default function DashboardClient({
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight">Dashboard</h1>
-        <Link
-          href="/admin/creators/new"
-          className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors"
-        >
-          Add creator
-        </Link>
+        <div className="flex items-center gap-3">
+          {/* Scrape all button — super admin only */}
+          {isSuperAdmin && <button
+            onClick={scrapeAll}
+            disabled={scraping}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 ${
+              scraping
+                ? 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                : scrapeResult
+                  ? scrapeResult.errors > 0
+                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                    : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                  : 'bg-white/[0.04] text-white/50 border border-white/[0.08] hover:text-white/80 hover:bg-white/[0.06] hover:border-white/[0.12]'
+            }`}
+          >
+            {scraping ? (
+              <>
+                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83" opacity="0.3" />
+                  <path d="M12 2v4" />
+                </svg>
+                {scrapeProgress
+                  ? `Scraping ${scrapeProgress.index}/${scrapeProgress.total} — @${scrapeProgress.username}`
+                  : 'Starting...'
+                }
+              </>
+            ) : scrapeResult ? (
+              `${scrapeResult.success}/${scrapeResult.total} scraped${scrapeResult.errors > 0 ? ` (${scrapeResult.errors} failed)` : ''}`
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Scrape all accounts
+              </>
+            )}
+          </button>}
+          {isSuperAdmin && <Link
+            href="/admin/creators/new"
+            className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors"
+          >
+            Add creator
+          </Link>}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -170,13 +255,13 @@ export default function DashboardClient({
                     <p className="text-[13px] text-white/60 tabular-nums">{c.totalViews.toLocaleString()}</p>
                     <p className="text-[11px] text-white/20">views</p>
                   </div>
-                  <button
+                  {isSuperAdmin && <button
                     onClick={(e) => { e.preventDefault(); deleteCreator(c.id, c.display_name) }}
                     disabled={deleting === c.id}
                     className="px-2 py-1 text-[11px] text-red-400/60 hover:text-red-400 hover:bg-red-500/10 rounded transition-colors opacity-0 group-hover:opacity-100"
                   >
                     {deleting === c.id ? '...' : 'Delete'}
-                  </button>
+                  </button>}
                 </div>
               </div>
             )

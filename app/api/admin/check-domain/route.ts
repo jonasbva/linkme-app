@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
-
-function isAdmin() {
-  return cookies().get('admin_auth')?.value === 'true'
-}
+import { getSessionUser } from '@/lib/auth'
 
 // Vercel custom domains should CNAME to cname.vercel-dns.com
 const VERCEL_CNAME_TARGET = 'cname.vercel-dns.com'
 
 export async function GET(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const domain = req.nextUrl.searchParams.get('domain')
   if (!domain) return NextResponse.json({ error: 'Missing domain' }, { status: 400 })

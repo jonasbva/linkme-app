@@ -1,7 +1,8 @@
 import { createServerSupabaseClient } from '@/lib/supabase'
 import DashboardClient from '@/components/admin/DashboardClient'
+import { getSessionUser, getUserPermissions } from '@/lib/auth'
 
-async function getDashboardStats() {
+async function getDashboardStats(visibleCreatorIds?: string[]) {
   const supabase = createServerSupabaseClient()
   const [creatorsRes, clicksRes, tagsRes, creatorTagsRes] = await Promise.all([
     supabase.from('creators').select('id, slug, display_name, avatar_url, is_active'),
@@ -9,8 +10,12 @@ async function getDashboardStats() {
     supabase.from('tags').select('*').order('name'),
     supabase.from('creator_tags').select('creator_id, tag_id'),
   ])
-  const creators = creatorsRes.data || []
-  const clicks = clicksRes.data || []
+  let creators = creatorsRes.data || []
+  // Filter by visibility if not super admin
+  if (visibleCreatorIds) {
+    creators = creators.filter(c => visibleCreatorIds.includes(c.id))
+  }
+  const clicks = (clicksRes.data || []).filter(c => !visibleCreatorIds || creators.some(cr => cr.id === c.creator_id))
   const tags = tagsRes.data || []
   const creatorTags = creatorTagsRes.data || []
   const now = new Date()
@@ -37,6 +42,12 @@ async function getDashboardStats() {
 }
 
 export default async function AdminDashboard() {
-  const data = await getDashboardStats()
-  return <DashboardClient {...data} />
+  const user = await getSessionUser()
+  let visibleCreatorIds: string[] | undefined
+  if (user && !user.is_super_admin) {
+    const { visibleCreatorIds: ids } = await getUserPermissions(user.id)
+    visibleCreatorIds = ids
+  }
+  const data = await getDashboardStats(visibleCreatorIds)
+  return <DashboardClient {...data} isSuperAdmin={user?.is_super_admin} />
 }

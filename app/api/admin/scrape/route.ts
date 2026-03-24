@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  return cookies().get('admin_auth')?.value === 'true'
-}
+import { getSessionUser } from '@/lib/auth'
 
 // Scrapes public Instagram profile stats via Apify
 async function scrapeInstagram(username: string) {
@@ -59,7 +55,8 @@ async function scrapeInstagram(username: string) {
 // Body: { social_account_id: string } — scrapes that account and saves a snapshot
 // Or:   { creator_id: string }        — scrapes ALL active accounts for that creator
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
   const supabase = createServerSupabaseClient()
@@ -138,7 +135,8 @@ export async function POST(req: NextRequest) {
 // GET /api/admin/scrape?social_account_id=xxx&limit=30
 // Returns snapshot history for a social account
 export async function GET(req: NextRequest) {
-  if (!isAdmin()) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const user = await getSessionUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const accountId = req.nextUrl.searchParams.get('social_account_id')
   const limit = parseInt(req.nextUrl.searchParams.get('limit') ?? '30')
