@@ -58,11 +58,13 @@ export default function RolesClient() {
           fetch('/api/admin/creators'),
         ])
 
-        if (rolesRes.ok && creatorsRes.ok) {
+        if (rolesRes.ok) {
           const rolesData = await rolesRes.json()
+          setRoles(Array.isArray(rolesData) ? rolesData : [])
+        }
+        if (creatorsRes.ok) {
           const creatorsData = await creatorsRes.json()
-          setRoles(rolesData)
-          setCreators(creatorsData)
+          setCreators(Array.isArray(creatorsData) ? creatorsData : [])
         }
       } catch (error) {
         console.error('Failed to fetch data:', error)

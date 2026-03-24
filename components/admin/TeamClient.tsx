@@ -85,17 +85,18 @@ export default function TeamClient() {
         fetch('/api/admin/creators'),
       ])
 
-      if (!usersRes.ok || !rolesRes.ok || !creatorsRes.ok) {
-        throw new Error('Failed to fetch data')
+      if (usersRes.ok) {
+        const usersData = await usersRes.json()
+        setUsers(Array.isArray(usersData) ? usersData : [])
       }
-
-      const usersData = await usersRes.json()
-      const rolesData = await rolesRes.json()
-      const creatorsData = await creatorsRes.json()
-
-      setUsers(usersData)
-      setRoles(rolesData)
-      setCreators(creatorsData)
+      if (rolesRes.ok) {
+        const rolesData = await rolesRes.json()
+        setRoles(Array.isArray(rolesData) ? rolesData : [])
+      }
+      if (creatorsRes.ok) {
+        const creatorsData = await creatorsRes.json()
+        setCreators(Array.isArray(creatorsData) ? creatorsData : [])
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data')
     } finally {
