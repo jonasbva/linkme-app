@@ -18,7 +18,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <ThemeProvider>
       <div className="min-h-screen bg-[#060606] text-white">
         <AdminNav />
-        <main className="max-w-7xl mx-auto px-6 py-10">
+        <main className="max-w-7xl mx-auto px-6 py-8">
           <ErrorBoundary context="admin">
             {children}
           </ErrorBoundary>

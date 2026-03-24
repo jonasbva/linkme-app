@@ -116,7 +116,7 @@ export default function CreatorsListClient({ creators: initial, tags }: Props) {
           return (
             <div
               key={creator.id}
-              className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] group"
+              className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.03] transition-all duration-150 group"
             >
               <div className="flex items-center gap-3 min-w-0">
                 {creator.avatar_url ? (
@@ -150,20 +150,20 @@ export default function CreatorsListClient({ creators: initial, tags }: Props) {
                 </span>
                 <Link
                   href={`/admin/creators/${creator.id}/edit`}
-                  className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
+                  className="px-3 py-1 text-[12px] text-white/35 border border-white/[0.06] rounded-lg hover:bg-white/[0.06] hover:text-white/70 hover:border-white/[0.1] transition-all duration-150"
                 >
                   Edit
                 </Link>
                 <Link
                   href={`/admin/creators/${creator.id}/analysis`}
-                  className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
+                  className="px-3 py-1 text-[12px] text-white/35 border border-white/[0.06] rounded-lg hover:bg-white/[0.06] hover:text-white/70 hover:border-white/[0.1] transition-all duration-150"
                 >
                   Analysis
                 </Link>
                 <Link
                   href={creator.custom_domain ? `https://${creator.custom_domain}` : `/${creator.slug}`}
                   target="_blank"
-                  className="px-3 py-1 text-[12px] text-white/30 border border-white/[0.06] rounded-lg hover:bg-white/[0.03] transition-colors"
+                  className="px-3 py-1 text-[12px] text-white/35 border border-white/[0.06] rounded-lg hover:bg-white/[0.06] hover:text-white/70 hover:border-white/[0.1] transition-all duration-150"
                 >
                   Preview
                 </Link>
