@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS admin_roles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT UNIQUE NOT NULL,
   description TEXT DEFAULT '',
+  grant_all_creators BOOLEAN DEFAULT false,
+  all_creators_permissions TEXT[] DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT now(),
   updated_at TIMESTAMPTZ DEFAULT now()
 );

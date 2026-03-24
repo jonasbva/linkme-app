@@ -116,13 +116,13 @@ export default function CreatorsListClient({ creators: initial, tags }: Props) {
           return (
             <div
               key={creator.id}
-              className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.03] transition-all duration-150 group"
+              className="flex items-center justify-between p-4 rounded-xl bg-white/[0.05] border border-white/[0.08] hover:border-white/[0.12] hover:bg-white/[0.07] transition-all duration-150 group"
             >
               <div className="flex items-center gap-3 min-w-0">
                 {creator.avatar_url ? (
                   <img src={creator.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover" />
                 ) : (
-                  <div className="w-10 h-10 rounded-full bg-white/[0.04] flex items-center justify-center text-[13px] font-medium text-white/25">
+                  <div className="w-10 h-10 rounded-full bg-white/[0.08] flex items-center justify-center text-[13px] font-medium text-white/40">
                     {creator.display_name.charAt(0)}
                   </div>
                 )}
@@ -139,7 +139,7 @@ export default function CreatorsListClient({ creators: initial, tags }: Props) {
                       </span>
                     ))}
                   </div>
-                  <p className="text-[12px] text-white/25">/{creator.slug}</p>
+                  <p className="text-[12px] text-white/40">/{creator.slug}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -179,7 +179,7 @@ export default function CreatorsListClient({ creators: initial, tags }: Props) {
           )
         })}
         {filtered.length === 0 && (
-          <div className="text-center py-12 text-white/20 text-[13px]">
+          <div className="text-center py-12 text-white/35 text-[13px]">
             {search || filterTag !== 'all' ? 'No creators match your filter' : 'No creators yet'}
           </div>
         )}

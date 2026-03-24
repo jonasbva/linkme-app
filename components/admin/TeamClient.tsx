@@ -218,13 +218,13 @@ export default function TeamClient() {
   }
 
   // Style helpers
-  const bgCard = isLight ? 'bg-black/[0.02] border border-black/[0.06]' : 'bg-white/[0.02] border border-white/[0.04]'
-  const textPrimary = isLight ? 'text-black/90' : 'text-white/90'
-  const textSecondary = isLight ? 'text-black/50' : 'text-white/50'
-  const textTertiary = isLight ? 'text-black/25' : 'text-white/25'
-  const inputBg = isLight ? 'bg-black/[0.03] border border-black/[0.08]' : 'bg-white/[0.04] border border-white/[0.08]'
-  const inputFocus = isLight ? 'focus:border-black/20' : 'focus:border-white/20'
-  const modalBg = isLight ? '#f8f8f8' : '#111'
+  const bgCard = isLight ? 'bg-black/[0.02] border border-black/[0.06]' : 'bg-white/[0.05] border border-white/[0.08]'
+  const textPrimary = isLight ? 'text-black/90' : 'text-white/95'
+  const textSecondary = isLight ? 'text-black/50' : 'text-white/60'
+  const textTertiary = isLight ? 'text-black/25' : 'text-white/40'
+  const inputBg = isLight ? 'bg-black/[0.03] border border-black/[0.08]' : 'bg-white/[0.06] border border-white/[0.10]'
+  const inputFocus = isLight ? 'focus:border-black/20' : 'focus:border-white/25'
+  const modalBg = isLight ? '#f8f8f8' : '#1a1a1a'
 
   if (loading) {
     return (
@@ -300,7 +300,7 @@ export default function TeamClient() {
                 <button
                   onClick={() => openEditModal(user)}
                   className={`px-3 py-1.5 text-[11px] font-medium rounded-lg transition-colors ${
-                    isLight ? 'text-black/60 hover:text-black/80 hover:bg-black/5' : 'text-white/60 hover:text-white/80 hover:bg-white/5'
+                    isLight ? 'text-black/60 hover:text-black/80 hover:bg-black/5' : 'text-white/60 hover:text-white/80 hover:bg-white/[0.08]'
                   }`}
                 >
                   Edit
@@ -357,7 +357,7 @@ export default function TeamClient() {
                 />
               </div>
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={closeModal} className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/5'}`}>
+                <button type="button" onClick={closeModal} className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/[0.08]'}`}>
                   Cancel
                 </button>
                 <button type="submit" disabled={submitting} className="flex-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-50">
@@ -427,7 +427,7 @@ export default function TeamClient() {
                     type="button"
                     onClick={handleResetPassword}
                     className={`w-full px-3 py-2 text-[12px] font-medium rounded-lg transition-colors ${
-                      isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/5'
+                      isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/[0.08]'
                     }`}
                   >
                     Reset password
@@ -467,7 +467,7 @@ export default function TeamClient() {
               )}
 
               <div className="flex gap-3 pt-2">
-                <button type="button" onClick={closeModal} className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/5'}`}>
+                <button type="button" onClick={closeModal} className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/[0.08]'}`}>
                   Cancel
                 </button>
                 <button type="submit" disabled={submitting} className="flex-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-50">

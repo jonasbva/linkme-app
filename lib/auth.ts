@@ -78,6 +78,8 @@ export type PermissionType = 'view_links' | 'view_social' | 'view_conversions' |
 export async function getUserPermissions(userId: string): Promise<{
   visibleCreatorIds: string[]
   permissions: Record<string, Set<PermissionType>>
+  grantAllCreators: boolean
+  allCreatorsPermissions: Set<PermissionType>
 }> {
   const supabase = createServerSupabaseClient()
 
@@ -90,8 +92,24 @@ export async function getUserPermissions(userId: string): Promise<{
   const roleIds = (userRoles || []).map(r => r.role_id)
 
   if (roleIds.length === 0) {
-    return { visibleCreatorIds: [], permissions: {} }
+    return { visibleCreatorIds: [], permissions: {}, grantAllCreators: false, allCreatorsPermissions: new Set() }
   }
+
+  // Check if any role has grant_all_creators
+  const { data: roles } = await supabase
+    .from('admin_roles')
+    .select('id, grant_all_creators, all_creators_permissions')
+    .in('id', roleIds)
+
+  let grantAllCreators = false
+  const allCreatorsPermissions = new Set<PermissionType>()
+
+  ;(roles || []).forEach(r => {
+    if (r.grant_all_creators) {
+      grantAllCreators = true
+      ;(r.all_creators_permissions || []).forEach((p: string) => allCreatorsPermissions.add(p as PermissionType))
+    }
+  })
 
   // Get creator visibility from roles only
   const creatorIds = new Set<string>()
@@ -119,5 +137,7 @@ export async function getUserPermissions(userId: string): Promise<{
   return {
     visibleCreatorIds: Array.from(creatorIds),
     permissions,
+    grantAllCreators,
+    allCreatorsPermissions,
   }
 }

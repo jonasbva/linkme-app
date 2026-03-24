@@ -81,8 +81,11 @@ export default async function AdminDashboard() {
   const user = await getSessionUser()
   let visibleCreatorIds: string[] | undefined
   if (user && !user.is_super_admin) {
-    const { visibleCreatorIds: ids } = await getUserPermissions(user.id)
-    visibleCreatorIds = ids
+    const { visibleCreatorIds: ids, grantAllCreators } = await getUserPermissions(user.id)
+    // If any role grants all creators, don't filter
+    if (!grantAllCreators) {
+      visibleCreatorIds = ids
+    }
   }
   const data = await getDashboardStats(visibleCreatorIds)
   return <DashboardClient {...data} isSuperAdmin={user?.is_super_admin} />

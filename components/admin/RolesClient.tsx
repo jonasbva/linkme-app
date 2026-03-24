@@ -18,6 +18,8 @@ interface Role {
   id: string
   name: string
   description: string
+  grant_all_creators: boolean
+  all_creators_permissions: string[]
   creator_access: string[]
   permissions: Permission[]
 }
@@ -45,6 +47,8 @@ export default function RolesClient() {
 
   const [createForm, setCreateForm] = useState({ name: '', description: '' })
   const [editForm, setEditForm] = useState({ name: '', description: '' })
+  const [grantAllCreators, setGrantAllCreators] = useState(false)
+  const [allCreatorsPerms, setAllCreatorsPerms] = useState<Set<string>>(new Set())
   const [selectedCreators, setSelectedCreators] = useState<Set<string>>(new Set())
   const [permissions, setPermissions] = useState<Map<string, Set<string>>>(new Map())
 
@@ -105,6 +109,8 @@ export default function RolesClient() {
     setEditingRole(role)
     setEditForm({ name: role.name, description: role.description })
     setSelectedCreators(new Set(role.creator_access))
+    setGrantAllCreators(role.grant_all_creators || false)
+    setAllCreatorsPerms(new Set(role.all_creators_permissions || []))
 
     // Initialize permissions map
     const permMap = new Map<string, Set<string>>()
@@ -117,6 +123,16 @@ export default function RolesClient() {
     setPermissions(permMap)
 
     setShowEditModal(true)
+  }
+
+  const handleToggleAllCreatorsPerm = (permKey: string) => {
+    const newPerms = new Set(allCreatorsPerms)
+    if (newPerms.has(permKey)) {
+      newPerms.delete(permKey)
+    } else {
+      newPerms.add(permKey)
+    }
+    setAllCreatorsPerms(newPerms)
   }
 
   const handleToggleCreator = (creatorId: string) => {
@@ -157,7 +173,7 @@ export default function RolesClient() {
     if (!editingRole || !editForm.name.trim()) return
 
     try {
-      // 1. Update basic role info
+      // 1. Update basic role info + grant_all_creators settings
       await fetch('/api/admin/roles', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -166,6 +182,8 @@ export default function RolesClient() {
           role_id: editingRole.id,
           name: editForm.name,
           description: editForm.description,
+          grant_all_creators: grantAllCreators,
+          all_creators_permissions: Array.from(allCreatorsPerms),
         }),
       })
 
@@ -232,7 +250,7 @@ export default function RolesClient() {
 
   if (loading) {
     return (
-      <div className={`p-6 ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+      <div className={`p-6 ${isLight ? 'text-black/60' : 'text-white/70'}`}>
         Loading roles...
       </div>
     )
@@ -245,7 +263,7 @@ export default function RolesClient() {
         <h1 className={`text-2xl font-bold mb-2 ${isLight ? 'text-black/90' : 'text-white/90'}`}>
           Roles Management
         </h1>
-        <p className={`text-[13px] ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+        <p className={`text-[13px] ${isLight ? 'text-black/50' : 'text-white/60'}`}>
           Manage roles and their permissions for creators
         </p>
       </div>
@@ -265,15 +283,15 @@ export default function RolesClient() {
         {roles.map((role) => (
           <div
             key={role.id}
-            className={`${isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.02] border-white/[0.04]'} border rounded-xl p-4`}
+            className={`${isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.05] border-white/[0.08]'} border rounded-xl p-4`}
           >
             <div className="flex items-start justify-between mb-3">
               <div className="flex-1">
-                <h3 className={`text-[13px] font-semibold ${isLight ? 'text-black/90' : 'text-white/90'}`}>
+                <h3 className={`text-[13px] font-semibold ${isLight ? 'text-black/90' : 'text-white/95'}`}>
                   {role.name}
                 </h3>
                 {role.description && (
-                  <p className={`text-[12px] mt-1 ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                  <p className={`text-[12px] mt-1 ${isLight ? 'text-black/50' : 'text-white/60'}`}>
                     {role.description}
                   </p>
                 )}
@@ -284,7 +302,7 @@ export default function RolesClient() {
                   className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition ${
                     isLight
                       ? 'bg-black/5 text-black/70 hover:bg-black/10'
-                      : 'bg-white/5 text-white/70 hover:bg-white/10'
+                      : 'bg-white/[0.08] text-white/80 hover:bg-white/[0.12]'
                   }`}
                 >
                   Edit
@@ -294,7 +312,7 @@ export default function RolesClient() {
                   className={`px-3 py-1.5 rounded-lg text-[12px] font-medium transition ${
                     isLight
                       ? 'bg-red-500/10 text-red-600 hover:bg-red-500/20'
-                      : 'bg-red-500/10 text-red-400 hover:bg-red-500/20'
+                      : 'bg-red-500/15 text-red-400 hover:bg-red-500/25'
                   }`}
                 >
                   Delete
@@ -305,15 +323,21 @@ export default function RolesClient() {
             {/* Stats */}
             <div className="flex gap-6 text-[12px]">
               <div>
-                <span className={isLight ? 'text-black/50' : 'text-white/50'}>Creators: </span>
-                <span className={`font-semibold ${isLight ? 'text-black/70' : 'text-white/70'}`}>
-                  {role.creator_access.length}
-                </span>
+                <span className={isLight ? 'text-black/50' : 'text-white/60'}>Creators: </span>
+                {role.grant_all_creators ? (
+                  <span className="font-semibold text-emerald-500">All creators</span>
+                ) : (
+                  <span className={`font-semibold ${isLight ? 'text-black/70' : 'text-white/80'}`}>
+                    {role.creator_access.length}
+                  </span>
+                )}
               </div>
               <div>
-                <span className={isLight ? 'text-black/50' : 'text-white/50'}>Permissions: </span>
-                <span className={`font-semibold ${isLight ? 'text-black/70' : 'text-white/70'}`}>
-                  {role.permissions.length}
+                <span className={isLight ? 'text-black/50' : 'text-white/60'}>Permissions: </span>
+                <span className={`font-semibold ${isLight ? 'text-black/70' : 'text-white/80'}`}>
+                  {role.grant_all_creators
+                    ? (role.all_creators_permissions || []).length
+                    : role.permissions.length}
                 </span>
               </div>
             </div>
@@ -322,9 +346,9 @@ export default function RolesClient() {
 
         {roles.length === 0 && (
           <div
-            className={`${isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.02] border-white/[0.04]'} border rounded-xl p-8 text-center`}
+            className={`${isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.05] border-white/[0.08]'} border rounded-xl p-8 text-center`}
           >
-            <p className={isLight ? 'text-black/50' : 'text-white/50'}>No roles created yet</p>
+            <p className={isLight ? 'text-black/50' : 'text-white/60'}>No roles created yet</p>
           </div>
         )}
       </div>
@@ -333,15 +357,15 @@ export default function RolesClient() {
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div
-            className={`${isLight ? 'bg-white border-black/[0.08]' : 'bg-[#111] border-white/[0.08]'} border rounded-2xl p-6 w-full max-w-lg`}
+            className={`${isLight ? 'bg-white border-black/[0.08]' : 'bg-[#1a1a1a] border-white/[0.10]'} border rounded-2xl p-6 w-full max-w-lg`}
           >
-            <h2 className={`text-lg font-bold mb-4 ${isLight ? 'text-black/90' : 'text-white/90'}`}>
+            <h2 className={`text-lg font-bold mb-4 ${isLight ? 'text-black/90' : 'text-white/95'}`}>
               Create New Role
             </h2>
 
             <div className="space-y-4 mb-6">
               <div>
-                <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+                <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/80'}`}>
                   Role Name
                 </label>
                 <input
@@ -352,13 +376,13 @@ export default function RolesClient() {
                   className={`w-full px-3 py-2 rounded-lg text-[13px] border transition ${
                     isLight
                       ? 'bg-black/[0.03] border-black/[0.08] text-black/90 placeholder-black/40'
-                      : 'bg-white/[0.04] border-white/[0.08] text-white/90 placeholder-white/40'
+                      : 'bg-white/[0.06] border-white/[0.10] text-white/95 placeholder-white/40'
                   } focus:outline-none focus:ring-2 focus:ring-white/20`}
                 />
               </div>
 
               <div>
-                <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+                <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/80'}`}>
                   Description
                 </label>
                 <textarea
@@ -368,7 +392,7 @@ export default function RolesClient() {
                   className={`w-full px-3 py-2 rounded-lg text-[13px] border transition resize-none ${
                     isLight
                       ? 'bg-black/[0.03] border-black/[0.08] text-black/90 placeholder-black/40'
-                      : 'bg-white/[0.04] border-white/[0.08] text-white/90 placeholder-white/40'
+                      : 'bg-white/[0.06] border-white/[0.10] text-white/95 placeholder-white/40'
                   } focus:outline-none focus:ring-2 focus:ring-white/20`}
                   rows={3}
                 />
@@ -384,7 +408,7 @@ export default function RolesClient() {
                 className={`flex-1 px-4 py-2 rounded-lg text-[13px] font-medium transition ${
                   isLight
                     ? 'bg-black/5 text-black/70 hover:bg-black/10'
-                    : 'bg-white/5 text-white/70 hover:bg-white/10'
+                    : 'bg-white/[0.08] text-white/80 hover:bg-white/[0.12]'
                 }`}
               >
                 Cancel
@@ -405,21 +429,21 @@ export default function RolesClient() {
       {showEditModal && editingRole && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div
-            className={`${isLight ? 'bg-white border-black/[0.08]' : 'bg-[#111] border-white/[0.08]'} border rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto`}
+            className={`${isLight ? 'bg-white border-black/[0.08]' : 'bg-[#1a1a1a] border-white/[0.10]'} border rounded-2xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto`}
           >
-            <h2 className={`text-lg font-bold mb-6 ${isLight ? 'text-black/90' : 'text-white/90'}`}>
+            <h2 className={`text-lg font-bold mb-6 ${isLight ? 'text-black/90' : 'text-white/95'}`}>
               Edit Role
             </h2>
 
             {/* Section 1: Basic Info */}
-            <div className="mb-8 pb-8 border-b border-white/[0.08]">
-              <h3 className={`text-[13px] font-semibold mb-4 ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+            <div className={`mb-8 pb-8 border-b ${isLight ? 'border-black/[0.08]' : 'border-white/[0.10]'}`}>
+              <h3 className={`text-[13px] font-semibold mb-4 ${isLight ? 'text-black/70' : 'text-white/80'}`}>
                 Basic Information
               </h3>
 
               <div className="space-y-4">
                 <div>
-                  <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+                  <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/80'}`}>
                     Role Name
                   </label>
                   <input
@@ -429,13 +453,13 @@ export default function RolesClient() {
                     className={`w-full px-3 py-2 rounded-lg text-[13px] border transition ${
                       isLight
                         ? 'bg-black/[0.03] border-black/[0.08] text-black/90 placeholder-black/40'
-                        : 'bg-white/[0.04] border-white/[0.08] text-white/90 placeholder-white/40'
+                        : 'bg-white/[0.06] border-white/[0.10] text-white/95 placeholder-white/40'
                     } focus:outline-none focus:ring-2 focus:ring-white/20`}
                   />
                 </div>
 
                 <div>
-                  <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+                  <label className={`block text-[12px] font-medium mb-2 ${isLight ? 'text-black/70' : 'text-white/80'}`}>
                     Description
                   </label>
                   <textarea
@@ -444,7 +468,7 @@ export default function RolesClient() {
                     className={`w-full px-3 py-2 rounded-lg text-[13px] border transition resize-none ${
                       isLight
                         ? 'bg-black/[0.03] border-black/[0.08] text-black/90 placeholder-black/40'
-                        : 'bg-white/[0.04] border-white/[0.08] text-white/90 placeholder-white/40'
+                        : 'bg-white/[0.06] border-white/[0.10] text-white/95 placeholder-white/40'
                     } focus:outline-none focus:ring-2 focus:ring-white/20`}
                     rows={3}
                   />
@@ -453,44 +477,106 @@ export default function RolesClient() {
             </div>
 
             {/* Section 2: Creator Access */}
-            <div className="mb-8 pb-8 border-b border-white/[0.08]">
-              <h3 className={`text-[13px] font-semibold mb-4 ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+            <div className={`mb-8 pb-8 border-b ${isLight ? 'border-black/[0.08]' : 'border-white/[0.10]'}`}>
+              <h3 className={`text-[13px] font-semibold mb-4 ${isLight ? 'text-black/70' : 'text-white/80'}`}>
                 Creator Access
               </h3>
 
-              <div className="space-y-2">
-                {creators.map((creator) => (
-                  <label
-                    key={creator.id}
-                    className={`flex items-center p-3 rounded-lg cursor-pointer transition ${
-                      isLight
-                        ? 'bg-black/[0.03] hover:bg-black/[0.05]'
-                        : 'bg-white/[0.03] hover:bg-white/[0.05]'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selectedCreators.has(creator.id)}
-                      onChange={() => handleToggleCreator(creator.id)}
-                      className="mr-3 w-4 h-4 cursor-pointer"
-                    />
-                    <div>
-                      <div className={`text-[13px] font-medium ${isLight ? 'text-black/90' : 'text-white/90'}`}>
-                        {creator.display_name}
+              {/* For All Creators Toggle */}
+              <label
+                className={`flex items-center p-3 rounded-lg cursor-pointer transition mb-4 ${
+                  grantAllCreators
+                    ? isLight ? 'bg-emerald-50 border border-emerald-200' : 'bg-emerald-500/10 border border-emerald-500/20'
+                    : isLight ? 'bg-black/[0.03] hover:bg-black/[0.05]' : 'bg-white/[0.05] hover:bg-white/[0.08]'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={grantAllCreators}
+                  onChange={() => setGrantAllCreators(!grantAllCreators)}
+                  className="mr-3 w-4 h-4 cursor-pointer"
+                />
+                <div>
+                  <div className={`text-[13px] font-medium ${isLight ? 'text-black/90' : 'text-white/95'}`}>
+                    Apply to all creators
+                  </div>
+                  <div className={`text-[12px] ${isLight ? 'text-black/50' : 'text-white/60'}`}>
+                    Permissions apply to all current and future creators automatically
+                  </div>
+                </div>
+              </label>
+
+              {/* All Creators Permissions */}
+              {grantAllCreators && (
+                <div className={`p-4 rounded-lg mb-4 ${
+                  isLight
+                    ? 'bg-emerald-50/50 border border-emerald-200/50'
+                    : 'bg-emerald-500/5 border border-emerald-500/15'
+                }`}>
+                  <div className={`text-[13px] font-semibold mb-3 ${isLight ? 'text-black/90' : 'text-white/95'}`}>
+                    Permissions for all creators
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {PERMISSION_TYPES.map((perm) => (
+                      <label
+                        key={perm.key}
+                        className={`flex items-center p-2 rounded-lg cursor-pointer transition ${
+                          isLight
+                            ? 'bg-black/[0.03] hover:bg-black/[0.05]'
+                            : 'bg-white/[0.06] hover:bg-white/[0.10]'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={allCreatorsPerms.has(perm.key)}
+                          onChange={() => handleToggleAllCreatorsPerm(perm.key)}
+                          className="mr-2 w-4 h-4 cursor-pointer"
+                        />
+                        <span className={`text-[12px] ${isLight ? 'text-black/80' : 'text-white/90'}`}>
+                          {perm.label}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Individual Creator Checkboxes (hidden when grant_all_creators is on) */}
+              {!grantAllCreators && (
+                <div className="space-y-2">
+                  {creators.map((creator) => (
+                    <label
+                      key={creator.id}
+                      className={`flex items-center p-3 rounded-lg cursor-pointer transition ${
+                        isLight
+                          ? 'bg-black/[0.03] hover:bg-black/[0.05]'
+                          : 'bg-white/[0.05] hover:bg-white/[0.08]'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCreators.has(creator.id)}
+                        onChange={() => handleToggleCreator(creator.id)}
+                        className="mr-3 w-4 h-4 cursor-pointer"
+                      />
+                      <div>
+                        <div className={`text-[13px] font-medium ${isLight ? 'text-black/90' : 'text-white/95'}`}>
+                          {creator.display_name}
+                        </div>
+                        <div className={`text-[12px] ${isLight ? 'text-black/50' : 'text-white/60'}`}>
+                          @{creator.slug}
+                        </div>
                       </div>
-                      <div className={`text-[12px] ${isLight ? 'text-black/50' : 'text-white/50'}`}>
-                        @{creator.slug}
-                      </div>
-                    </div>
-                  </label>
-                ))}
-              </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
-            {/* Section 3: Permissions */}
-            {selectedCreators.size > 0 && (
+            {/* Section 3: Permissions Per Creator (only when not using grant_all_creators) */}
+            {!grantAllCreators && selectedCreators.size > 0 && (
               <div className="mb-8">
-                <h3 className={`text-[13px] font-semibold mb-4 ${isLight ? 'text-black/70' : 'text-white/70'}`}>
+                <h3 className={`text-[13px] font-semibold mb-4 ${isLight ? 'text-black/70' : 'text-white/80'}`}>
                   Permissions Per Creator
                 </h3>
 
@@ -507,10 +593,10 @@ export default function RolesClient() {
                         className={`p-4 rounded-lg ${
                           isLight
                             ? 'bg-black/[0.03] border border-black/[0.06]'
-                            : 'bg-white/[0.03] border border-white/[0.06]'
+                            : 'bg-white/[0.05] border border-white/[0.08]'
                         }`}
                       >
-                        <div className={`text-[13px] font-semibold mb-3 ${isLight ? 'text-black/90' : 'text-white/90'}`}>
+                        <div className={`text-[13px] font-semibold mb-3 ${isLight ? 'text-black/90' : 'text-white/95'}`}>
                           {creator.display_name}
                         </div>
 
@@ -521,7 +607,7 @@ export default function RolesClient() {
                               className={`flex items-center p-2 rounded-lg cursor-pointer transition ${
                                 isLight
                                   ? 'bg-black/[0.03] hover:bg-black/[0.05]'
-                                  : 'bg-white/[0.03] hover:bg-white/[0.05]'
+                                  : 'bg-white/[0.06] hover:bg-white/[0.10]'
                               }`}
                             >
                               <input
@@ -530,7 +616,7 @@ export default function RolesClient() {
                                 onChange={() => handleTogglePermission(creatorId, perm.key)}
                                 className="mr-2 w-4 h-4 cursor-pointer"
                               />
-                              <span className={`text-[12px] ${isLight ? 'text-black/80' : 'text-white/80'}`}>
+                              <span className={`text-[12px] ${isLight ? 'text-black/80' : 'text-white/90'}`}>
                                 {perm.label}
                               </span>
                             </label>
@@ -553,7 +639,7 @@ export default function RolesClient() {
                 className={`flex-1 px-4 py-2 rounded-lg text-[13px] font-medium transition ${
                   isLight
                     ? 'bg-black/5 text-black/70 hover:bg-black/10'
-                    : 'bg-white/5 text-white/70 hover:bg-white/10'
+                    : 'bg-white/[0.08] text-white/80 hover:bg-white/[0.12]'
                 }`}
               >
                 Cancel

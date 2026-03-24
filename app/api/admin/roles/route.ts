@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
 
     // ── update_role ──
     if (action === 'update_role') {
-      const { role_id, name, description } = body
+      const { role_id, name, description, grant_all_creators, all_creators_permissions } = body
 
       if (!role_id) {
         return NextResponse.json({ error: 'role_id is required' }, { status: 400 })
@@ -99,6 +99,8 @@ export async function POST(req: NextRequest) {
       const updates: any = {}
       if (name !== undefined) updates.name = name.trim()
       if (description !== undefined) updates.description = description ? description.trim() : null
+      if (grant_all_creators !== undefined) updates.grant_all_creators = grant_all_creators
+      if (all_creators_permissions !== undefined) updates.all_creators_permissions = all_creators_permissions
 
       const { data, error } = await supabase
         .from('admin_roles')

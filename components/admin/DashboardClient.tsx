@@ -230,13 +230,13 @@ export default function DashboardClient({
             return (
               <div
                 key={c.id}
-                className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.03] transition-all duration-150 group"
+                className="flex items-center justify-between p-4 rounded-xl bg-white/[0.05] border border-white/[0.08] hover:border-white/[0.12] hover:bg-white/[0.07] transition-all duration-150 group"
               >
                 <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 flex-1 min-w-0">
                   {c.avatar_url ? (
                     <img src={c.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
-                    <div className="w-8 h-8 rounded-full bg-white/[0.04] flex items-center justify-center text-[12px] font-medium text-white/25">
+                    <div className="w-8 h-8 rounded-full bg-white/[0.08] flex items-center justify-center text-[12px] font-medium text-white/40">
                       {c.display_name.charAt(0)}
                     </div>
                   )}
@@ -253,7 +253,7 @@ export default function DashboardClient({
                         </span>
                       ))}
                     </div>
-                    <p className="text-[11px] text-white/25">/{c.slug}</p>
+                    <p className="text-[11px] text-white/40">/{c.slug}</p>
                   </div>
                 </Link>
                 <div className="flex items-center gap-3">
@@ -279,23 +279,23 @@ export default function DashboardClient({
             )
           })}
           {filtered.length === 0 && (
-            <p className="text-white/20 text-[13px] text-center py-8">
+            <p className="text-white/35 text-[13px] text-center py-8">
               {search || filterTag !== 'all' ? 'No creators match your filter' : 'No creators yet'}
             </p>
           )}
         </div>
 
         <div className="space-y-5">
-          <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
-            <p className="text-[12px] text-white/25 mb-4">Top countries</p>
+          <div className="bg-white/[0.05] border border-white/[0.08] rounded-xl p-5">
+            <p className="text-[12px] text-white/40 mb-4">Top countries</p>
             <div className="space-y-2.5">
               {topCountries.map(([country, count]) => (
                 <div key={country} className="flex items-center justify-between">
-                  <span className="text-[13px] text-white/50">{country}</span>
+                  <span className="text-[13px] text-white/60">{country}</span>
                   <span className="text-[13px] text-white/80 font-medium tabular-nums">{count.toLocaleString()}</span>
                 </div>
               ))}
-              {topCountries.length === 0 && <p className="text-white/15 text-[12px]">No data yet</p>}
+              {topCountries.length === 0 && <p className="text-white/30 text-[12px]">No data yet</p>}
             </div>
           </div>
 
@@ -307,9 +307,9 @@ export default function DashboardClient({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
-      <p className="text-[11px] text-white/20 mb-1">{label}</p>
-      <p className="text-xl font-semibold text-white/90 tracking-tight">{value}</p>
+    <div className="bg-white/[0.05] border border-white/[0.08] rounded-xl p-4">
+      <p className="text-[11px] text-white/40 mb-1">{label}</p>
+      <p className="text-xl font-semibold text-white/95 tracking-tight">{value}</p>
     </div>
   )
 }
