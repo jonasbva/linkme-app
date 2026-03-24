@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
 
 /**
  * Bounce page for in-app browsers.
@@ -6,6 +7,22 @@ import { NextRequest, NextResponse } from 'next/server'
  * On iOS: can't escape programmatically — shows a prompt to open in Safari.
  */
 export async function GET(req: NextRequest) {
+  // Rate limit: 30 requests per minute per IP
+  const ip = getClientIp(req.headers)
+  const { success, reset } = await rateLimit(ip, 'redirect', {
+    max: 30,
+    windowSeconds: 60,
+  })
+
+  if (!success) {
+    return new NextResponse('Too many requests. Please try again shortly.', {
+      status: 429,
+      headers: {
+        'Retry-After': String(reset - Math.floor(Date.now() / 1000)),
+      },
+    })
+  }
+
   const url = req.nextUrl.searchParams.get('url')
 
   if (!url) {

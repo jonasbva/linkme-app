@@ -85,3 +85,23 @@ export interface SocialSnapshot {
   total_comments?: number
   raw_data?: Record<string, unknown>
 }
+
+export interface ConversionExpectation {
+  id: string
+  creator_id: string
+  daily_sub_target: number
+  created_at: string
+  updated_at: string
+}
+
+export interface ConversionDaily {
+  id: string
+  creator_id: string
+  date: string
+  views: number
+  profile_views: number
+  link_clicks: number
+  new_subs: number
+  created_at: string
+  updated_at: string
+}

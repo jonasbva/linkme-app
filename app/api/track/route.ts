@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { rateLimit, getClientIp } from '@/lib/rate-limit'
+import { logError, errorToEntry } from '@/lib/error-logging'
 
 // Free IP geolocation — no API key needed, 45k reqs/month free
 async function getGeoData(ip: string) {
@@ -31,18 +33,32 @@ function getDeviceType(userAgent: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: 30 requests per minute per IP
+    const ip = getClientIp(req.headers)
+    const { success, remaining, reset } = await rateLimit(ip, 'track', {
+      max: 30,
+      windowSeconds: 60,
+    })
+
+    if (!success) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        {
+          status: 429,
+          headers: {
+            'Retry-After': String(reset - Math.floor(Date.now() / 1000)),
+            'X-RateLimit-Remaining': '0',
+          },
+        }
+      )
+    }
+
     const body = await req.json()
     const { creator_id, link_id, type } = body
 
     if (!creator_id || !type) {
       return NextResponse.json({ error: 'Missing fields' }, { status: 400 })
     }
-
-    // Get real IP (Vercel sets x-real-ip or x-forwarded-for)
-    const ip =
-      req.headers.get('x-real-ip') ||
-      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-      '127.0.0.1'
 
     const userAgent = req.headers.get('user-agent') || ''
     const referrer = req.headers.get('referer') || ''
@@ -62,6 +78,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('Track error:', err)
+    logError(errorToEntry(err, 'api/track', req))
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
   }
 }

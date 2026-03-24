@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import CreatorPage from '@/components/CreatorPage'
+import ErrorBoundary from '@/components/ErrorBoundary'
 import type { Metadata } from 'next'
 
 // Always fetch fresh data — don't cache this page
@@ -54,5 +55,9 @@ export default async function CreatorSlugPage({ params }: Props) {
     return true
   })
 
-  return <CreatorPage creator={creator} links={links} />
+  return (
+    <ErrorBoundary context="creator-page">
+      <CreatorPage creator={creator} links={links} />
+    </ErrorBoundary>
+  )
 }
