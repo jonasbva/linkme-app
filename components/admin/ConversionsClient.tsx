@@ -112,6 +112,7 @@ function ExpectationsTab({
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
 
   const expectationMap = useMemo(() => {
     const map: Record<string, number> = {}
@@ -161,19 +162,32 @@ function ExpectationsTab({
     }
   }
 
-  // Sort: creators with expectations first (by target desc), then others
+  // Sort: creators with expectations first (by target desc), then others, filtered by search
   const sorted = useMemo(() => {
-    return [...creators].sort((a, b) => {
+    let list = [...creators]
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(c => c.display_name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q))
+    }
+    return list.sort((a, b) => {
       const aTarget = expectationMap[a.id] || 0
       const bTarget = expectationMap[b.id] || 0
       if (aTarget && !bTarget) return -1
       if (!aTarget && bTarget) return 1
       return bTarget - aTarget
     })
-  }, [creators, expectationMap])
+  }, [creators, expectationMap, search])
 
   return (
-    <div className="rounded-xl border border-white/[0.06] overflow-hidden">
+    <div className="space-y-3">
+      <input
+        type="text"
+        placeholder="Search creators..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white/80 placeholder-white/25 outline-none focus:border-white/20 w-48"
+      />
+      <div className="rounded-xl border border-white/[0.06] overflow-hidden">
       <table className="w-full">
         <thead>
           <tr className="border-b border-white/[0.06]">
@@ -268,6 +282,7 @@ function ExpectationsTab({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
@@ -296,6 +311,7 @@ function DailyInputTab({
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [search, setSearch] = useState('')
 
   const expectationMap = useMemo(() => {
     const map: Record<string, number> = {}
@@ -312,16 +328,21 @@ function DailyInputTab({
     setSaved(false)
   }, [date, dailyData])
 
-  // Sort: creators with expectations first
+  // Sort: creators with expectations first, filtered by search
   const sorted = useMemo(() => {
-    return [...creators].sort((a, b) => {
+    let list = [...creators]
+    if (search.trim()) {
+      const q = search.toLowerCase()
+      list = list.filter(c => c.display_name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q))
+    }
+    return list.sort((a, b) => {
       const aTarget = expectationMap[a.id] || 0
       const bTarget = expectationMap[b.id] || 0
       if (aTarget && !bTarget) return -1
       if (!aTarget && bTarget) return 1
       return bTarget - aTarget
     })
-  }, [creators, expectationMap])
+  }, [creators, expectationMap, search])
 
   async function saveAll() {
     setSaving(true)
@@ -359,8 +380,15 @@ function DailyInputTab({
 
   return (
     <div className="space-y-4">
-      {/* Date selector */}
-      <div className="flex items-center gap-4">
+      {/* Date selector + search */}
+      <div className="flex items-center gap-4 flex-wrap">
+        <input
+          type="text"
+          placeholder="Search creators..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white/80 placeholder-white/25 outline-none focus:border-white/20 w-48"
+        />
         <label className="text-[12px] text-white/40">Date:</label>
         <input
           type="date"
@@ -536,7 +564,11 @@ function ConversionTableTab({
     })
     if (res.ok) {
       const [updated] = await res.json()
-      setDailyData((prev: DailyRow[]) => prev.map(d => (d.creator_id === creatorId && d.date === date) ? updated : d))
+      setDailyData((prev: DailyRow[]) => {
+        const idx = prev.findIndex(d => d.creator_id === creatorId && d.date === date)
+        if (idx >= 0) return prev.map(d => (d.creator_id === creatorId && d.date === date) ? updated : d)
+        return [updated, ...prev]
+      })
     }
     setEditingCell(null)
   }

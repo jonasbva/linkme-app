@@ -51,8 +51,12 @@ function StatPill({ label, value, highlight, isLight }: { label: string; value: 
 }
 
 function PostCard({ post, isLight }: { post: any; isLight: boolean }) {
-  return (
-    <div className="relative flex-shrink-0 w-[260px] rounded-xl overflow-hidden bg-black/10 group">
+  const igUrl = post.shortCode
+    ? `https://www.instagram.com/reel/${post.shortCode}/`
+    : post.url || null
+
+  const card = (
+    <div className={`relative flex-shrink-0 w-[260px] rounded-xl overflow-hidden bg-black/10 group ${igUrl ? 'cursor-pointer' : ''}`}>
       {post.displayUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -82,6 +86,15 @@ function PostCard({ post, isLight }: { post: any; isLight: boolean }) {
       </div>
     </div>
   )
+
+  if (igUrl) {
+    return (
+      <a href={igUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0">
+        {card}
+      </a>
+    )
+  }
+  return card
 }
 
 function AccountSection({

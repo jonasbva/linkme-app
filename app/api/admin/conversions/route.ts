@@ -62,11 +62,28 @@ export async function POST(req: NextRequest) {
 
   if (body.action === 'set_daily_subs') {
     // Batch upsert daily subs for multiple creators on a given date
+    // Preserve existing views/clicks data for each row
     const { date, entries } = body as { date: string; entries: { creator_id: string; new_subs: number }[] }
+
+    const creatorIds = entries.map(e => e.creator_id)
+    const { data: existingRows } = await supabase
+      .from('conversion_daily')
+      .select('creator_id, views, profile_views, link_clicks')
+      .eq('date', date)
+      .in('creator_id', creatorIds)
+
+    const existingMap: Record<string, { views: number; profile_views: number; link_clicks: number }> = {}
+    ;(existingRows || []).forEach((r: any) => {
+      existingMap[r.creator_id] = { views: r.views, profile_views: r.profile_views, link_clicks: r.link_clicks }
+    })
+
     const upserts = entries.map((e: any) => ({
       creator_id: e.creator_id,
       date,
       new_subs: e.new_subs,
+      views: existingMap[e.creator_id]?.views ?? 0,
+      profile_views: existingMap[e.creator_id]?.profile_views ?? 0,
+      link_clicks: existingMap[e.creator_id]?.link_clicks ?? 0,
       updated_at: new Date().toISOString(),
     }))
     const { data, error } = await supabase
@@ -78,12 +95,29 @@ export async function POST(req: NextRequest) {
   }
 
   if (body.action === 'update_subs') {
-    // Update subs for a single row in the table
+    // Update subs for a single row in the table — preserve existing views/clicks data
     const { creator_id, date, new_subs } = body
+
+    // Check if row exists to preserve other fields
+    const { data: existing } = await supabase
+      .from('conversion_daily')
+      .select('views, profile_views, link_clicks')
+      .eq('creator_id', creator_id)
+      .eq('date', date)
+      .single()
+
     const { data, error } = await supabase
       .from('conversion_daily')
       .upsert(
-        { creator_id, date, new_subs, updated_at: new Date().toISOString() },
+        {
+          creator_id,
+          date,
+          new_subs,
+          views: existing?.views ?? 0,
+          profile_views: existing?.profile_views ?? 0,
+          link_clicks: existing?.link_clicks ?? 0,
+          updated_at: new Date().toISOString(),
+        },
         { onConflict: 'creator_id,date' }
       )
       .select()
