@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { createServerSupabaseClient } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 function isAdmin() {
   return cookies().get('admin_auth')?.value === 'true'
+}
+
+// Use a clean Supabase client for storage (no custom fetch override)
+function createStorageClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { auth: { persistSession: false } }
+  )
 }
 
 // POST /api/admin/upload
@@ -24,9 +33,9 @@ export async function POST(req: NextRequest) {
   const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`
 
   const arrayBuffer = await file.arrayBuffer()
-  const buffer = Buffer.from(arrayBuffer)
+  const buffer = new Uint8Array(arrayBuffer)
 
-  const supabase = createServerSupabaseClient()
+  const supabase = createStorageClient()
 
   const { error } = await supabase.storage
     .from(bucket)

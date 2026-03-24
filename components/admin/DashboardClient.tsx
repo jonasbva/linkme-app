@@ -141,7 +141,7 @@ export default function DashboardClient({
                 key={c.id}
                 className="flex items-center justify-between p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] hover:border-white/[0.08] transition-colors group"
               >
-                <Link href={`/admin/creators/${c.id}`} className="flex items-center gap-3 flex-1 min-w-0">
+                <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 flex-1 min-w-0">
                   {c.avatar_url ? (
                     <img src={c.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />
                   ) : (
