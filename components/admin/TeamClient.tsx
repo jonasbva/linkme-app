@@ -8,9 +8,8 @@ interface AdminUser {
   email: string
   display_name: string
   is_active: boolean
+  is_super_admin?: boolean
   roles?: Role[]
-  creator_access?: Creator[]
-  permissions?: Permission[]
 }
 
 interface Role {
@@ -18,84 +17,47 @@ interface Role {
   name: string
 }
 
-interface Creator {
-  id: string
-  display_name: string
-}
-
-interface Permission {
-  creator_id: string
-  types: string[]
-}
-
-const PERMISSION_TYPES = [
-  'view_links',
-  'view_social',
-  'view_conversions',
-  'edit_settings',
-  'edit_links',
-  'input_conversions',
-  'edit_social',
-]
-
 export default function TeamClient() {
   const { resolved: theme } = useTheme()
   const isLight = theme === 'light'
 
   const [users, setUsers] = useState<AdminUser[]>([])
   const [roles, setRoles] = useState<Role[]>([])
-  const [creators, setCreators] = useState<Creator[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [editTab, setEditTab] = useState<'basic' | 'roles' | 'creators' | 'permissions'>('basic')
+  const [editTab, setEditTab] = useState<'basic' | 'roles'>('basic')
 
-  const [formData, setFormData] = useState({
-    email: '',
-    display_name: '',
-    password: '',
-  })
-
+  const [formData, setFormData] = useState({ email: '', display_name: '', password: '' })
   const [editFormData, setEditFormData] = useState({
     email: '',
     display_name: '',
     is_active: true,
     roles: [] as string[],
-    creator_ids: [] as string[],
-    permissions: [] as Permission[],
   })
 
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
 
-  // Fetch data on mount
-  useEffect(() => {
-    fetchData()
-  }, [])
+  useEffect(() => { fetchData() }, [])
 
   async function fetchData() {
     try {
       setLoading(true)
-      const [usersRes, rolesRes, creatorsRes] = await Promise.all([
+      const [usersRes, rolesRes] = await Promise.all([
         fetch('/api/admin/team'),
         fetch('/api/admin/roles'),
-        fetch('/api/admin/creators'),
       ])
-
       if (usersRes.ok) {
-        const usersData = await usersRes.json()
-        setUsers(Array.isArray(usersData) ? usersData : [])
+        const d = await usersRes.json()
+        setUsers(Array.isArray(d) ? d : [])
       }
       if (rolesRes.ok) {
-        const rolesData = await rolesRes.json()
-        setRoles(Array.isArray(rolesData) ? rolesData : [])
-      }
-      if (creatorsRes.ok) {
-        const creatorsData = await creatorsRes.json()
-        setCreators(Array.isArray(creatorsData) ? creatorsData : [])
+        const d = await rolesRes.json()
+        setRoles(Array.isArray(d) ? d : [])
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data')
@@ -109,11 +71,6 @@ export default function TeamClient() {
     setShowCreateModal(true)
   }
 
-  function closeCreateModal() {
-    setShowCreateModal(false)
-    setFormData({ email: '', display_name: '', password: '' })
-  }
-
   function openEditModal(user: AdminUser) {
     setEditingUser(user)
     setEditFormData({
@@ -121,14 +78,13 @@ export default function TeamClient() {
       display_name: user.display_name,
       is_active: user.is_active,
       roles: user.roles?.map(r => r.id) || [],
-      creator_ids: user.creator_access?.map(c => c.id) || [],
-      permissions: user.permissions || [],
     })
     setEditTab('basic')
     setShowEditModal(true)
   }
 
-  function closeEditModal() {
+  function closeModal() {
+    setShowCreateModal(false)
     setShowEditModal(false)
     setEditingUser(null)
   }
@@ -139,27 +95,19 @@ export default function TeamClient() {
       setError('All fields are required')
       return
     }
-
     setSubmitting(true)
     try {
       const res = await fetch('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'create_user',
-          email: formData.email,
-          display_name: formData.display_name,
-          password: formData.password,
-        }),
+        body: JSON.stringify({ action: 'create_user', ...formData }),
       })
-
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Failed to create user')
       }
-
       await fetchData()
-      closeCreateModal()
+      closeModal()
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create user')
@@ -168,13 +116,13 @@ export default function TeamClient() {
     }
   }
 
-  async function handleUpdateUser(e: React.FormEvent) {
+  async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault()
     if (!editingUser) return
-
     setSubmitting(true)
     try {
-      const res = await fetch('/api/admin/team', {
+      // Save basic info
+      const basicRes = await fetch('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -185,62 +133,13 @@ export default function TeamClient() {
           is_active: editFormData.is_active,
         }),
       })
-
-      if (!res.ok) {
-        const err = await res.json()
+      if (!basicRes.ok) {
+        const err = await basicRes.json()
         throw new Error(err.error || 'Failed to update user')
       }
 
-      await fetchData()
-      closeEditModal()
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update user')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleResetPassword(e: React.FormEvent) {
-    e.preventDefault()
-    if (!editingUser) return
-
-    const password = prompt('Enter new password:')
-    if (!password) return
-
-    setSubmitting(true)
-    try {
-      const res = await fetch('/api/admin/team', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'update_user',
-          user_id: editingUser.id,
-          password,
-        }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to reset password')
-      }
-
-      setError(null)
-      alert('Password reset successfully')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to reset password')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleSetRoles(e: React.FormEvent) {
-    e.preventDefault()
-    if (!editingUser) return
-
-    setSubmitting(true)
-    try {
-      const res = await fetch('/api/admin/team', {
+      // Save roles
+      const rolesRes = await fetch('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -249,103 +148,57 @@ export default function TeamClient() {
           role_ids: editFormData.roles,
         }),
       })
-
-      if (!res.ok) {
-        const err = await res.json()
+      if (!rolesRes.ok) {
+        const err = await rolesRes.json()
         throw new Error(err.error || 'Failed to set roles')
       }
 
       await fetchData()
-      closeEditModal()
+      closeModal()
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set roles')
+      setError(err instanceof Error ? err.message : 'Failed to save')
     } finally {
       setSubmitting(false)
     }
   }
 
-  async function handleSetCreatorAccess(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleResetPassword() {
     if (!editingUser) return
-
+    const password = prompt('Enter new password:')
+    if (!password) return
     setSubmitting(true)
     try {
       const res = await fetch('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'set_creator_access',
-          user_id: editingUser.id,
-          creator_ids: editFormData.creator_ids,
-        }),
+        body: JSON.stringify({ action: 'update_user', user_id: editingUser.id, password }),
       })
-
       if (!res.ok) {
         const err = await res.json()
-        throw new Error(err.error || 'Failed to set creator access')
+        throw new Error(err.error || 'Failed to reset password')
       }
-
-      await fetchData()
-      closeEditModal()
-      setError(null)
+      alert('Password reset successfully')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set creator access')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  async function handleSetPermissions(e: React.FormEvent) {
-    e.preventDefault()
-    if (!editingUser) return
-
-    setSubmitting(true)
-    try {
-      const res = await fetch('/api/admin/team', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'set_permissions',
-          user_id: editingUser.id,
-          permissions: editFormData.permissions,
-        }),
-      })
-
-      if (!res.ok) {
-        const err = await res.json()
-        throw new Error(err.error || 'Failed to set permissions')
-      }
-
-      await fetchData()
-      closeEditModal()
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to set permissions')
+      setError(err instanceof Error ? err.message : 'Failed to reset password')
     } finally {
       setSubmitting(false)
     }
   }
 
   async function handleDeleteUser(userId: string, email: string) {
-    if (!confirm(`Delete user "${email}"? This action cannot be undone.`)) return
-
+    if (!confirm(`Delete user "${email}"? This cannot be undone.`)) return
     setDeleting(userId)
     try {
       const res = await fetch('/api/admin/team', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'delete_user',
-          user_id: userId,
-        }),
+        body: JSON.stringify({ action: 'delete_user', user_id: userId }),
       })
-
       if (!res.ok) {
         const err = await res.json()
         throw new Error(err.error || 'Failed to delete user')
       }
-
       await fetchData()
       setError(null)
     } catch (err) {
@@ -355,16 +208,23 @@ export default function TeamClient() {
     }
   }
 
-  const bgCard = isLight
-    ? 'bg-black/[0.02] border border-black/[0.06]'
-    : 'bg-white/[0.02] border border-white/[0.04]'
+  function toggleRole(roleId: string) {
+    setEditFormData(prev => ({
+      ...prev,
+      roles: prev.roles.includes(roleId)
+        ? prev.roles.filter(r => r !== roleId)
+        : [...prev.roles, roleId],
+    }))
+  }
+
+  // Style helpers
+  const bgCard = isLight ? 'bg-black/[0.02] border border-black/[0.06]' : 'bg-white/[0.02] border border-white/[0.04]'
   const textPrimary = isLight ? 'text-black/90' : 'text-white/90'
   const textSecondary = isLight ? 'text-black/50' : 'text-white/50'
   const textTertiary = isLight ? 'text-black/25' : 'text-white/25'
-  const inputBg = isLight
-    ? 'bg-black/[0.03] border border-black/[0.08]'
-    : 'bg-white/[0.04] border border-white/[0.08]'
+  const inputBg = isLight ? 'bg-black/[0.03] border border-black/[0.08]' : 'bg-white/[0.04] border border-white/[0.08]'
   const inputFocus = isLight ? 'focus:border-black/20' : 'focus:border-white/20'
+  const modalBg = isLight ? '#f8f8f8' : '#111'
 
   if (loading) {
     return (
@@ -378,7 +238,10 @@ export default function TeamClient() {
     <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className={`text-xl font-semibold tracking-tight ${textPrimary}`}>Team Management</h1>
+        <div>
+          <h1 className={`text-xl font-semibold tracking-tight ${textPrimary}`}>Team Management</h1>
+          <p className={`text-[13px] mt-1 ${textSecondary}`}>Manage users and assign roles. Permissions are configured in Roles.</p>
+        </div>
         <button
           onClick={openCreateModal}
           className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors"
@@ -387,7 +250,6 @@ export default function TeamClient() {
         </button>
       </div>
 
-      {/* Error message */}
       {error && (
         <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-[13px] text-red-400">
           {error}
@@ -397,18 +259,25 @@ export default function TeamClient() {
       {/* Users list */}
       <div className="space-y-2">
         {users.length === 0 ? (
-          <div className={`text-center py-8 text-[13px] ${textTertiary}`}>No admin users yet</div>
+          <div className={`text-center py-8 rounded-xl ${bgCard} ${textTertiary} text-[13px]`}>No team members yet</div>
         ) : (
           users.map(user => (
             <div
               key={user.id}
-              className={`flex items-center justify-between p-4 rounded-xl ${bgCard} hover:border-white/[0.08] transition-all duration-150 group`}
+              className={`flex items-center justify-between p-4 rounded-xl ${bgCard} transition-all duration-150 group ${
+                isLight ? 'hover:border-black/[0.1]' : 'hover:border-white/[0.08]'
+              }`}
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <p className={`text-[13px] font-medium ${textPrimary}`}>{user.display_name}</p>
+                  {user.is_super_admin && (
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-purple-500/15 text-purple-600' : 'bg-purple-500/15 text-purple-400'}`}>
+                      Super Admin
+                    </span>
+                  )}
                   {!user.is_active && (
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400`}>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
                       Inactive
                     </span>
                   )}
@@ -431,9 +300,7 @@ export default function TeamClient() {
                 <button
                   onClick={() => openEditModal(user)}
                   className={`px-3 py-1.5 text-[11px] font-medium rounded-lg transition-colors ${
-                    isLight
-                      ? 'text-black/60 hover:text-black/80 hover:bg-black/5'
-                      : 'text-white/60 hover:text-white/80 hover:bg-white/5'
+                    isLight ? 'text-black/60 hover:text-black/80 hover:bg-black/5' : 'text-white/60 hover:text-white/80 hover:bg-white/5'
                   }`}
                 >
                   Edit
@@ -442,9 +309,7 @@ export default function TeamClient() {
                   onClick={() => handleDeleteUser(user.id, user.email)}
                   disabled={deleting === user.id}
                   className={`px-3 py-1.5 text-[11px] font-medium rounded-lg transition-colors ${
-                    deleting === user.id
-                      ? 'opacity-50 cursor-not-allowed'
-                      : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
+                    deleting === user.id ? 'opacity-50 cursor-not-allowed' : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
                   }`}
                 >
                   {deleting === user.id ? '...' : 'Delete'}
@@ -458,10 +323,7 @@ export default function TeamClient() {
       {/* Create User Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div
-            className={`${bgCard} rounded-2xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto`}
-            style={{ backgroundColor: isLight ? '#f8f8f8' : '#111' }}
-          >
+          <div className={`${bgCard} rounded-2xl p-6 w-full max-w-lg`} style={{ backgroundColor: modalBg }}>
             <h2 className={`text-lg font-semibold mb-4 ${textPrimary}`}>Invite new user</h2>
             <form onSubmit={handleCreateUser} className="space-y-4">
               <div>
@@ -495,22 +357,10 @@ export default function TeamClient() {
                 />
               </div>
               <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={closeCreateModal}
-                  className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${
-                    isLight
-                      ? 'text-black/60 hover:bg-black/5'
-                      : 'text-white/60 hover:bg-white/5'
-                  }`}
-                >
+                <button type="button" onClick={closeModal} className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/5'}`}>
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-50"
-                >
+                <button type="submit" disabled={submitting} className="flex-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-50">
                   {submitting ? 'Creating...' : 'Create user'}
                 </button>
               </div>
@@ -519,29 +369,22 @@ export default function TeamClient() {
         </div>
       )}
 
-      {/* Edit User Modal */}
+      {/* Edit User Modal — only Basic + Roles tabs */}
       {showEditModal && editingUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div
-            className={`${bgCard} rounded-2xl p-6 w-full max-w-xl max-h-[80vh] overflow-y-auto`}
-            style={{ backgroundColor: isLight ? '#f8f8f8' : '#111' }}
-          >
+          <div className={`${bgCard} rounded-2xl p-6 w-full max-w-xl max-h-[80vh] overflow-y-auto`} style={{ backgroundColor: modalBg }}>
             <h2 className={`text-lg font-semibold mb-4 ${textPrimary}`}>Edit user: {editingUser.display_name}</h2>
 
-            {/* Tabs */}
-            <div className="flex gap-1 mb-4 border-b border-white/[0.08]">
-              {(['basic', 'roles', 'creators', 'permissions'] as const).map(tab => (
+            {/* Tabs — only Basic and Roles */}
+            <div className={`flex gap-1 mb-4 border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.08]'}`}>
+              {(['basic', 'roles'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setEditTab(tab)}
-                  className={`px-3 py-2 text-[12px] font-medium rounded-t-lg transition-colors ${
+                  className={`px-3 py-2 text-[12px] font-medium transition-colors ${
                     editTab === tab
-                      ? isLight
-                        ? 'text-black/80 border-b-2 border-black/80'
-                        : 'text-white/80 border-b-2 border-white/80'
-                      : isLight
-                        ? 'text-black/40 hover:text-black/60'
-                        : 'text-white/40 hover:text-white/60'
+                      ? isLight ? 'text-black/80 border-b-2 border-black/80' : 'text-white/80 border-b-2 border-white/80'
+                      : isLight ? 'text-black/40 hover:text-black/60' : 'text-white/40 hover:text-white/60'
                   }`}
                 >
                   {tab.charAt(0).toUpperCase() + tab.slice(1)}
@@ -549,20 +392,8 @@ export default function TeamClient() {
               ))}
             </div>
 
-            {/* Tab content */}
-            <form
-              onSubmit={
-                editTab === 'basic'
-                  ? handleUpdateUser
-                  : editTab === 'roles'
-                    ? handleSetRoles
-                    : editTab === 'creators'
-                      ? handleSetCreatorAccess
-                      : handleSetPermissions
-              }
-              className="space-y-4"
-            >
-              {/* Basic Info Tab */}
+            <form onSubmit={handleSaveEdit} className="space-y-4">
+              {/* Basic Tab */}
               {editTab === 'basic' && (
                 <>
                   <div>
@@ -583,24 +414,20 @@ export default function TeamClient() {
                       className={`w-full px-3 py-2 text-[13px] rounded-lg outline-none ${inputBg} ${inputFocus} ${textPrimary}`}
                     />
                   </div>
-                  <div>
-                    <label className={`flex items-center gap-2 text-[12px] font-medium cursor-pointer`}>
-                      <input
-                        type="checkbox"
-                        checked={editFormData.is_active}
-                        onChange={e => setEditFormData({ ...editFormData, is_active: e.target.checked })}
-                        className="w-4 h-4 rounded"
-                      />
-                      <span className={textPrimary}>Active</span>
-                    </label>
-                  </div>
+                  <label className="flex items-center gap-2 text-[12px] font-medium cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={editFormData.is_active}
+                      onChange={e => setEditFormData({ ...editFormData, is_active: e.target.checked })}
+                      className="w-4 h-4 rounded"
+                    />
+                    <span className={textPrimary}>Active</span>
+                  </label>
                   <button
                     type="button"
                     onClick={handleResetPassword}
                     className={`w-full px-3 py-2 text-[12px] font-medium rounded-lg transition-colors ${
-                      isLight
-                        ? 'text-black/60 hover:bg-black/5'
-                        : 'text-white/60 hover:bg-white/5'
+                      isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/5'
                     }`}
                   >
                     Reset password
@@ -611,134 +438,39 @@ export default function TeamClient() {
               {/* Roles Tab */}
               {editTab === 'roles' && (
                 <div className="space-y-2">
-                  {roles.map(role => (
-                    <label key={role.id} className={`flex items-center gap-2 text-[13px] cursor-pointer`}>
-                      <input
-                        type="checkbox"
-                        checked={editFormData.roles.includes(role.id)}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            setEditFormData({
-                              ...editFormData,
-                              roles: [...editFormData.roles, role.id],
-                            })
-                          } else {
-                            setEditFormData({
-                              ...editFormData,
-                              roles: editFormData.roles.filter(r => r !== role.id),
-                            })
-                          }
-                        }}
-                        className="w-4 h-4 rounded"
-                      />
-                      <span className={textPrimary}>{role.name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {/* Creator Access Tab */}
-              {editTab === 'creators' && (
-                <div className="space-y-2">
-                  {creators.map(creator => (
-                    <label key={creator.id} className={`flex items-center gap-2 text-[13px] cursor-pointer`}>
-                      <input
-                        type="checkbox"
-                        checked={editFormData.creator_ids.includes(creator.id)}
-                        onChange={e => {
-                          if (e.target.checked) {
-                            setEditFormData({
-                              ...editFormData,
-                              creator_ids: [...editFormData.creator_ids, creator.id],
-                            })
-                          } else {
-                            setEditFormData({
-                              ...editFormData,
-                              creator_ids: editFormData.creator_ids.filter(c => c !== creator.id),
-                            })
-                          }
-                        }}
-                        className="w-4 h-4 rounded"
-                      />
-                      <span className={textPrimary}>{creator.display_name}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-
-              {/* Permissions Tab */}
-              {editTab === 'permissions' && (
-                <div className="space-y-4">
-                  {editFormData.creator_ids.length === 0 ? (
-                    <p className={`text-[12px] ${textTertiary}`}>Add creator access first to set permissions</p>
+                  <p className={`text-[12px] mb-3 ${textSecondary}`}>
+                    Roles determine which creators this user can see and what they can do. Configure role permissions in the Roles page.
+                  </p>
+                  {roles.length === 0 ? (
+                    <p className={`text-[12px] ${textTertiary}`}>No roles created yet. Create roles in the Roles page first.</p>
                   ) : (
-                    creators
-                      .filter(c => editFormData.creator_ids.includes(c.id))
-                      .map(creator => {
-                        const creatorPerms = editFormData.permissions.find(p => p.creator_id === creator.id)
-                        return (
-                          <div key={creator.id} className={`p-3 rounded-lg ${bgCard}`}>
-                            <p className={`text-[12px] font-medium mb-2 ${textPrimary}`}>{creator.display_name}</p>
-                            <div className="space-y-1.5">
-                              {PERMISSION_TYPES.map(perm => (
-                                <label key={perm} className={`flex items-center gap-2 text-[12px] cursor-pointer`}>
-                                  <input
-                                    type="checkbox"
-                                    checked={creatorPerms?.types.includes(perm) || false}
-                                    onChange={e => {
-                                      const perms = editFormData.permissions.filter(p => p.creator_id !== creator.id)
-                                      if (e.target.checked) {
-                                        const existing = creatorPerms?.types || []
-                                        perms.push({
-                                          creator_id: creator.id,
-                                          types: [...existing, perm],
-                                        })
-                                      } else if (creatorPerms) {
-                                        const filtered = creatorPerms.types.filter(t => t !== perm)
-                                        if (filtered.length > 0) {
-                                          perms.push({
-                                            creator_id: creator.id,
-                                            types: filtered,
-                                          })
-                                        }
-                                      }
-                                      setEditFormData({
-                                        ...editFormData,
-                                        permissions: perms,
-                                      })
-                                    }}
-                                    className="w-4 h-4 rounded"
-                                  />
-                                  <span className={textPrimary}>
-                                    {perm.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      })
+                    roles.map(role => (
+                      <label
+                        key={role.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                          editFormData.roles.includes(role.id)
+                            ? isLight ? 'bg-blue-500/10 border border-blue-500/20' : 'bg-blue-500/10 border border-blue-500/20'
+                            : `${bgCard} ${isLight ? 'hover:border-black/[0.1]' : 'hover:border-white/[0.08]'}`
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editFormData.roles.includes(role.id)}
+                          onChange={() => toggleRole(role.id)}
+                          className="w-4 h-4 rounded"
+                        />
+                        <span className={`text-[13px] font-medium ${textPrimary}`}>{role.name}</span>
+                      </label>
+                    ))
                   )}
                 </div>
               )}
 
               <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={closeEditModal}
-                  className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${
-                    isLight
-                      ? 'text-black/60 hover:bg-black/5'
-                      : 'text-white/60 hover:bg-white/5'
-                  }`}
-                >
+                <button type="button" onClick={closeModal} className={`flex-1 px-4 py-2 text-[12px] font-medium rounded-lg transition-colors ${isLight ? 'text-black/60 hover:bg-black/5' : 'text-white/60 hover:bg-white/5'}`}>
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="flex-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-50"
-                >
+                <button type="submit" disabled={submitting} className="flex-1 px-4 py-2 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-50">
                   {submitting ? 'Saving...' : 'Save changes'}
                 </button>
               </div>

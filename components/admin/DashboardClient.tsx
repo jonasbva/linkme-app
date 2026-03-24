@@ -10,6 +10,17 @@ interface Tag {
   color: string
 }
 
+interface SocialAccount {
+  id: string
+  creator_id: string
+  platform: string
+  username: string
+  followers: number
+  engagement_rate: number
+  avg_likes: number
+  avg_comments: number
+}
+
 interface CreatorStat {
   id: string
   slug: string
@@ -29,6 +40,7 @@ interface Props {
   weeklyPageViews: number
   topCountries: [string, number][]
   tags: Tag[]
+  socialAccounts: SocialAccount[]
   isSuperAdmin?: boolean
 }
 
@@ -39,6 +51,7 @@ export default function DashboardClient({
   weeklyPageViews,
   topCountries,
   tags,
+  socialAccounts,
   isSuperAdmin,
 }: Props) {
   const router = useRouter()
@@ -174,7 +187,7 @@ export default function DashboardClient({
         <Stat label="Creators" value={String(creators.length)} />
         <Stat label="Page views" value={totalPageViews.toLocaleString()} />
         <Stat label="Link clicks" value={totalLinkClicks.toLocaleString()} />
-        <Stat label="This week" value={weeklyPageViews.toLocaleString()} />
+        <Stat label="Total followers" value={socialAccounts.reduce((sum, sa) => sum + sa.followers, 0).toLocaleString()} />
       </div>
 
       {/* Filter bar */}
@@ -255,6 +268,17 @@ export default function DashboardClient({
                     <p className="text-[13px] text-white/60 tabular-nums">{c.totalViews.toLocaleString()}</p>
                     <p className="text-[11px] text-white/20">views</p>
                   </div>
+                  {(() => {
+                    const creatorFollowers = socialAccounts.filter(sa => sa.creator_id === c.id).reduce((sum, sa) => sum + sa.followers, 0)
+                    if (creatorFollowers > 0) {
+                      return (
+                        <div className="text-right">
+                          <p className="text-[13px] text-white/60 tabular-nums">{creatorFollowers.toLocaleString()}</p>
+                          <p className="text-[11px] text-white/20">followers</p>
+                        </div>
+                      )
+                    }
+                  })()}
                   {isSuperAdmin && <button
                     onClick={(e) => { e.preventDefault(); deleteCreator(c.id, c.display_name) }}
                     disabled={deleting === c.id}
@@ -273,16 +297,43 @@ export default function DashboardClient({
           )}
         </div>
 
-        <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
-          <p className="text-[12px] text-white/25 mb-4">Top countries</p>
-          <div className="space-y-2.5">
-            {topCountries.map(([country, count]) => (
-              <div key={country} className="flex items-center justify-between">
-                <span className="text-[13px] text-white/50">{country}</span>
-                <span className="text-[13px] text-white/80 font-medium tabular-nums">{count.toLocaleString()}</span>
-              </div>
-            ))}
-            {topCountries.length === 0 && <p className="text-white/15 text-[12px]">No data yet</p>}
+        <div className="space-y-5">
+          <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
+            <p className="text-[12px] text-white/25 mb-4">Top countries</p>
+            <div className="space-y-2.5">
+              {topCountries.map(([country, count]) => (
+                <div key={country} className="flex items-center justify-between">
+                  <span className="text-[13px] text-white/50">{country}</span>
+                  <span className="text-[13px] text-white/80 font-medium tabular-nums">{count.toLocaleString()}</span>
+                </div>
+              ))}
+              {topCountries.length === 0 && <p className="text-white/15 text-[12px]">No data yet</p>}
+            </div>
+          </div>
+
+          <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-5">
+            <p className="text-[12px] text-white/25 mb-4">Social overview</p>
+            <div className="space-y-2.5">
+              {(() => {
+                const creatorFollowerMap = new Map<string, { name: string; followers: number }>()
+                creators.forEach(creator => {
+                  const followers = socialAccounts.filter(sa => sa.creator_id === creator.id).reduce((sum, sa) => sum + sa.followers, 0)
+                  if (followers > 0) {
+                    creatorFollowerMap.set(creator.id, { name: creator.display_name, followers })
+                  }
+                })
+                const topCreators = Array.from(creatorFollowerMap.values())
+                  .sort((a, b) => b.followers - a.followers)
+                  .slice(0, 5)
+
+                return topCreators.length > 0 ? topCreators.map((creator, idx) => (
+                  <div key={idx} className="flex items-center justify-between">
+                    <span className="text-[13px] text-white/50">{creator.name}</span>
+                    <span className="text-[13px] text-white/80 font-medium tabular-nums">{creator.followers.toLocaleString()}</span>
+                  </div>
+                )) : <p className="text-white/15 text-[12px]">No social data yet</p>
+              })()}
+            </div>
           </div>
         </div>
       </div>

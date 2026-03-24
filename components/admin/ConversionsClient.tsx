@@ -57,15 +57,17 @@ export default function ConversionsClient({ creators, expectations: initialExpec
       <h1 className="text-xl font-semibold tracking-tight">Conversions</h1>
 
       {/* Tab switcher */}
-      <div className="flex gap-1 p-1 rounded-lg bg-white/[0.03] border border-white/[0.06] w-fit">
+      <div className={`flex gap-1 p-1 rounded-lg border w-fit ${
+        isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.03] border-white/[0.06]'
+      }`}>
         {tabs.map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`px-4 py-1.5 rounded-md text-[13px] transition-colors ${
               activeTab === tab.key
-                ? 'bg-white/[0.08] text-white/90 font-medium'
-                : 'text-white/40 hover:text-white/60'
+                ? isLight ? 'bg-black/[0.08] text-black/90 font-medium' : 'bg-white/[0.08] text-white/90 font-medium'
+                : isLight ? 'text-black/40 hover:text-black/60' : 'text-white/40 hover:text-white/60'
             }`}
           >
             {tab.label}
@@ -207,11 +209,11 @@ function ExpectationsTab({
       <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
       <table className="w-full">
         <thead>
-          <tr className="border-b border-white/[0.06]">
-            <th className="text-left text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Creator</th>
-            <th className="text-right text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Daily Sub Target</th>
-            <th className="text-right text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Days Red</th>
-            <th className="text-right text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider w-24">Actions</th>
+          <tr className={`border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
+            <th className={`text-left text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Creator</th>
+            <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Daily Sub Target</th>
+            <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Days Red</th>
+            <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider w-24 ${isLight ? 'text-black/30' : 'text-white/30'}`}>Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -220,19 +222,19 @@ function ExpectationsTab({
             const daysRed = daysRedMap[c.id] || 0
             const isEditing = editingId === c.id
             return (
-              <tr key={c.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+              <tr key={c.id} className={`border-b transition-colors ${isLight ? 'border-black/[0.03] hover:bg-black/[0.02]' : 'border-white/[0.03] hover:bg-white/[0.02]'}`}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
                     {c.avatar_url ? (
                       <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
                     ) : (
-                      <div className="w-7 h-7 rounded-full bg-white/[0.06] flex items-center justify-center text-[11px] font-medium text-white/30">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>
                         {c.display_name.charAt(0)}
                       </div>
                     )}
                     <div>
-                      <p className="text-[13px] text-white/80 font-medium">{c.display_name}</p>
-                      <p className="text-[11px] text-white/25">{c.slug}</p>
+                      <p className={`text-[13px] font-medium ${isLight ? 'text-black/80' : 'text-white/80'}`}>{c.display_name}</p>
+                      <p className={`text-[11px] ${isLight ? 'text-black/25' : 'text-white/25'}`}>{c.slug}</p>
                     </div>
                   </div>
                 </td>
@@ -245,10 +247,14 @@ function ExpectationsTab({
                       onChange={e => setEditValue(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') saveExpectation(c.id); if (e.key === 'Escape') setEditingId(null) }}
                       autoFocus
-                      className="w-20 bg-white/[0.06] border border-white/[0.1] rounded px-2 py-1 text-[13px] text-white/80 text-right outline-none focus:border-white/20"
+                      className={`w-20 border rounded px-2 py-1 text-[13px] text-right outline-none ${
+                        isLight
+                          ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20'
+                          : 'bg-white/[0.06] border border-white/[0.1] text-white/80 focus:border-white/20'
+                      }`}
                     />
                   ) : (
-                    <span className={`text-[13px] tabular-nums ${target > 0 ? 'text-white/80' : 'text-white/20'}`}>
+                    <span className={`text-[13px] tabular-nums ${target > 0 ? (isLight ? 'text-black/80' : 'text-white/80') : (isLight ? 'text-black/20' : 'text-white/20')}`}>
                       {target > 0 ? target : '—'}
                     </span>
                   )}
@@ -265,7 +271,7 @@ function ExpectationsTab({
                       {daysRed}
                     </span>
                   ) : (
-                    <span className="text-[13px] text-white/20">—</span>
+                    <span className={`text-[13px] ${isLight ? 'text-black/20' : 'text-white/20'}`}>—</span>
                   )}
                 </td>
                 <td className="px-4 py-3 text-right">
@@ -274,13 +280,13 @@ function ExpectationsTab({
                       <button
                         onClick={() => saveExpectation(c.id)}
                         disabled={saving}
-                        className="px-2 py-1 text-[11px] bg-white/[0.08] rounded hover:bg-white/[0.12] text-white/70"
+                        className={`px-2 py-1 text-[11px] rounded ${isLight ? 'bg-black/[0.08] hover:bg-black/[0.12] text-black/70' : 'bg-white/[0.08] hover:bg-white/[0.12] text-white/70'}`}
                       >
                         {saving ? '...' : 'Save'}
                       </button>
                       <button
                         onClick={() => setEditingId(null)}
-                        className="px-2 py-1 text-[11px] text-white/30 hover:text-white/50"
+                        className={`px-2 py-1 text-[11px] ${isLight ? 'text-black/30 hover:text-black/50' : 'text-white/30 hover:text-white/50'}`}
                       >
                         Cancel
                       </button>
@@ -288,7 +294,7 @@ function ExpectationsTab({
                   ) : (
                     <button
                       onClick={() => { setEditingId(c.id); setEditValue(String(target)) }}
-                      className="px-2 py-1 text-[11px] text-white/30 hover:text-white/60 transition-colors"
+                      className={`px-2 py-1 text-[11px] transition-colors ${isLight ? 'text-black/30 hover:text-black/60' : 'text-white/30 hover:text-white/60'}`}
                     >
                       Edit
                     </button>
@@ -453,21 +459,21 @@ function DailyInputTab({
               const numVal = parseInt(val)
               const isBelowTarget = target > 0 && !isNaN(numVal) && numVal < target
               return (
-                <tr key={c.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                <tr key={c.id} className={`border-b transition-colors ${isLight ? 'border-black/[0.03] hover:bg-black/[0.02]' : 'border-white/[0.03] hover:bg-white/[0.02]'}`}>
                   <td className="px-4 py-2.5">
                     <div className="flex items-center gap-3">
                       {c.avatar_url ? (
                         <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
                       ) : (
-                        <div className="w-7 h-7 rounded-full bg-white/[0.06] flex items-center justify-center text-[11px] font-medium text-white/30">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>
                           {c.display_name.charAt(0)}
                         </div>
                       )}
-                      <span className="text-[13px] text-white/80">{c.display_name}</span>
+                      <span className={`text-[13px] ${isLight ? 'text-black/80' : 'text-white/80'}`}>{c.display_name}</span>
                     </div>
                   </td>
                   <td className="px-4 py-2.5 text-right">
-                    <span className={`text-[13px] tabular-nums ${target > 0 ? 'text-white/50' : 'text-white/15'}`}>
+                    <span className={`text-[13px] tabular-nums ${target > 0 ? (isLight ? 'text-black/50' : 'text-white/50') : (isLight ? 'text-black/15' : 'text-white/15')}`}>
                       {target > 0 ? target : '—'}
                     </span>
                   </td>
@@ -478,10 +484,10 @@ function DailyInputTab({
                       placeholder="0"
                       value={val}
                       onChange={e => setInputs(prev => ({ ...prev, [c.id]: e.target.value }))}
-                      className={`w-full bg-white/[0.04] border rounded px-3 py-1.5 text-[13px] text-right outline-none transition-colors tabular-nums ${
+                      className={`w-full border rounded px-3 py-1.5 text-[13px] text-right outline-none transition-colors tabular-nums ${
                         isBelowTarget
                           ? 'border-red-500/30 text-red-400 focus:border-red-500/50'
-                          : 'border-white/[0.08] text-white/80 focus:border-white/20'
+                          : isLight ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20' : 'bg-white/[0.04] border-white/[0.08] text-white/80 focus:border-white/20'
                       }`}
                     />
                   </td>
@@ -850,26 +856,26 @@ function ConversionTableTab({
       </div>
 
       {/* Data table */}
-      <div className="rounded-xl border border-white/[0.06] overflow-x-auto">
+      <div className={`rounded-xl border overflow-x-auto ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
         <table className="w-full min-w-[900px]">
           <thead>
-            <tr className="border-b border-white/[0.06]">
-              <th className="text-left text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Date</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Views</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Profile Views</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-3 py-3 uppercase tracking-wider text-[10px]">Views→Profile</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Link Clicks</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-3 py-3 uppercase tracking-wider text-[10px]">Views→Clicks</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-3 py-3 uppercase tracking-wider text-[10px]">Profile→Clicks</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-4 py-3 uppercase tracking-wider">Subs</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-3 py-3 uppercase tracking-wider text-[10px]">Clicks→Subs</th>
-              <th className="text-right text-[11px] text-white/30 font-medium px-3 py-3 uppercase tracking-wider text-[10px]">Subs→Views</th>
+            <tr className={`border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
+              <th className={`text-left text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Date</th>
+              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Views</th>
+              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Profile Views</th>
+              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Views→Profile</th>
+              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Link Clicks</th>
+              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Views→Clicks</th>
+              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Profile→Clicks</th>
+              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Subs</th>
+              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Clicks→Subs</th>
+              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Subs→Views</th>
             </tr>
           </thead>
           <tbody>
             {filteredData.length === 0 ? (
               <tr>
-                <td colSpan={10} className="text-center py-12 text-white/20 text-[13px]">
+                <td colSpan={10} className={`text-center py-12 text-[13px] ${isLight ? 'text-black/20' : 'text-white/20'}`}>
                   No data for this period. Use "Recalculate yesterday" or enter subs in the Daily Input tab.
                 </td>
               </tr>
@@ -893,17 +899,17 @@ function ConversionTableTab({
                 return (
                   <tr
                     key={cellKey}
-                    className={`border-b border-white/[0.03] transition-colors ${
-                      isBelowTarget ? 'bg-red-500/[0.06] hover:bg-red-500/[0.1]' : 'hover:bg-white/[0.02]'
+                    className={`border-b transition-colors ${isLight ? 'border-black/[0.03]' : 'border-white/[0.03]'} ${
+                      isBelowTarget ? 'bg-red-500/[0.06] hover:bg-red-500/[0.1]' : isLight ? 'hover:bg-black/[0.02]' : 'hover:bg-white/[0.02]'
                     }`}
                   >
-                    <td className="px-4 py-2.5 text-[13px] text-white/60">{fmtDate(row.date)}</td>
-                    <td className="px-4 py-2.5 text-right text-[13px] text-white/70 tabular-nums">{views > 0 ? fmtNum(views) : '—'}</td>
-                    <td className="px-4 py-2.5 text-right text-[13px] text-white/70 tabular-nums">{pv > 0 ? fmtNum(pv) : '—'}</td>
-                    <td className="px-3 py-2.5 text-right text-[12px] text-white/35 tabular-nums">{views > 0 ? fmtPct(viewsToProfile) : '—'}</td>
-                    <td className="px-4 py-2.5 text-right text-[13px] text-white/70 tabular-nums">{lc > 0 ? fmtNum(lc) : '—'}</td>
-                    <td className="px-3 py-2.5 text-right text-[12px] text-white/35 tabular-nums">{views > 0 ? fmtPct(viewsToClicks) : '—'}</td>
-                    <td className="px-3 py-2.5 text-right text-[12px] text-white/35 tabular-nums">{pv > 0 ? fmtPct(profileToClicks) : '—'}</td>
+                    <td className={`px-4 py-2.5 text-[13px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>{fmtDate(row.date)}</td>
+                    <td className={`px-4 py-2.5 text-right text-[13px] tabular-nums ${isLight ? 'text-black/70' : 'text-white/70'}`}>{views > 0 ? fmtNum(views) : '—'}</td>
+                    <td className={`px-4 py-2.5 text-right text-[13px] tabular-nums ${isLight ? 'text-black/70' : 'text-white/70'}`}>{pv > 0 ? fmtNum(pv) : '—'}</td>
+                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(viewsToProfile) : '—'}</td>
+                    <td className={`px-4 py-2.5 text-right text-[13px] tabular-nums ${isLight ? 'text-black/70' : 'text-white/70'}`}>{lc > 0 ? fmtNum(lc) : '—'}</td>
+                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(viewsToClicks) : '—'}</td>
+                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{pv > 0 ? fmtPct(profileToClicks) : '—'}</td>
                     <td className="px-4 py-2.5 text-right">
                       {isEditing ? (
                         <input
@@ -917,21 +923,25 @@ function ConversionTableTab({
                           }}
                           onBlur={() => saveSubs(row.creator_id, row.date, parseInt(editValue) || 0)}
                           autoFocus
-                          className="w-16 bg-white/[0.06] border border-white/[0.15] rounded px-2 py-0.5 text-[13px] text-right outline-none focus:border-white/30 tabular-nums"
+                          className={`w-16 border rounded px-2 py-0.5 text-[13px] text-right outline-none tabular-nums ${
+                            isLight
+                              ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20'
+                              : 'bg-white/[0.06] border-white/[0.15] text-white/80 focus:border-white/30'
+                          }`}
                         />
                       ) : (
                         <button
                           onClick={() => { setEditingCell(cellKey); setEditValue(String(subs)) }}
                           className={`text-[13px] tabular-nums font-medium cursor-pointer hover:underline ${
-                            isBelowTarget ? 'text-red-400' : 'text-white/80'
+                            isBelowTarget ? 'text-red-400' : isLight ? 'text-black/80' : 'text-white/80'
                           }`}
                         >
                           {subs}
                         </button>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-right text-[12px] text-white/35 tabular-nums">{lc > 0 ? fmtPct(clicksToSubs) : '—'}</td>
-                    <td className="px-3 py-2.5 text-right text-[12px] text-white/35 tabular-nums">{views > 0 ? fmtPct(subsToViews) : '—'}</td>
+                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{lc > 0 ? fmtPct(clicksToSubs) : '—'}</td>
+                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(subsToViews) : '—'}</td>
                   </tr>
                 )
               })

@@ -4,11 +4,12 @@ import { getSessionUser, getUserPermissions } from '@/lib/auth'
 
 async function getDashboardStats(visibleCreatorIds?: string[]) {
   const supabase = createServerSupabaseClient()
-  const [creatorsRes, clicksRes, tagsRes, creatorTagsRes] = await Promise.all([
+  const [creatorsRes, clicksRes, tagsRes, creatorTagsRes, socialAccountsRes] = await Promise.all([
     supabase.from('creators').select('id, slug, display_name, avatar_url, is_active'),
     supabase.from('clicks').select('creator_id, type, country, created_at'),
     supabase.from('tags').select('*').order('name'),
     supabase.from('creator_tags').select('creator_id, tag_id'),
+    supabase.from('social_accounts').select('id, creator_id, platform, username, followers, engagement_rate, avg_likes, avg_comments'),
   ])
   let creators = creatorsRes.data || []
   // Filter by visibility if not super admin
@@ -18,6 +19,7 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
   const clicks = (clicksRes.data || []).filter(c => !visibleCreatorIds || creators.some(cr => cr.id === c.creator_id))
   const tags = tagsRes.data || []
   const creatorTags = creatorTagsRes.data || []
+  const socialAccounts = (socialAccountsRes.data || []).filter(sa => !visibleCreatorIds || creators.some(cr => cr.id === sa.creator_id))
   const now = new Date()
   const last30Days = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
   const last7Days = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
@@ -38,7 +40,7 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
       tagIds: creatorTags.filter(ct => ct.creator_id === creator.id).map(ct => ct.tag_id),
     }
   }).sort((a, b) => b.totalViews - a.totalViews)
-  return { creatorStats, totalPageViews, totalLinkClicks, weeklyPageViews, topCountries, tags }
+  return { creatorStats, totalPageViews, totalLinkClicks, weeklyPageViews, topCountries, tags, socialAccounts }
 }
 
 export default async function AdminDashboard() {
@@ -49,5 +51,5 @@ export default async function AdminDashboard() {
     visibleCreatorIds = ids
   }
   const data = await getDashboardStats(visibleCreatorIds)
-  return <DashboardClient {...data} isSuperAdmin={user?.is_super_admin} />
+  return <DashboardClient {...data} socialAccounts={data.socialAccounts} isSuperAdmin={user?.is_super_admin} />
 }

@@ -89,49 +89,32 @@ export async function getUserPermissions(userId: string): Promise<{
 
   const roleIds = (userRoles || []).map(r => r.role_id)
 
-  // Get creator access (direct + via roles)
-  const creatorIds = new Set<string>()
-
-  const { data: directAccess } = await supabase
-    .from('admin_creator_access')
-    .select('creator_id')
-    .eq('user_id', userId)
-
-  ;(directAccess || []).forEach(a => creatorIds.add(a.creator_id))
-
-  if (roleIds.length > 0) {
-    const { data: roleAccess } = await supabase
-      .from('admin_creator_access')
-      .select('creator_id')
-      .in('role_id', roleIds)
-
-    ;(roleAccess || []).forEach(a => creatorIds.add(a.creator_id))
+  if (roleIds.length === 0) {
+    return { visibleCreatorIds: [], permissions: {} }
   }
 
-  // Get permissions (direct + via roles)
+  // Get creator visibility from roles only
+  const creatorIds = new Set<string>()
+
+  const { data: roleAccess } = await supabase
+    .from('admin_creator_access')
+    .select('creator_id')
+    .in('role_id', roleIds)
+
+  ;(roleAccess || []).forEach(a => creatorIds.add(a.creator_id))
+
+  // Get permissions from roles only
   const permissions: Record<string, Set<PermissionType>> = {}
 
-  const { data: directPerms } = await supabase
+  const { data: rolePerms } = await supabase
     .from('admin_permissions')
     .select('creator_id, permission_type')
-    .eq('user_id', userId)
+    .in('role_id', roleIds)
 
-  ;(directPerms || []).forEach(p => {
+  ;(rolePerms || []).forEach(p => {
     if (!permissions[p.creator_id]) permissions[p.creator_id] = new Set()
     permissions[p.creator_id].add(p.permission_type as PermissionType)
   })
-
-  if (roleIds.length > 0) {
-    const { data: rolePerms } = await supabase
-      .from('admin_permissions')
-      .select('creator_id, permission_type')
-      .in('role_id', roleIds)
-
-    ;(rolePerms || []).forEach(p => {
-      if (!permissions[p.creator_id]) permissions[p.creator_id] = new Set()
-      permissions[p.creator_id].add(p.permission_type as PermissionType)
-    })
-  }
 
   return {
     visibleCreatorIds: Array.from(creatorIds),
