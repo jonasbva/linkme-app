@@ -413,16 +413,26 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             {isNew ? 'New Creator' : creator.display_name}
           </h1>
         </div>
-        {!isNew && mode === 'edit' && (
-          <a
-            href={creator.custom_domain ? `https://${creator.custom_domain}` : `/${creator.slug}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
-          >
-            Preview ↗
-          </a>
-        )}
+        <div className="flex items-center gap-2">
+          {!isNew && mode === 'analysis' && (
+            <a
+              href={`/admin/conversions?creator=${creator.id}`}
+              className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
+            >
+              View Conversions
+            </a>
+          )}
+          {!isNew && mode === 'edit' && (
+            <a
+              href={creator.custom_domain ? `https://${creator.custom_domain}` : `/${creator.slug}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
+            >
+              Preview ↗
+            </a>
+          )}
+        </div>
       </div>
 
       {/* Sub-tabs */}

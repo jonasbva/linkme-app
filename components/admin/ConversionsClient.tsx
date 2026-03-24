@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect, Dispatch, SetStateAction } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 interface Creator {
   id: string
@@ -35,7 +36,10 @@ interface Props {
 type Tab = 'expectations' | 'input' | 'table'
 
 export default function ConversionsClient({ creators, expectations: initialExpectations, dailyData: initialDaily }: Props) {
-  const [activeTab, setActiveTab] = useState<Tab>('expectations')
+  const searchParams = useSearchParams()
+  const preselectedCreator = searchParams.get('creator')
+
+  const [activeTab, setActiveTab] = useState<Tab>(preselectedCreator ? 'table' : 'expectations')
   const [expectations, setExpectations] = useState(initialExpectations)
   const [dailyData, setDailyData] = useState(initialDaily)
 
@@ -88,6 +92,7 @@ export default function ConversionsClient({ creators, expectations: initialExpec
           expectations={expectations}
           dailyData={dailyData}
           setDailyData={setDailyData}
+          initialCreatorId={preselectedCreator || undefined}
         />
       )}
     </div>
@@ -477,16 +482,41 @@ function ConversionTableTab({
   expectations,
   dailyData,
   setDailyData,
+  initialCreatorId,
 }: {
   creators: Creator[]
   expectations: Expectation[]
   dailyData: DailyRow[]
   setDailyData: Dispatch<SetStateAction<DailyRow[]>>
+  initialCreatorId?: string
 }) {
-  const [selectedCreator, setSelectedCreator] = useState(creators[0]?.id || '')
+  const [selectedCreator, setSelectedCreator] = useState(
+    (initialCreatorId && creators.some(c => c.id === initialCreatorId) ? initialCreatorId : creators[0]?.id) || ''
+  )
   const [editingCell, setEditingCell] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
   const [calculating, setCalculating] = useState(false)
+  const [creatorSearch, setCreatorSearch] = useState('')
+  const [showCreatorDropdown, setShowCreatorDropdown] = useState(false)
+  const creatorDropdownRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (creatorDropdownRef.current && !creatorDropdownRef.current.contains(e.target as Node)) {
+        setShowCreatorDropdown(false)
+      }
+    }
+    if (showCreatorDropdown) document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [showCreatorDropdown])
+
+  const filteredCreators = useMemo(() => {
+    if (!creatorSearch.trim()) return creators
+    const q = creatorSearch.toLowerCase()
+    return creators.filter(c => c.display_name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q))
+  }, [creators, creatorSearch])
+
+  const selectedCreatorObj = creators.find(c => c.id === selectedCreator)
 
   // Date range state — default to last 30 days
   const [dateStart, setDateStart] = useState<Date>(() => {
@@ -619,18 +649,62 @@ function ConversionTableTab({
     <div className="space-y-4">
       {/* Controls row */}
       <div className="flex items-center gap-4 flex-wrap">
-        {/* Creator selector */}
-        <select
-          value={selectedCreator}
-          onChange={e => setSelectedCreator(e.target.value)}
-          className="bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white/80 outline-none focus:border-white/20"
-        >
-          {creators.map(c => (
-            <option key={c.id} value={c.id} className="bg-[#111] text-white">
-              {c.display_name} ({c.slug})
-            </option>
-          ))}
-        </select>
+        {/* Creator selector with search */}
+        <div className="relative" ref={creatorDropdownRef}>
+          <button
+            onClick={() => setShowCreatorDropdown(!showCreatorDropdown)}
+            className="flex items-center gap-2 bg-white/[0.04] border border-white/[0.08] rounded-lg px-3 py-1.5 text-[13px] text-white/80 hover:border-white/[0.12] transition-colors min-w-[200px]"
+          >
+            {selectedCreatorObj ? (
+              <>
+                {selectedCreatorObj.avatar_url && (
+                  <img src={selectedCreatorObj.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
+                )}
+                <span className="truncate">{selectedCreatorObj.display_name}</span>
+                <span className="text-white/30 text-[11px]">({selectedCreatorObj.slug})</span>
+              </>
+            ) : (
+              <span className="text-white/40">Select creator...</span>
+            )}
+            <svg className="w-3 h-3 text-white/30 ml-auto flex-shrink-0" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 5l3 3 3-3" /></svg>
+          </button>
+          {showCreatorDropdown && (
+            <div className="absolute top-full mt-1 left-0 z-50 bg-[#111] border border-white/[0.1] rounded-xl shadow-2xl w-[280px] overflow-hidden">
+              <div className="p-2 border-b border-white/[0.06]">
+                <input
+                  type="text"
+                  placeholder="Search creators..."
+                  value={creatorSearch}
+                  onChange={e => setCreatorSearch(e.target.value)}
+                  autoFocus
+                  className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2.5 py-1.5 text-[12px] text-white/80 placeholder-white/25 outline-none focus:border-white/20"
+                />
+              </div>
+              <div className="max-h-[240px] overflow-y-auto">
+                {filteredCreators.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setSelectedCreator(c.id); setShowCreatorDropdown(false); setCreatorSearch('') }}
+                    className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] hover:bg-white/[0.06] transition-colors ${
+                      c.id === selectedCreator ? 'bg-white/[0.04] text-white/90' : 'text-white/60'
+                    }`}
+                  >
+                    {c.avatar_url ? (
+                      <img src={c.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-5 h-5 rounded-full bg-white/[0.06] flex items-center justify-center text-[9px] text-white/30">{c.display_name.charAt(0)}</div>
+                    )}
+                    <span className="truncate">{c.display_name}</span>
+                    <span className="text-white/20 text-[10px]">{c.slug}</span>
+                  </button>
+                ))}
+                {filteredCreators.length === 0 && (
+                  <p className="text-center py-4 text-white/20 text-[12px]">No match</p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* Date range picker */}
         <div className="relative" ref={datePickerRef}>

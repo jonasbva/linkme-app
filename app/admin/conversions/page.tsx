@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import ConversionsClient from '@/components/admin/ConversionsClient'
 
@@ -15,10 +16,12 @@ export default async function ConversionsPage() {
   ])
 
   return (
-    <ConversionsClient
-      creators={creatorsRes.data || []}
-      expectations={expectationsRes.data || []}
-      dailyData={dailyRes.data || []}
-    />
+    <Suspense fallback={<div className="text-white/20 text-[13px] py-12 text-center">Loading...</div>}>
+      <ConversionsClient
+        creators={creatorsRes.data || []}
+        expectations={expectationsRes.data || []}
+        dailyData={dailyRes.data || []}
+      />
+    </Suspense>
   )
 }

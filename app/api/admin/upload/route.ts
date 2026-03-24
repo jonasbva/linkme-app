@@ -18,8 +18,10 @@ export async function POST(req: NextRequest) {
 
   if (!file) return NextResponse.json({ error: 'No file provided' }, { status: 400 })
 
-  const ext = file.name.split('.').pop() || 'jpg'
-  const filename = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+  // Sanitize extension: only allow alphanumeric chars
+  const rawExt = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+  const ext = rawExt || 'jpg'
+  const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`
 
   const arrayBuffer = await file.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
@@ -28,7 +30,7 @@ export async function POST(req: NextRequest) {
 
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(filename, buffer, { contentType: file.type, upsert: false })
+    .upload(filename, buffer, { contentType: file.type || 'image/jpeg', upsert: false })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
