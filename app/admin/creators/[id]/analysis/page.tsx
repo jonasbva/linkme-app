@@ -6,18 +6,48 @@ interface Props {
   params: { id: string }
 }
 
+// Fetch all clicks using pagination (Supabase defaults to 1000 rows max)
+async function fetchAllClicks(supabase: any, creatorId: string) {
+  const allClicks: any[] = []
+  const PAGE_SIZE = 1000
+  let from = 0
+  let hasMore = true
+
+  while (hasMore) {
+    const { data, error } = await supabase
+      .from('clicks')
+      .select('type, country, country_code, device, link_id, created_at')
+      .eq('creator_id', creatorId)
+      .order('created_at', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+
+    if (error) {
+      console.error('Error fetching clicks:', error)
+      break
+    }
+
+    if (data && data.length > 0) {
+      allClicks.push(...data)
+      from += PAGE_SIZE
+      hasMore = data.length === PAGE_SIZE
+    } else {
+      hasMore = false
+    }
+  }
+
+  return allClicks
+}
+
 export default async function CreatorAnalysisPage({ params }: Props) {
   const supabase = createServerSupabaseClient()
 
-  const [creatorRes, clicksRes] = await Promise.all([
+  const [creatorRes, clicks] = await Promise.all([
     supabase.from('creators').select('*').eq('id', params.id).single(),
-    supabase.from('clicks').select('type, country, country_code, device, link_id, created_at').eq('creator_id', params.id),
+    fetchAllClicks(supabase, params.id),
   ])
 
   if (!creatorRes.data) notFound()
   const creator = creatorRes.data
-
-  const clicks = clicksRes.data || []
   const now = new Date()
   const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
 
@@ -35,18 +65,20 @@ export default async function CreatorAnalysisPage({ params }: Props) {
       else dailyMap[key].clicks++
     }
   })
-  const dailyData = Object.entries(dailyMap).map(([date, v]) => ({
-    date: date.slice(5),
-    ...v,
-  }))
+  const dailyData = Object.entries(dailyMap)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, v]) => ({
+      date: date.slice(5),
+      ...v,
+    }))
 
-  // Country breakdown
+  // Country breakdown (label null/empty countries as "Unknown")
   const countryDetailMap: Record<string, { count: number; code: string }> = {}
   clicks.forEach(c => {
-    if (c.country) {
-      if (!countryDetailMap[c.country]) countryDetailMap[c.country] = { count: 0, code: c.country_code || '' }
-      countryDetailMap[c.country].count++
-    }
+    const country = c.country || 'Unknown'
+    const code = c.country_code || ''
+    if (!countryDetailMap[country]) countryDetailMap[country] = { count: 0, code }
+    countryDetailMap[country].count++
   })
   const countryDetails = Object.entries(countryDetailMap)
     .sort((a, b) => b[1].count - a[1].count)
