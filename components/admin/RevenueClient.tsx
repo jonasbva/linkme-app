@@ -495,22 +495,21 @@ function DatePicker({ dateStart, dateEnd, dateLabel, onApply, isLight }: {
 }
 
 // ─── Progress Bar ────────────────────────────────────────────────────
-function ProgressBar({ message, current, total, isLight }: {
+function InlineProgress({ message, current, total, isLight }: {
   message: string; current: number; total: number; isLight: boolean
 }) {
   const pct = total > 0 ? Math.round((current / total) * 100) : 0
   return (
-    <div className="flex flex-col items-center justify-center py-16 gap-4">
-      <div className={`w-80 h-2 rounded-full overflow-hidden ${isLight ? 'bg-black/[0.06]' : 'bg-white/[0.06]'}`}>
+    <div className="flex items-center gap-2">
+      <div className={`w-24 h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-black/[0.06]' : 'bg-white/[0.06]'}`}>
         <div
           className="h-full rounded-full bg-blue-500 transition-all duration-300 ease-out"
-          style={{ width: `${pct}%` }}
+          style={{ width: total > 0 ? `${pct}%` : '100%', animation: total === 0 ? 'pulse 1.5s ease-in-out infinite' : undefined }}
         />
       </div>
-      <div className={`text-sm ${isLight ? 'text-black/50' : 'text-white/50'}`}>{message}</div>
-      {total > 0 && (
-        <div className={`text-xs ${isLight ? 'text-black/30' : 'text-white/30'}`}>{pct}% complete</div>
-      )}
+      <span className={`text-xs whitespace-nowrap ${isLight ? 'text-black/40' : 'text-white/40'}`}>
+        {total > 0 ? `${pct}%` : message || 'Fetching…'}
+      </span>
     </div>
   )
 }
@@ -581,57 +580,29 @@ export default function RevenueClient() {
   const tableBorder = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
   const tableRowHover = isLight ? 'hover:bg-black/[0.02]' : 'hover:bg-white/[0.03]'
 
-  // ─── Data Fetching (SSE with progress) ───────────────────────────
-  const fetchData = useCallback(async () => {
+  // ─── Refresh: trigger cache rebuild then load fresh cache ────────
+  const refreshCache = useCallback(async () => {
     setLoading(true)
-    setProgressMsg('Connecting...')
+    setProgressMsg('Refreshing cache...')
     setProgressCurrent(0)
     setProgressTotal(0)
 
-    // Calculate days from date range
-    const diffMs = dateEnd.getTime() - dateStart.getTime()
-    const days = Math.max(1, Math.ceil(diffMs / 86400000))
-    const dateParam = dateEnd.toISOString().split('T')[0]
-
     try {
-      const response = await fetch(`/api/admin/revenue/data?days=${days}&date=${dateParam}&stream=true`)
-
-      if (!response.ok) {
-        const json = await response.json().catch(() => ({ error: 'Unknown error' }))
-        throw new Error(json.error || `HTTP ${response.status}`)
+      // Trigger the cron endpoint to rebuild the Supabase cache
+      const res = await fetch('/api/admin/revenue/cache', { method: 'POST' })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(json.error || `HTTP ${res.status}`)
       }
 
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No response body')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const event = JSON.parse(line.slice(6))
-
-            if (event.type === 'progress') {
-              setProgressMsg(event.message || '')
-              if (event.total) setProgressTotal(event.total)
-              if (event.current !== undefined) setProgressCurrent(event.current)
-            } else if (event.type === 'complete') {
-              setData(event as RevenueData)
-              addToast('success', `Data loaded — ${event.creators?.length || 0} creators`)
-            } else if (event.type === 'error') {
-              addToast('error', event.error || 'Failed to fetch revenue data')
-            }
-          } catch { /* skip malformed SSE lines */ }
-        }
+      // Now read the freshly updated cache
+      const cacheRes = await fetch('/api/admin/revenue/cache?key=today')
+      const cached = await cacheRes.json()
+      if (cached?.totals && cached?.creators) {
+        setData(cached as RevenueData)
+        addToast('success', `Data refreshed — ${cached.creators?.length || 0} creators`)
+      } else {
+        addToast('error', 'Cache refreshed but no data returned')
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
@@ -640,7 +611,30 @@ export default function RevenueClient() {
       setLoading(false)
       setProgressMsg('')
     }
-  }, [dateStart, dateEnd, addToast])
+  }, [addToast])
+
+  // ─── Auto-refresh every 30 minutes ─────────────────────────────
+  useEffect(() => {
+    const THIRTY_MINUTES = 30 * 60 * 1000
+    const interval = setInterval(() => {
+      // Silent background refresh — rebuild cache & update UI
+      fetch('/api/admin/revenue/cache', { method: 'POST' })
+        .then(res => { if (!res.ok) throw new Error('refresh failed'); return res })
+        .then(() => fetch('/api/admin/revenue/cache?key=today'))
+        .then(r => r.json())
+        .then(cached => {
+          if (cached?.totals && cached?.creators) {
+            setData(cached as RevenueData)
+            addToast('info', 'Revenue data auto-refreshed')
+          }
+        })
+        .catch(() => {
+          // Silent failure on auto-refresh
+        })
+    }, THIRTY_MINUTES)
+
+    return () => clearInterval(interval)
+  }, [addToast])
 
   const fetchExpectations = useCallback(async () => {
     setExpLoading(true)
@@ -666,12 +660,11 @@ export default function RevenueClient() {
     finally { setConfigLoading(false) }
   }, [addToast])
 
-  // Load from cache on mount (instant), only live-fetch when user clicks refresh
+  // Load from cache on mount (silent, no loading indicator). Instant display from Supabase cache.
   const cacheLoadedRef = useRef(false)
   useEffect(() => {
     if ((activeTab === 'overview' || activeTab === 'tracking') && !cacheLoadedRef.current && !data) {
       cacheLoadedRef.current = true
-      // Try cache first
       fetch('/api/admin/revenue/cache?key=today')
         .then(r => r.json())
         .then(cached => {
@@ -679,15 +672,15 @@ export default function RevenueClient() {
             setData(cached as RevenueData)
             const ago = cached.fetchedAt ? new Date(cached.fetchedAt) : null
             const mins = ago ? Math.round((Date.now() - ago.getTime()) / 60000) : null
-            addToast('info', mins !== null ? `Showing cached data (${mins}m ago). Click refresh for live data.` : 'Showing cached data.')
-          } else {
-            // No cache — do a live fetch
-            fetchData()
+            addToast('info', mins !== null ? `Cached data (${mins}m ago). Auto-refreshes every 30 min.` : 'Showing cached data.')
           }
+          // No cache? Show empty state — user can click refresh
         })
-        .catch(() => fetchData())
+        .catch(() => {
+          // Cache fetch failed silently — user can click refresh
+        })
     }
-  }, [activeTab, data, fetchData, addToast])
+  }, [activeTab, data, addToast])
   useEffect(() => { if (activeTab === 'expectations') fetchExpectations() }, [activeTab, fetchExpectations])
   useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
 
@@ -806,8 +799,11 @@ export default function RevenueClient() {
         <h1 className={`text-2xl font-bold ${text1}`}>Revenue</h1>
         {(activeTab === 'overview' || activeTab === 'tracking') && (
           <div className="flex items-center gap-3">
+            {loading && (
+              <InlineProgress message={progressMsg} current={progressCurrent} total={progressTotal} isLight={isLight} />
+            )}
             <DatePicker dateStart={dateStart} dateEnd={dateEnd} dateLabel={dateLabel} onApply={handleDateApply} isLight={isLight} />
-            <button onClick={fetchData} disabled={loading}
+            <button onClick={refreshCache} disabled={loading}
               className={`p-2 rounded-lg transition-all ${isLight ? 'hover:bg-black/[0.04] text-black/40' : 'hover:bg-white/[0.06] text-white/40'} disabled:opacity-50`}>
               <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -826,13 +822,19 @@ export default function RevenueClient() {
         ))}
       </div>
 
-      {/* Loading with Progress */}
-      {loading && (activeTab === 'overview' || activeTab === 'tracking') && (
-        <ProgressBar message={progressMsg} current={progressCurrent} total={progressTotal} isLight={isLight} />
+      {/* Empty state — no data yet */}
+      {(activeTab === 'overview' || activeTab === 'tracking') && !data && !loading && (
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <div className={`text-sm ${isLight ? 'text-black/40' : 'text-white/40'}`}>No revenue data loaded yet.</div>
+          <button onClick={refreshCache}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${isLight ? 'bg-black/[0.04] hover:bg-black/[0.08] text-black/60' : 'bg-white/[0.06] hover:bg-white/[0.10] text-white/60'}`}>
+            Fetch Revenue Data
+          </button>
+        </div>
       )}
 
       {/* ─── OVERVIEW ──────────────────────────────────────────── */}
-      {activeTab === 'overview' && !loading && data && (
+      {activeTab === 'overview' && data && (
         <div>
           {/* Summary Cards + Donut */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
@@ -941,7 +943,7 @@ export default function RevenueClient() {
       )}
 
       {/* ─── TRACKING ──────────────────────────────────────────── */}
-      {activeTab === 'tracking' && !loading && data && (
+      {activeTab === 'tracking' && data && (
         <div>
           {[1, 3, 7].map(freq => {
             const creators = getTrackingCreators(freq)
