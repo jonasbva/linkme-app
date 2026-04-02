@@ -166,15 +166,35 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Fetch today's data
+    // Accept optional date parameter (YYYY-MM-DD), defaults to today
+    const { searchParams } = new URL(req.url)
+    const dateParam = searchParams.get('date')
+
     const now = new Date()
-    const startOfDay = new Date(now)
-    startOfDay.setHours(0, 0, 0, 0)
+    let startOfDay: Date
+    let endOfDay: Date
+
+    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      // Fetch for a specific date
+      startOfDay = new Date(dateParam + 'T00:00:00')
+      endOfDay = new Date(dateParam + 'T23:59:59.999')
+      // If the date is today, use current time as end
+      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+      if (dateParam === todayStr) {
+        endOfDay = now
+      }
+    } else {
+      // Default: today
+      startOfDay = new Date(now)
+      startOfDay.setHours(0, 0, 0, 0)
+      endOfDay = now
+    }
+
     const startTime = String(startOfDay.getTime())
-    const endTime = String(now.getTime())
+    const endTime = String(endOfDay.getTime())
 
     // 14d lookback for sub averages
-    const start14d = new Date(now)
+    const start14d = new Date(startOfDay)
     start14d.setDate(start14d.getDate() - 14)
     start14d.setHours(0, 0, 0, 0)
     const startTime14d = String(start14d.getTime())
@@ -300,19 +320,28 @@ export async function GET(req: NextRequest) {
       period: { days: 1, startDate: startOfDay.toISOString(), endDate: now.toISOString() },
     }
 
-    // Upsert into cache — save as both 'today' and the actual date key
+    // Upsert into cache — save with date key, and also 'today' if it's today
     const dateKey = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const isToday = dateKey === todayKey
     const fetchedAt = new Date().toISOString()
-    await Promise.all([
-      supabase.from('revenue_cache').upsert(
-        { cache_key: 'today', data: cachePayload, fetched_at: fetchedAt },
-        { onConflict: 'cache_key' }
-      ),
+
+    const upserts = [
       supabase.from('revenue_cache').upsert(
         { cache_key: dateKey, data: cachePayload, fetched_at: fetchedAt },
         { onConflict: 'cache_key' }
       ),
-    ])
+    ]
+    // Also update 'today' key if we're fetching today's data
+    if (isToday) {
+      upserts.push(
+        supabase.from('revenue_cache').upsert(
+          { cache_key: 'today', data: cachePayload, fetched_at: fetchedAt },
+          { onConflict: 'cache_key' }
+        )
+      )
+    }
+    await Promise.all(upserts)
 
     console.log(`[cron] Revenue cache updated. Total revenue today: $${totals.totalTurnover}`)
     return NextResponse.json({

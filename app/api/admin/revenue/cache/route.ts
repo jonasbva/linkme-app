@@ -39,11 +39,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  // Accept optional date parameter to fetch a specific day
+  const { searchParams } = new URL(req.url)
+  const date = searchParams.get('date') || ''
+
   // Call the cron endpoint directly via internal fetch
   const baseUrl = req.nextUrl.origin
   const cronSecret = process.env.CRON_SECRET || ''
+  const dateQuery = date ? `?date=${date}` : ''
 
-  const res = await fetch(`${baseUrl}/api/cron/revenue-cache`, {
+  const res = await fetch(`${baseUrl}/api/cron/revenue-cache${dateQuery}`, {
     headers: {
       Authorization: `Bearer ${cronSecret}`,
     },
