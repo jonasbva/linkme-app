@@ -632,8 +632,11 @@ export default function RevenueClient() {
         throw new Error(json.error || `HTTP ${res.status}`)
       }
 
-      // Now read the freshly updated cache
-      const cacheRes = await fetch('/api/admin/revenue/cache?key=today')
+      // Now read the freshly updated cache (use date key for today)
+      const diffMs = dateEnd.getTime() - dateStart.getTime()
+      const days = Math.max(1, Math.ceil(diffMs / 86400000))
+      const dateKey = days === 1 ? dateStart.toISOString().split('T')[0] : 'today'
+      const cacheRes = await fetch(`/api/admin/revenue/cache?key=${dateKey}`)
       const cached = await cacheRes.json()
       if (cached?.totals && cached?.creators) {
         setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
@@ -648,7 +651,7 @@ export default function RevenueClient() {
       setLoading(false)
       setProgressMsg('')
     }
-  }, [addToast])
+  }, [addToast, dateStart, dateEnd])
 
   // ─── Auto-refresh every 30 minutes ─────────────────────────────
   useEffect(() => {
@@ -721,12 +724,38 @@ export default function RevenueClient() {
   useEffect(() => { if (activeTab === 'expectations') fetchExpectations() }, [activeTab, fetchExpectations])
   useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
 
+  // ─── Load cached data for a specific date key ──────────────────
+  const loadCacheForDate = useCallback(async (start: Date, end: Date) => {
+    // For single-day views, use the date as cache key; otherwise use 'today'
+    const diffMs = end.getTime() - start.getTime()
+    const days = Math.max(1, Math.ceil(diffMs / 86400000))
+    const dateKey = days === 1 ? start.toISOString().split('T')[0] : 'today'
+
+    try {
+      const res = await fetch(`/api/admin/revenue/cache?key=${dateKey}`)
+      const cached = await res.json()
+      if (cached?.totals && cached?.creators) {
+        setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
+        const ago = cached.fetchedAt ? new Date(cached.fetchedAt) : null
+        const mins = ago ? Math.round((Date.now() - ago.getTime()) / 60000) : null
+        addToast('info', mins !== null ? `Cached data (${mins}m ago)` : 'Showing cached data.')
+      } else {
+        setData(null as unknown as RevenueData)
+        addToast('info', `No cached data for ${dateKey}. Click refresh to fetch.`)
+      }
+    } catch {
+      addToast('error', 'Failed to load cached data')
+    }
+  }, [addToast])
+
   // ─── Date picker handler ────────────────────────────────────────
   const handleDateApply = useCallback((label: string, start: Date, end: Date) => {
     setDateLabel(label)
     setDateStart(start)
     setDateEnd(end)
-  }, [])
+    // Auto-load cached data for the new date
+    loadCacheForDate(start, end)
+  }, [loadCacheForDate])
 
   // ─── Sort handlers ───────────────────────────────────────────────
   const handleSort = (f: string) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('desc') } }

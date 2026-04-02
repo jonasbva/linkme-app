@@ -289,13 +289,19 @@ export async function GET(req: NextRequest) {
       period: { days: 1, startDate: startOfDay.toISOString(), endDate: now.toISOString() },
     }
 
-    // Upsert into cache
-    await supabase
-      .from('revenue_cache')
-      .upsert(
-        { cache_key: 'today', data: cachePayload, fetched_at: new Date().toISOString() },
+    // Upsert into cache — save as both 'today' and the actual date key
+    const dateKey = startOfDay.toISOString().split('T')[0]
+    const fetchedAt = new Date().toISOString()
+    await Promise.all([
+      supabase.from('revenue_cache').upsert(
+        { cache_key: 'today', data: cachePayload, fetched_at: fetchedAt },
         { onConflict: 'cache_key' }
-      )
+      ),
+      supabase.from('revenue_cache').upsert(
+        { cache_key: dateKey, data: cachePayload, fetched_at: fetchedAt },
+        { onConflict: 'cache_key' }
+      ),
+    ])
 
     console.log(`[cron] Revenue cache updated. Total revenue today: $${totals.totalTurnover}`)
     return NextResponse.json({
