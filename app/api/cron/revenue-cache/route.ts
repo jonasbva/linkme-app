@@ -196,6 +196,21 @@ export async function GET(req: NextRequest) {
         )
     }
 
+    // Fetch Supabase creator profiles for display_name + avatar
+    const { data: supabaseCreators } = await supabase
+      .from('creators')
+      .select('id, slug, display_name, avatar_url')
+
+    // Build infloww_id -> supabase creator mapping
+    const { data: creatorMap } = await supabase
+      .from('infloww_creator_map')
+      .select('infloww_creator_id, supabase_creator_id')
+
+    const inflowwToSupabase: Record<string, string> = {}
+    for (const m of creatorMap || []) {
+      inflowwToSupabase[m.infloww_creator_id] = m.supabase_creator_id
+    }
+
     console.log(`[cron] Fetching transactions for ${creators.length} creators...`)
     const creatorData = []
     for (const creator of creators) {
@@ -228,10 +243,16 @@ export async function GET(req: NextRequest) {
       const textingRatio = breakdown.totalNet > 0 ? (breakdown.messageNet / breakdown.totalNet) * 100 : 0
       const avgFanSpend = purchasingFans.size > 0 ? breakdown.totalNet / purchasingFans.size : 0
 
+      const sbCreatorId = inflowwToSupabase[creator.id] || null
+      const sbCreator = sbCreatorId ? (supabaseCreators || []).find((sc: any) => sc.id === sbCreatorId) : null
+
       creatorData.push({
         infloww_id: creator.id,
         name: creator.name,
         userName: creator.userName,
+        display_name: (sbCreator as any)?.display_name || creator.name,
+        avatar_url: (sbCreator as any)?.avatar_url || null,
+        supabase_creator_id: sbCreatorId,
         totalRevenue: breakdown.totalNet,
         totalGross: breakdown.totalGross,
         subscriptionRevenue: breakdown.subscriptionNet,
