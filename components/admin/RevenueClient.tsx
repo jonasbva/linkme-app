@@ -424,7 +424,7 @@ function DatePicker({ dateStart, dateEnd, dateLabel, onApply, isLight }: {
       </button>
 
       {show && (
-        <div className={`absolute left-0 top-full mt-2 z-50 ${popBg} border rounded-2xl p-0`} style={{ width: 340 }}>
+        <div className={`absolute right-0 top-full mt-2 z-50 ${popBg} border rounded-2xl p-0`} style={{ width: 340 }}>
           {/* Quick presets */}
           <div className={`p-4 pb-3 border-b ${popDivider}`}>
             <p className={`text-[11px] ${popLabel} uppercase tracking-widest font-medium mb-3`}>Quick select</p>
@@ -851,8 +851,8 @@ export default function RevenueClient() {
                 <div className={`text-sm ${text2}`}>New Subs</div>
               </div>
               <div className={`${card} rounded-xl p-4`}>
-                <div className={`text-2xl font-bold ${text1}`}>{data.totals.totalPurchases}</div>
-                <div className={`text-sm ${text2}`}>Purchases</div>
+                <div className={`text-2xl font-bold ${text1}`}>{data.totals.totalTurnover > 0 ? (data.totals.messageRevenue / data.totals.totalTurnover * 100).toFixed(1) : '0.0'}%</div>
+                <div className={`text-sm ${text2}`}>Texting Ratio</div>
               </div>
             </div>
             <div className={`${card} rounded-xl p-6 lg:col-span-2 flex items-center justify-center`}>
