@@ -103,6 +103,43 @@ const pctColor = (pct: number | null, isLight: boolean) => {
   return isLight ? 'bg-red-100 text-red-800' : 'bg-red-900/40 text-red-400'
 }
 
+// ─── Normalize creator data (fill missing fields from cache) ────────
+function normalizeCreator(c: Partial<CreatorRevenue>): CreatorRevenue {
+  return {
+    infloww_id: c.infloww_id || '',
+    name: c.name || '',
+    userName: c.userName || '',
+    supabase_creator_id: c.supabase_creator_id ?? null,
+    avatar_url: c.avatar_url ?? null,
+    display_name: c.display_name || c.name || 'Unknown',
+    totalRevenue: c.totalRevenue || 0,
+    totalGross: c.totalGross || 0,
+    subscriptionRevenue: c.subscriptionRevenue || 0,
+    recurringSubRevenue: c.recurringSubRevenue || 0,
+    newSubRevenue: c.newSubRevenue || 0,
+    messageRevenue: c.messageRevenue || 0,
+    tipRevenue: c.tipRevenue || 0,
+    otherRevenue: c.otherRevenue || 0,
+    totalPurchases: c.totalPurchases || 0,
+    newSubs: c.newSubs || 0,
+    recurringSubs: c.recurringSubs || 0,
+    openChats: c.openChats || 0,
+    sellingChats: c.sellingChats || 0,
+    textingRatio: c.textingRatio || 0,
+    avgFanSpend: c.avgFanSpend || 0,
+    subAvg14d: c.subAvg14d || 0,
+    totalSubs14d: c.totalSubs14d || 0,
+    linkClicks: c.linkClicks || 0,
+    conversionRate: c.conversionRate || 0,
+    expectation: c.expectation ?? null,
+    generatedRevenuePct: c.generatedRevenuePct ?? null,
+    emergency_since: c.emergency_since ?? null,
+    emergency_notes: c.emergency_notes || '',
+    hourlyRevenue: c.hourlyRevenue,
+    hourlySubs: c.hourlySubs,
+  }
+}
+
 // ─── Toast Notification Component ───────────────────────────────────
 function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
   return (
@@ -599,7 +636,7 @@ export default function RevenueClient() {
       const cacheRes = await fetch('/api/admin/revenue/cache?key=today')
       const cached = await cacheRes.json()
       if (cached?.totals && cached?.creators) {
-        setData(cached as RevenueData)
+        setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
         addToast('success', `Data refreshed — ${cached.creators?.length || 0} creators`)
       } else {
         addToast('error', 'Cache refreshed but no data returned')
@@ -624,7 +661,7 @@ export default function RevenueClient() {
         .then(r => r.json())
         .then(cached => {
           if (cached?.totals && cached?.creators) {
-            setData(cached as RevenueData)
+            setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
             addToast('info', 'Revenue data auto-refreshed')
           }
         })
@@ -669,7 +706,7 @@ export default function RevenueClient() {
         .then(r => r.json())
         .then(cached => {
           if (cached?.totals && cached?.creators) {
-            setData(cached as RevenueData)
+            setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
             const ago = cached.fetchedAt ? new Date(cached.fetchedAt) : null
             const mins = ago ? Math.round((Date.now() - ago.getTime()) / 60000) : null
             addToast('info', mins !== null ? `Cached data (${mins}m ago). Auto-refreshes every 30 min.` : 'Showing cached data.')
@@ -988,7 +1025,7 @@ export default function RevenueClient() {
                             <td className="px-3 py-3">
                               {c.generatedRevenuePct !== null
                                 ? <span className={`px-2 py-1 rounded text-xs font-medium ${pctColor(c.generatedRevenuePct, isLight)}`}>
-                                    {c.generatedRevenuePct > 0 ? '+' : ''}{c.generatedRevenuePct.toFixed(1)}%
+                                    {(c.generatedRevenuePct ?? 0) > 0 ? '+' : ''}{(c.generatedRevenuePct ?? 0).toFixed(1)}%
                                   </span>
                                 : <span className={text3}>—</span>}
                             </td>
