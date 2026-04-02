@@ -337,7 +337,12 @@ export async function GET(req: NextRequest) {
     'x-oid': config.agency_oid,
   }
 
-  const endDate = dateParam ? new Date(dateParam + 'T23:59:59Z') : new Date()
+  const now = new Date()
+  let endDate = dateParam ? new Date(dateParam + 'T23:59:59Z') : new Date()
+  // Infloww API rejects endTime in the future — cap at current time
+  if (endDate.getTime() > now.getTime()) {
+    endDate = now
+  }
   const startDate = new Date(endDate)
   startDate.setDate(startDate.getDate() - days)
   startDate.setHours(0, 0, 0, 0)
