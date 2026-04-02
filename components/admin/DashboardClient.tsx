@@ -23,6 +23,12 @@ interface CreatorStat {
   tagIds: string[]
 }
 
+interface UnmappedCreator {
+  infloww_id: string
+  name: string
+  userName: string
+}
+
 interface Props {
   creatorStats: CreatorStat[]
   totalPageViews: number
@@ -30,6 +36,7 @@ interface Props {
   weeklyPageViews: number
   topCountries: [string, number][]
   tags: Tag[]
+  unmappedCreators: UnmappedCreator[]
   isSuperAdmin?: boolean
 }
 
@@ -40,6 +47,7 @@ export default function DashboardClient({
   weeklyPageViews,
   topCountries,
   tags,
+  unmappedCreators,
   isSuperAdmin,
 }: Props) {
   const { resolved } = useTheme()
@@ -358,6 +366,49 @@ export default function DashboardClient({
             <p className={`text-[13px] text-center py-8 ${textTertiary}`}>
               {search || filterTag !== 'all' ? 'No creators match your filter' : 'No creators yet'}
             </p>
+          )}
+
+          {/* Unmapped Infloww creators */}
+          {unmappedCreators.length > 0 && !search && filterTag === 'all' && (
+            <>
+              <div className={`flex items-center gap-3 mt-6 mb-2`}>
+                <div className={`flex-1 h-px ${isLight ? 'bg-black/[0.10]' : 'bg-white/[0.12]'}`} />
+                <span className={`text-[11px] font-semibold uppercase tracking-widest ${isLight ? 'text-black/30' : 'text-white/30'}`}>
+                  Unmapped
+                </span>
+                <div className={`flex-1 h-px ${isLight ? 'bg-black/[0.10]' : 'bg-white/[0.12]'}`} />
+              </div>
+              <p className={`text-[11px] mb-2 ${textTertiary}`}>
+                These Infloww creators aren't linked to a LinkMe profile yet.
+              </p>
+              {unmappedCreators.map(uc => (
+                <div
+                  key={uc.infloww_id}
+                  className={`flex items-center justify-between p-4 rounded-xl transition-all duration-150 ${
+                    isLight
+                      ? 'bg-amber-500/[0.04] border border-amber-500/[0.10]'
+                      : 'bg-amber-500/[0.04] border border-amber-500/[0.08]'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-medium ${
+                      isLight ? 'bg-amber-500/10 text-amber-600' : 'bg-amber-500/10 text-amber-400'
+                    }`}>
+                      {uc.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className={`text-[13px] font-medium ${textPrimary}`}>{uc.name}</p>
+                      <p className={`text-[11px] ${textTertiary}`}>@{uc.userName}</p>
+                    </div>
+                  </div>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                    isLight ? 'bg-amber-500/10 text-amber-600' : 'bg-amber-500/10 text-amber-400'
+                  }`}>
+                    Not linked
+                  </span>
+                </div>
+              ))}
+            </>
           )}
         </div>
 

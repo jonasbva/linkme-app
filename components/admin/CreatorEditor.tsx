@@ -448,8 +448,8 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <a href="/admin/creators" className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
-            ← Back
+          <a href="/admin" className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+            ← Dashboard
           </a>
           <h1 className="text-xl font-semibold tracking-tight mt-1">
             {isNew ? 'New Creator' : creator.display_name}

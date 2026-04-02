@@ -4,11 +4,13 @@ import { getSessionUser, getUserPermissions } from '@/lib/auth'
 
 async function getDashboardStats(visibleCreatorIds?: string[]) {
   const supabase = createServerSupabaseClient()
-  const [creatorsRes, clicksRes, tagsRes, creatorTagsRes] = await Promise.all([
+  const [creatorsRes, clicksRes, tagsRes, creatorTagsRes, inflowwCacheRes, inflowwMapRes] = await Promise.all([
     supabase.from('creators').select('id, slug, display_name, avatar_url, is_active, custom_domain'),
     supabase.from('clicks').select('creator_id, type, country, created_at'),
     supabase.from('tags').select('*').order('name'),
     supabase.from('creator_tags').select('creator_id, tag_id'),
+    supabase.from('infloww_creators_cache').select('infloww_id, name, user_name'),
+    supabase.from('infloww_creator_map').select('creator_id, infloww_creator_id'),
   ])
   let creators = creatorsRes.data || []
   if (visibleCreatorIds) {
@@ -38,7 +40,16 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
       tagIds: creatorTags.filter(ct => ct.creator_id === creator.id).map(ct => ct.tag_id),
     }
   }).sort((a, b) => b.totalViews - a.totalViews)
-  return { creatorStats, totalPageViews, totalLinkClicks, weeklyPageViews, topCountries, tags }
+  // Find unmapped Infloww creators
+  const inflowwCreators = inflowwCacheRes.data || []
+  const mappedInflowwIds = new Set((inflowwMapRes.data || []).map((m: any) => m.infloww_creator_id))
+  // Also check by slug match
+  const creatorSlugs = new Set(creators.map(c => c.slug?.toLowerCase()))
+  const unmappedCreators = inflowwCreators
+    .filter(ic => !mappedInflowwIds.has(ic.infloww_id) && !creatorSlugs.has(ic.user_name?.toLowerCase()))
+    .map(ic => ({ infloww_id: ic.infloww_id, name: ic.name, userName: ic.user_name }))
+
+  return { creatorStats, totalPageViews, totalLinkClicks, weeklyPageViews, topCountries, tags, unmappedCreators }
 }
 
 export default async function AdminDashboard() {

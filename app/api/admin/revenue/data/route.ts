@@ -344,8 +344,13 @@ export async function GET(req: NextRequest) {
     endDate = now
   }
   const startDate = new Date(endDate)
-  startDate.setDate(startDate.getDate() - days)
-  startDate.setHours(0, 0, 0, 0)
+  if (days === 1) {
+    // "Today" / single day: start at midnight of that day, not 24h back
+    startDate.setUTCHours(0, 0, 0, 0)
+  } else {
+    startDate.setDate(startDate.getDate() - days)
+    startDate.setHours(0, 0, 0, 0)
+  }
 
   const startTime = String(startDate.getTime())
   const endTime = String(endDate.getTime())

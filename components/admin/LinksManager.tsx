@@ -266,8 +266,8 @@ export default function LinksManager({ creator, initialLinks }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <a href="/admin/creators" className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
-            ← Back
+          <a href="/admin" className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+            ← Dashboard
           </a>
           <h1 className="text-xl font-semibold tracking-tight mt-1">{creator.display_name}</h1>
           <p className="text-[12px] text-white/30 mt-0.5">Manage links</p>

@@ -163,9 +163,10 @@ function DonutChart({ segments, isLight }: {
   segments: { label: string; value: number; color: string }[]
   isLight: boolean
 }) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
   const total = segments.reduce((s, seg) => s + seg.value, 0)
   if (total === 0) return <div className={`text-sm ${isLight ? 'text-black/40' : 'text-white/40'}`}>No data</div>
-  const size = 160
+  const size = 180
   const strokeWidth = 28
   const radius = (size - strokeWidth) / 2
   const circumference = 2 * Math.PI * radius
@@ -173,22 +174,48 @@ function DonutChart({ segments, isLight }: {
 
   return (
     <div className="flex items-center gap-6">
-      <svg width={size} height={size} className="transform -rotate-90">
-        {segments.map((seg, i) => {
-          const pct = seg.value / total
-          const dashArray = `${pct * circumference} ${circumference}`
-          const el = (
-            <circle key={i} cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={seg.color}
-              strokeWidth={strokeWidth} strokeDasharray={dashArray} strokeDashoffset={-offset} strokeLinecap="round" />
-          )
-          offset += pct * circumference
-          return el
-        })}
-      </svg>
+      <div className="relative">
+        <svg width={size} height={size} className="transform -rotate-90">
+          {segments.filter(s => s.value > 0).map((seg, i) => {
+            const pct = seg.value / total
+            const dashArray = `${pct * circumference} ${circumference}`
+            const isHovered = hoveredIdx === i
+            const el = (
+              <circle key={i} cx={size / 2} cy={size / 2} r={radius} fill="none" stroke={seg.color}
+                strokeWidth={isHovered ? strokeWidth + 4 : strokeWidth}
+                strokeDasharray={dashArray} strokeDashoffset={-offset}
+                className="transition-all duration-150 cursor-pointer"
+                style={{ opacity: hoveredIdx !== null && !isHovered ? 0.4 : 1 }}
+                onMouseEnter={() => setHoveredIdx(i)}
+                onMouseLeave={() => setHoveredIdx(null)} />
+            )
+            offset += pct * circumference
+            return el
+          })}
+        </svg>
+        {/* Center label on hover */}
+        {hoveredIdx !== null && segments[hoveredIdx] && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <div className={`text-lg font-bold ${isLight ? 'text-black/90' : 'text-white'}`}>
+              {(segments[hoveredIdx].value / total * 100).toFixed(1)}%
+            </div>
+            <div className={`text-[11px] ${isLight ? 'text-black/40' : 'text-white/50'}`}>
+              {segments[hoveredIdx].label}
+            </div>
+          </div>
+        )}
+      </div>
       <div className="flex flex-col gap-2">
         {segments.map((seg, i) => (
-          <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg"
-            style={{ backgroundColor: seg.color + '15', borderLeft: `3px solid ${seg.color}` }}>
+          <div key={i}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg cursor-pointer transition-opacity duration-150"
+            style={{
+              backgroundColor: seg.color + '15',
+              borderLeft: `3px solid ${seg.color}`,
+              opacity: hoveredIdx !== null && hoveredIdx !== i ? 0.4 : 1,
+            }}
+            onMouseEnter={() => setHoveredIdx(i)}
+            onMouseLeave={() => setHoveredIdx(null)}>
             <div>
               <div className={`font-semibold text-sm ${isLight ? 'text-black/80' : 'text-white'}`}>{fmt(seg.value)}</div>
               <div className={`text-xs ${isLight ? 'text-black/40' : 'text-white/50'}`}>{seg.label}</div>
@@ -206,14 +233,19 @@ function LineChart({ data, dataKey, label, isLight, formatY, color = '#3b82f6' }
   dataKey: string; label: string; isLight: boolean; color?: string
   formatY?: (v: number) => string
 }) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null)
+
   if (!data.length) return null
   const values = data.map((d) => (d[dataKey] as number) || 0)
   const max = Math.max(...values, 1)
-  const w = 500; const h = 140; const padX = 50; const padY = 20
-  const chartW = w - padX; const chartH = h - padY * 2
-  const points = values
-    .map((v, i) => `${padX + (i / (values.length - 1)) * chartW},${padY + chartH - (v / max) * chartH}`)
-    .join(' ')
+  const w = 500; const h = 160; const padX = 50; const padY = 20
+  const chartW = w - padX; const chartH = h - padY * 2 - 20
+  const pointCoords = values.map((v, i) => ({
+    x: padX + (i / (values.length - 1)) * chartW,
+    y: padY + chartH - (v / max) * chartH,
+    value: v,
+  }))
+  const points = pointCoords.map(p => `${p.x},${p.y}`).join(' ')
   const gridColor = isLight ? '#e5e7eb' : '#1f2937'
   const labelColor = isLight ? '#6b7280' : '#6b7280'
   const ySteps = 4
@@ -222,7 +254,6 @@ function LineChart({ data, dataKey, label, isLight, formatY, color = '#3b82f6' }
     return formatY ? formatY(val) : String(Math.round(val))
   })
 
-  // Build gradient fill path
   const firstX = padX
   const lastX = padX + chartW
   const bottomY = padY + chartH
@@ -249,6 +280,35 @@ function LineChart({ data, dataKey, label, isLight, formatY, color = '#3b82f6' }
         })}
         <polygon points={fillPoints} fill={`url(#grad-${dataKey})`} />
         <polyline points={points} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        {/* Hover targets — invisible wider hit areas */}
+        {pointCoords.map((p, i) => (
+          <g key={`hover-${i}`}>
+            <rect
+              x={p.x - (chartW / data.length) / 2} y={padY} width={chartW / data.length} height={chartH}
+              fill="transparent"
+              onMouseEnter={() => setHoveredIdx(i)}
+              onMouseLeave={() => setHoveredIdx(null)}
+              className="cursor-crosshair"
+            />
+          </g>
+        ))}
+        {/* Hover indicator */}
+        {hoveredIdx !== null && pointCoords[hoveredIdx] && (
+          <g>
+            <line x1={pointCoords[hoveredIdx].x} y1={padY} x2={pointCoords[hoveredIdx].x} y2={bottomY}
+              stroke={color} strokeWidth="1" strokeDasharray="3" opacity="0.4" />
+            <circle cx={pointCoords[hoveredIdx].x} cy={pointCoords[hoveredIdx].y} r="4"
+              fill={color} stroke={isLight ? '#fff' : '#111'} strokeWidth="2" />
+            {/* Tooltip */}
+            <rect x={pointCoords[hoveredIdx].x - 35} y={pointCoords[hoveredIdx].y - 28} width="70" height="20"
+              rx="4" fill={isLight ? '#000' : '#fff'} opacity="0.9" />
+            <text x={pointCoords[hoveredIdx].x} y={pointCoords[hoveredIdx].y - 14}
+              fill={isLight ? '#fff' : '#000'} fontSize="11" fontWeight="600" textAnchor="middle">
+              {formatY ? formatY(pointCoords[hoveredIdx].value) : String(Math.round(pointCoords[hoveredIdx].value))}
+            </text>
+          </g>
+        )}
+        {/* X-axis labels */}
         {data.filter((_, i) => i % 3 === 0).map((d) => {
           const idx = data.indexOf(d)
           const x = padX + (idx / (data.length - 1)) * chartW
@@ -606,7 +666,28 @@ export default function RevenueClient() {
     finally { setConfigLoading(false) }
   }, [addToast])
 
-  useEffect(() => { if (activeTab === 'overview' || activeTab === 'tracking') fetchData() }, [activeTab, fetchData])
+  // Load from cache on mount (instant), only live-fetch when user clicks refresh
+  const cacheLoadedRef = useRef(false)
+  useEffect(() => {
+    if ((activeTab === 'overview' || activeTab === 'tracking') && !cacheLoadedRef.current && !data) {
+      cacheLoadedRef.current = true
+      // Try cache first
+      fetch('/api/admin/revenue/cache?key=today')
+        .then(r => r.json())
+        .then(cached => {
+          if (cached?.totals && cached?.creators) {
+            setData(cached as RevenueData)
+            const ago = cached.fetchedAt ? new Date(cached.fetchedAt) : null
+            const mins = ago ? Math.round((Date.now() - ago.getTime()) / 60000) : null
+            addToast('info', mins !== null ? `Showing cached data (${mins}m ago). Click refresh for live data.` : 'Showing cached data.')
+          } else {
+            // No cache — do a live fetch
+            fetchData()
+          }
+        })
+        .catch(() => fetchData())
+    }
+  }, [activeTab, data, fetchData, addToast])
   useEffect(() => { if (activeTab === 'expectations') fetchExpectations() }, [activeTab, fetchExpectations])
   useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
 
@@ -621,14 +702,19 @@ export default function RevenueClient() {
   const handleSort = (f: string) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('desc') } }
   const handleTrackSort = (f: string) => { if (trackSortField === f) setTrackSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setTrackSortField(f); setTrackSortDir('asc') } }
 
-  const sortedCreators = useMemo(() => {
+  // Only show mapped creators (those linked to a LinkMe profile) in Revenue lists
+  const mappedCreators = useMemo(() => {
     if (!data?.creators) return []
-    return [...data.creators].sort((a, b) => {
+    return data.creators.filter(c => c.supabase_creator_id !== null)
+  }, [data])
+
+  const sortedCreators = useMemo(() => {
+    return [...mappedCreators].sort((a, b) => {
       const aVal = (a as Record<string, unknown>)[sortField] as number || 0
       const bVal = (b as Record<string, unknown>)[sortField] as number || 0
       return sortDir === 'asc' ? aVal - bVal : bVal - aVal
     })
-  }, [data, sortField, sortDir])
+  }, [mappedCreators, sortField, sortDir])
 
   // ─── Save handlers ──────────────────────────────────────────────
   const saveExpectation = async (creatorId: string, field: string, value: number | boolean) => {
@@ -690,7 +776,7 @@ export default function RevenueClient() {
   const getTrackingCreators = (freq: number) => {
     if (!data?.creators) return []
     return [...data.creators]
-      .filter(c => c.expectation?.check_frequency === freq)
+      .filter(c => c.supabase_creator_id !== null && c.expectation?.check_frequency === freq)
       .sort((a, b) => {
         const aVal = (a as Record<string, unknown>)[trackSortField] as number || 0
         const bVal = (b as Record<string, unknown>)[trackSortField] as number || 0
@@ -769,8 +855,8 @@ export default function RevenueClient() {
             </div>
             <div className={`${card} rounded-xl p-6 lg:col-span-2 flex items-center justify-center`}>
               <DonutChart isLight={isLight} segments={[
-                { label: 'Subscriptions', value: data.totals.subscriptionRevenue, color: '#f43f5e' },
-                { label: 'Messages', value: data.totals.messageRevenue, color: '#a855f7' },
+                { label: 'Subscriptions', value: data.totals.subscriptionRevenue, color: '#a855f7' },
+                { label: 'Messages', value: data.totals.messageRevenue, color: '#3b82f6' },
                 { label: 'Tips', value: data.totals.tipRevenue, color: '#14b8a6' },
               ]} />
             </div>
@@ -933,11 +1019,11 @@ export default function RevenueClient() {
             )
           })}
 
-          {data.creators.filter(c => !c.expectation).length > 0 && (
+          {mappedCreators.filter(c => !c.expectation).length > 0 && (
             <div className={`mt-6 rounded-lg p-4 ${isLight ? 'bg-amber-50 border border-amber-200' : 'bg-yellow-900/15 border border-yellow-700/30'}`}>
               <p className={`text-sm font-medium mb-1 ${isLight ? 'text-amber-800' : 'text-yellow-300'}`}>Creators without expectations:</p>
               <p className={`text-sm ${isLight ? 'text-amber-700' : 'text-yellow-200/70'}`}>
-                {data.creators.filter(c => !c.expectation).map(c => c.display_name).join(', ')}
+                {mappedCreators.filter(c => !c.expectation).map(c => c.display_name).join(', ')}
               </p>
               <p className={`text-xs mt-2 ${isLight ? 'text-amber-600' : 'text-yellow-200/40'}`}>Set targets in the Expectations tab.</p>
             </div>
