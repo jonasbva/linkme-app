@@ -735,7 +735,7 @@ export default function RevenueClient() {
   // Only show mapped creators (those linked to a LinkMe profile) in Revenue lists
   const mappedCreators = useMemo(() => {
     if (!data?.creators) return []
-    return data.creators.filter(c => c.supabase_creator_id !== null)
+    return data.creators
   }, [data])
 
   const sortedCreators = useMemo(() => {
