@@ -18,6 +18,7 @@ export default function AdminNav({ isSuperAdmin, displayName }: AdminNavProps) {
     { href: '/admin', label: 'Dashboard', exact: true },
     { href: '/admin/creators', label: 'Creators' },
     { href: '/admin/conversions', label: 'Conversions' },
+    { href: '/admin/revenue', label: 'Revenue' },
     { href: '/admin/domains', label: 'Domains' },
     ...(isSuperAdmin ? [
       { href: '/admin/team', label: 'Team' },
