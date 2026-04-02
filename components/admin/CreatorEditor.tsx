@@ -111,6 +111,48 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const [linkSaveStatus, setLinkSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
   const [uploadingField, setUploadingField] = useState<string | null>(null)
 
+  // ─── Infloww Creator Mapping ───
+  const [inflowwCreators, setInflowwCreators] = useState<{ infloww_id: string; name: string; user_name: string }[]>([])
+  const [inflowwMapping, setInflowwMapping] = useState<string>('') // infloww_creator_id
+  const [inflowwMappingSaving, setInflowwMappingSaving] = useState(false)
+
+  useEffect(() => {
+    if (isNew || !initialCreator?.id) return
+    // Fetch cached Infloww creators
+    fetch('/api/admin/revenue/infloww-creators-cached')
+      .then(r => r.json())
+      .then(j => { if (j.creators) setInflowwCreators(j.creators) })
+      .catch(() => {})
+    // Fetch current mapping for this creator
+    fetch(`/api/admin/revenue/mapping?creator_id=${initialCreator.id}`)
+      .then(r => r.json())
+      .then(j => {
+        const m = (j.mappings || []).find((m: any) => m.creator_id === initialCreator.id)
+        if (m) setInflowwMapping(m.infloww_creator_id)
+      })
+      .catch(() => {})
+  }, [isNew, initialCreator?.id])
+
+  async function saveInflowwMapping(inflowwId: string) {
+    if (!initialCreator?.id) return
+    setInflowwMappingSaving(true)
+    setInflowwMapping(inflowwId)
+    try {
+      if (!inflowwId) {
+        await fetch(`/api/admin/revenue/mapping?creator_id=${initialCreator.id}`, { method: 'DELETE' })
+      } else {
+        const ic = inflowwCreators.find(c => c.infloww_id === inflowwId)
+        await fetch('/api/admin/revenue/mapping', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ creator_id: initialCreator.id, infloww_creator_id: inflowwId, infloww_creator_name: ic?.name || '' }),
+        })
+      }
+      showToast('Infloww mapping saved', 'success')
+    } catch { showToast('Failed to save mapping', 'error') }
+    finally { setInflowwMappingSaving(false) }
+  }
+
   async function uploadImage(file: File, field: string) {
     setUploadingField(field)
     try {
@@ -562,6 +604,36 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
               />
             </div>
           </Section>
+
+          {!isNew && (
+            <Section title="Infloww" defaultOpen={false}>
+              <div className="space-y-2">
+                <p className={`text-[12px] ${isLight ? 'text-black/40' : 'text-white/40'}`}>
+                  Link this creator to their Infloww profile for revenue tracking.
+                  {inflowwCreators.length === 0 && ' Fetch revenue data at least once to populate this list.'}
+                </p>
+                {inflowwCreators.length > 0 && (
+                  <select
+                    value={inflowwMapping}
+                    onChange={e => saveInflowwMapping(e.target.value)}
+                    disabled={inflowwMappingSaving}
+                    className={`w-full max-w-md rounded-lg px-3 py-2 text-[13px] outline-none transition-all ${
+                      isLight
+                        ? 'bg-white border border-black/10 text-black/80 focus:border-black/30'
+                        : 'bg-white/[0.05] border border-white/10 text-white/90 focus:border-white/30'
+                    } ${inflowwMappingSaving ? 'opacity-50' : ''}`}
+                  >
+                    <option value="">— Not mapped —</option>
+                    {inflowwCreators.map(ic => (
+                      <option key={ic.infloww_id} value={ic.infloww_id}>
+                        {ic.name} ({ic.user_name})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </Section>
+          )}
 
           <Section title="Options" defaultOpen={false}>
             <div className="flex flex-wrap items-center gap-x-8 gap-y-4">

@@ -32,6 +32,34 @@ interface InflowwCreator {
   tagName: string
 }
 
+// Rate limiter: max 4 requests per second (stay under the 5/sec hard limit)
+let lastRequestTime = 0
+const MIN_REQUEST_GAP_MS = 250 // 250ms = 4 requests/sec max
+
+async function rateLimitedFetch(
+  url: string,
+  headers: Record<string, string>
+): Promise<Response> {
+  const now = Date.now()
+  const elapsed = now - lastRequestTime
+  if (elapsed < MIN_REQUEST_GAP_MS) {
+    await new Promise((r) => setTimeout(r, MIN_REQUEST_GAP_MS - elapsed))
+  }
+  lastRequestTime = Date.now()
+
+  const response = await fetch(url, { headers, cache: 'no-store' })
+
+  // Handle 429 with retry-after
+  if (response.status === 429) {
+    const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10)
+    await new Promise((r) => setTimeout(r, retryAfter * 1000))
+    lastRequestTime = Date.now()
+    return fetch(url, { headers, cache: 'no-store' })
+  }
+
+  return response
+}
+
 async function fetchAllPages(
   endpoint: string,
   params: Record<string, string>,
@@ -43,7 +71,7 @@ async function fetchAllPages(
 
   while (hasMore) {
     const url = `${INFLOWW_BASE}${endpoint}?${queryParams.toString()}`
-    const response = await fetch(url, { headers, cache: 'no-store' })
+    const response = await rateLimitedFetch(url, headers)
 
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}))
@@ -124,9 +152,21 @@ export async function GET(req: NextRequest) {
       headers
     )) as InflowwCreator[]
 
-    // 4. Fetch transactions for each creator (both for the requested period and 14d)
-    const creatorData = await Promise.all(
-      creators.map(async (creator) => {
+    // 3b. Cache Infloww creators in Supabase (upsert so dropdown is always fresh)
+    for (const c of creators) {
+      await supabase
+        .from('infloww_creators_cache')
+        .upsert(
+          { infloww_id: c.id, name: c.name, user_name: c.userName, nick_name: c.nickName || '', last_seen_at: new Date().toISOString() },
+          { onConflict: 'infloww_id' }
+        )
+    }
+
+    // 4. Fetch transactions for each creator SEQUENTIALLY to respect rate limits
+    //    Infloww allows 5 req/sec and 60 req/min — sequential with 250ms gaps keeps us safe
+    const creatorData = []
+    for (const creator of creators) {
+      const creatorResult = await (async () => {
         // Fetch transactions for the requested period
         const periodTransactions = (await fetchAllPages(
           '/v1/transactions',
@@ -251,8 +291,9 @@ export async function GET(req: NextRequest) {
           hourlyRevenue: days === 1 ? hourlyRevenue : undefined,
           hourlySubs: days === 1 ? hourlySubs : undefined,
         }
-      })
-    )
+      })()
+      creatorData.push(creatorResult)
+    }
 
     // 5. Get conversion data from Supabase (link clicks for conversion rate)
     const startDateStr = startDate.toISOString().split('T')[0]
@@ -294,13 +335,24 @@ export async function GET(req: NextRequest) {
     const expMap = new Map(expectations?.map((e) => [e.creator_id, e]) || [])
     const emergencyMap = new Map(emergencies?.map((e) => [e.creator_id, e]) || [])
 
+    // 6b. Get creator mappings (Infloww ID → Supabase creator)
+    const { data: creatorMappings } = await supabase
+      .from('infloww_creator_map')
+      .select('creator_id, infloww_creator_id')
+
+    const inflowwToSupabase = new Map(
+      creatorMappings?.map((m) => [m.infloww_creator_id, m.creator_id]) || []
+    )
+
     // 7. Merge Infloww data with Supabase data
     const mergedData = creatorData.map((cd) => {
-      // Try to match Infloww creator to Supabase creator by username/slug
-      const supabaseCreator =
-        creatorMap.get(cd.userName?.toLowerCase()) ||
-        creatorMap.get(cd.name?.toLowerCase()) ||
-        null
+      // Use explicit mapping first, fall back to username/slug matching
+      const mappedCreatorId = inflowwToSupabase.get(cd.infloww_id)
+      const supabaseCreator = mappedCreatorId
+        ? creatorIdMap.get(mappedCreatorId)
+        : creatorMap.get(cd.userName?.toLowerCase()) ||
+          creatorMap.get(cd.name?.toLowerCase()) ||
+          null
 
       const creatorId = supabaseCreator?.id || null
       const convData = creatorId ? clicksByCreator[creatorId] : null
