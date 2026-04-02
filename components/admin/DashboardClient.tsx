@@ -60,12 +60,11 @@ export default function DashboardClient({
   const [scrapeResult, setScrapeResult] = useState<{ success: number; errors: number; total: number } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Fetch revenue today on mount
+  // Fetch revenue today from cache (instant, no Infloww API call)
   useEffect(() => {
     async function fetchRevenue() {
       try {
-        const today = new Date().toISOString().split('T')[0]
-        const res = await fetch(`/api/admin/revenue/data?days=1&date=${today}`)
+        const res = await fetch('/api/admin/revenue/cache?key=today')
         if (res.ok) {
           const data = await res.json()
           setRevenueToday(data?.totals?.totalTurnover ?? null)

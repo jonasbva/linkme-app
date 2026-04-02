@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/daily-scrape",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/revenue-cache",
+      "schedule": "*/30 * * * *"
     }
   ]
 }
