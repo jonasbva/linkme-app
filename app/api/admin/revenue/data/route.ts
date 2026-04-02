@@ -32,34 +32,56 @@ interface InflowwCreator {
   tagName: string
 }
 
-// Rate limiter: max 4 requests per second (stay under the 5/sec hard limit)
+// ─── Rate Limiter ───────────────────────────────────────────────────
+// Conservative: ~1.6 req/sec and tracks 60/min window
 let lastRequestTime = 0
-const MIN_REQUEST_GAP_MS = 250 // 250ms = 4 requests/sec max
+const MIN_REQUEST_GAP_MS = 600
+const requestTimestamps: number[] = []
+const MAX_REQUESTS_PER_MINUTE = 50
 
 async function rateLimitedFetch(
   url: string,
-  headers: Record<string, string>
+  headers: Record<string, string>,
+  maxRetries = 3
 ): Promise<Response> {
   const now = Date.now()
-  const elapsed = now - lastRequestTime
+  while (requestTimestamps.length > 0 && requestTimestamps[0] < now - 60000) {
+    requestTimestamps.shift()
+  }
+
+  if (requestTimestamps.length >= MAX_REQUESTS_PER_MINUTE) {
+    const waitUntil = requestTimestamps[0] + 60000
+    const waitMs = waitUntil - Date.now() + 100
+    if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs))
+  }
+
+  const elapsed = Date.now() - lastRequestTime
   if (elapsed < MIN_REQUEST_GAP_MS) {
     await new Promise((r) => setTimeout(r, MIN_REQUEST_GAP_MS - elapsed))
   }
   lastRequestTime = Date.now()
+  requestTimestamps.push(Date.now())
 
   const response = await fetch(url, { headers, cache: 'no-store' })
 
-  // Handle 429 with retry-after
   if (response.status === 429) {
-    const retryAfter = parseInt(response.headers.get('retry-after') || '5', 10)
-    await new Promise((r) => setTimeout(r, retryAfter * 1000))
-    lastRequestTime = Date.now()
-    return fetch(url, { headers, cache: 'no-store' })
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const retryAfter = parseInt(response.headers.get('retry-after') || '0', 10)
+      const backoffMs = Math.max(retryAfter * 1000, attempt * 2000)
+      console.warn(`Rate limited (429). Retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`)
+      await new Promise((r) => setTimeout(r, backoffMs))
+      lastRequestTime = Date.now()
+      requestTimestamps.push(Date.now())
+      const retryResponse = await fetch(url, { headers, cache: 'no-store' })
+      if (retryResponse.status !== 429) return retryResponse
+    }
+    throw new Error('Infloww API rate limit exceeded after multiple retries. Please wait a minute and try again.')
   }
 
   return response
 }
 
+// ─── Paginated Fetch ────────────────────────────────────────────────
 async function fetchAllPages(
   endpoint: string,
   params: Record<string, string>,
@@ -96,8 +118,191 @@ async function fetchAllPages(
   return allItems
 }
 
-// GET: Fetch revenue data from Infloww API + Supabase conversion data
-// Query params: ?days=1 (1, 3, 7, 14, 30) &date=2026-04-01 (optional specific date)
+// ─── Per-Creator Transaction Fetch ──────────────────────────────────
+async function fetchCreatorTransactions(
+  creator: InflowwCreator,
+  params: { startTime: string; endTime: string; startTime14d: string; days: number },
+  headers: Record<string, string>
+) {
+  const { startTime, endTime, startTime14d, days } = params
+
+  const periodTransactions = (await fetchAllPages(
+    '/v1/transactions',
+    { creatorId: creator.id, platformCode: 'OnlyFans', startTime, endTime, limit: '100' },
+    headers
+  )) as InflowwTransaction[]
+
+  const transactions14d =
+    days === 14
+      ? periodTransactions
+      : ((await fetchAllPages(
+          '/v1/transactions',
+          { creatorId: creator.id, platformCode: 'OnlyFans', startTime: startTime14d, endTime, limit: '100' },
+          headers
+        )) as InflowwTransaction[])
+
+  const breakdown = calculateBreakdown(periodTransactions)
+
+  const newSubs14d = transactions14d.filter((t) => t.type === 'Subscription')
+  const subAvg14d = newSubs14d.length > 0 ? Math.round(newSubs14d.length / 14) : 0
+
+  const periodNewSubs = periodTransactions.filter((t) => t.type === 'Subscription')
+  const periodRecSubs = periodTransactions.filter((t) => t.type === 'Recurring Subscription')
+
+  const messageFans = new Set(periodTransactions.filter((t) => t.type === 'Messages').map((t) => t.fanId))
+  const purchasingFans = new Set(periodTransactions.map((t) => t.fanId))
+  const sellingChatFans = new Set(
+    periodTransactions.filter((t) => t.type === 'Messages' && parseInt(t.amount) > 0).map((t) => t.fanId)
+  )
+
+  const textingRatio = breakdown.totalNet > 0 ? (breakdown.messageNet / breakdown.totalNet) * 100 : 0
+  const avgFanSpend = purchasingFans.size > 0 ? breakdown.totalNet / purchasingFans.size : 0
+
+  const hourlyRevenue: Record<number, number> = {}
+  const hourlySubs: Record<number, number> = {}
+  for (let h = 0; h < 24; h++) {
+    hourlyRevenue[h] = 0
+    hourlySubs[h] = 0
+  }
+  if (days === 1) {
+    for (const t of periodTransactions) {
+      const hour = new Date(parseInt(t.createdTime)).getHours()
+      hourlyRevenue[hour] += parseInt(t.net) / 100
+      if (t.type === 'Subscription') hourlySubs[hour] += 1
+    }
+  }
+
+  return {
+    infloww_id: creator.id,
+    name: creator.name,
+    userName: creator.userName,
+    totalRevenue: breakdown.totalNet,
+    totalGross: breakdown.totalGross,
+    subscriptionRevenue: breakdown.subscriptionNet,
+    recurringSubRevenue: breakdown.recurringSubNet,
+    newSubRevenue: breakdown.newSubNet,
+    messageRevenue: breakdown.messageNet,
+    tipRevenue: breakdown.tipNet,
+    otherRevenue: breakdown.otherNet,
+    totalPurchases: periodTransactions.length,
+    newSubs: periodNewSubs.length,
+    recurringSubs: periodRecSubs.length,
+    openChats: messageFans.size,
+    sellingChats: sellingChatFans.size,
+    textingRatio: Math.round(textingRatio * 100) / 100,
+    avgFanSpend: Math.round(avgFanSpend * 100) / 100,
+    subAvg14d,
+    totalSubs14d: newSubs14d.length,
+    hourlyRevenue: days === 1 ? hourlyRevenue : undefined,
+    hourlySubs: days === 1 ? hourlySubs : undefined,
+  }
+}
+
+// ─── Merge with Supabase Data ───────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function mergeWithSupabase(creatorData: any[], supabase: any, startDate: Date, endDate: Date, days: number) {
+  const startDateStr = startDate.toISOString().split('T')[0]
+  const endDateStr = endDate.toISOString().split('T')[0]
+
+  const { data: conversionData } = await supabase
+    .from('conversion_daily')
+    .select('creator_id, link_clicks, new_subs')
+    .gte('date', startDateStr)
+    .lte('date', endDateStr)
+
+  const { data: allCreators } = await supabase.from('creators').select('id, slug, display_name, avatar_url')
+  const creatorMap = new Map(allCreators?.map((c: { slug: string }) => [c.slug, c]) || [])
+  const creatorIdMap = new Map(allCreators?.map((c: { id: string }) => [c.id, c]) || [])
+
+  const clicksByCreator: Record<string, { clicks: number; subs: number }> = {}
+  for (const row of conversionData || []) {
+    if (!clicksByCreator[row.creator_id]) clicksByCreator[row.creator_id] = { clicks: 0, subs: 0 }
+    clicksByCreator[row.creator_id].clicks += row.link_clicks || 0
+    clicksByCreator[row.creator_id].subs += row.new_subs || 0
+  }
+
+  const { data: expectations } = await supabase.from('revenue_expectations').select('*')
+  const { data: emergencies } = await supabase.from('revenue_emergency_status').select('*')
+  const expMap = new Map(expectations?.map((e: { creator_id: string }) => [e.creator_id, e]) || [])
+  const emergencyMap = new Map(emergencies?.map((e: { creator_id: string }) => [e.creator_id, e]) || [])
+
+  const { data: creatorMappings } = await supabase.from('infloww_creator_map').select('creator_id, infloww_creator_id')
+  const inflowwToSupabase = new Map(
+    creatorMappings?.map((m: { infloww_creator_id: string; creator_id: string }) => [m.infloww_creator_id, m.creator_id]) || []
+  )
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mergedData = creatorData.map((cd: any) => {
+    const mappedCreatorId = inflowwToSupabase.get(cd.infloww_id)
+    const supabaseCreator = mappedCreatorId
+      ? creatorIdMap.get(mappedCreatorId)
+      : creatorMap.get(cd.userName?.toLowerCase()) || creatorMap.get(cd.name?.toLowerCase()) || null
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const creatorId = (supabaseCreator as any)?.id || null
+    const convData = creatorId ? clicksByCreator[creatorId] : null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const expectation = creatorId ? expMap.get(creatorId) as any : null
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const emergency = creatorId ? emergencyMap.get(creatorId) as any : null
+
+    const linkClicks = convData?.clicks || 0
+    const conversionRate = linkClicks > 0 ? (cd.newSubs / linkClicks) * 100 : 0
+
+    return {
+      ...cd,
+      supabase_creator_id: creatorId,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      avatar_url: (supabaseCreator as any)?.avatar_url || null,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      display_name: (supabaseCreator as any)?.display_name || cd.name,
+      linkClicks,
+      conversionRate: Math.round(conversionRate * 100) / 100,
+      expectation: expectation
+        ? {
+            daily_revenue_target: expectation.daily_revenue_target,
+            revenue_per_fan_baseline: expectation.revenue_per_fan_baseline,
+            check_frequency: expectation.check_frequency,
+            free_subs: expectation.free_subs,
+          }
+        : null,
+      generatedRevenuePct: expectation?.daily_revenue_target
+        ? Math.round(((cd.totalRevenue / (expectation.daily_revenue_target * days)) - 1) * 1000) / 10
+        : null,
+      emergency_since: emergency?.emergency_since || null,
+      emergency_notes: emergency?.notes || '',
+    }
+  })
+
+  const totals = {
+    totalTurnover: mergedData.reduce((s: number, c: { totalRevenue: number }) => s + c.totalRevenue, 0),
+    totalNewSubs: mergedData.reduce((s: number, c: { newSubs: number }) => s + c.newSubs, 0),
+    totalPurchases: mergedData.reduce((s: number, c: { totalPurchases: number }) => s + c.totalPurchases, 0),
+    subscriptionRevenue: mergedData.reduce((s: number, c: { subscriptionRevenue: number }) => s + c.subscriptionRevenue, 0),
+    messageRevenue: mergedData.reduce((s: number, c: { messageRevenue: number }) => s + c.messageRevenue, 0),
+    tipRevenue: mergedData.reduce((s: number, c: { tipRevenue: number }) => s + c.tipRevenue, 0),
+  }
+
+  let hourlyChart = null
+  if (days === 1) {
+    hourlyChart = Array.from({ length: 24 }, (_, h) => ({
+      hour: h,
+      label: h === 0 ? '12 am' : h < 12 ? `${h} am` : h === 12 ? '12 pm' : `${h - 12} pm`,
+      revenue: mergedData.reduce((s: number, c: { hourlyRevenue?: Record<number, number> }) => s + (c.hourlyRevenue?.[h] || 0), 0),
+      subs: mergedData.reduce((s: number, c: { hourlySubs?: Record<number, number> }) => s + (c.hourlySubs?.[h] || 0), 0),
+    }))
+  }
+
+  return {
+    creators: mergedData,
+    totals,
+    hourlyChart,
+    period: { days, startDate: startDate.toISOString(), endDate: endDate.toISOString() },
+  }
+}
+
+// ─── GET Handler ────────────────────────────────────────────────────
+// Query params: ?days=1 &date=2026-04-01 &stream=true
 export async function GET(req: NextRequest) {
   if (!isAdmin()) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -105,11 +310,11 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const days = parseInt(searchParams.get('days') || '1', 10)
-  const dateParam = searchParams.get('date') // optional: specific end date
+  const dateParam = searchParams.get('date')
+  const stream = searchParams.get('stream') === 'true'
 
   const supabase = createServerSupabaseClient()
 
-  // 1. Get Infloww config
   const { data: config } = await supabase
     .from('infloww_config')
     .select('api_key, agency_oid')
@@ -117,19 +322,21 @@ export async function GET(req: NextRequest) {
     .single()
 
   if (!config?.api_key || !config?.agency_oid) {
-    return NextResponse.json(
-      { error: 'Infloww API not configured. Please set your API key and Agency OID in Settings.' },
-      { status: 400 }
-    )
+    const errMsg = 'Infloww API not configured. Please set your API key and Agency OID in Settings.'
+    if (stream) {
+      return new Response(`data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      })
+    }
+    return NextResponse.json({ error: errMsg }, { status: 400 })
   }
 
-  const headers = {
+  const apiHeaders = {
     Accept: 'application/json',
     Authorization: config.api_key,
     'x-oid': config.agency_oid,
   }
 
-  // 2. Calculate time range
   const endDate = dateParam ? new Date(dateParam + 'T23:59:59Z') : new Date()
   const startDate = new Date(endDate)
   startDate.setDate(startDate.getDate() - days)
@@ -138,21 +345,74 @@ export async function GET(req: NextRequest) {
   const startTime = String(startDate.getTime())
   const endTime = String(endDate.getTime())
 
-  // Also calculate 14-day range for sub averages
   const start14d = new Date(endDate)
   start14d.setDate(start14d.getDate() - 14)
   start14d.setHours(0, 0, 0, 0)
   const startTime14d = String(start14d.getTime())
 
+  // === Streaming mode (SSE with progress) ===
+  if (stream) {
+    const encoder = new TextEncoder()
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        const send = (data: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
+        }
+
+        try {
+          send({ type: 'progress', step: 'creators', message: 'Fetching creator list...' })
+
+          const creators = (await fetchAllPages(
+            '/v1/creators',
+            { platformCode: 'OnlyFans', limit: '100' },
+            apiHeaders
+          )) as InflowwCreator[]
+
+          for (const c of creators) {
+            await supabase
+              .from('infloww_creators_cache')
+              .upsert(
+                { infloww_id: c.id, name: c.name, user_name: c.userName, nick_name: c.nickName || '', last_seen_at: new Date().toISOString() },
+                { onConflict: 'infloww_id' }
+              )
+          }
+
+          send({ type: 'progress', step: 'transactions', total: creators.length, current: 0, message: `Found ${creators.length} creators. Fetching transactions...` })
+
+          const creatorData = []
+          for (let i = 0; i < creators.length; i++) {
+            const creator = creators[i]
+            send({ type: 'progress', step: 'transactions', total: creators.length, current: i + 1, message: `Fetching ${creator.name} (${i + 1}/${creators.length})...` })
+            const result = await fetchCreatorTransactions(creator, { startTime, endTime, startTime14d, days }, apiHeaders)
+            creatorData.push(result)
+          }
+
+          send({ type: 'progress', step: 'merging', message: 'Merging with local data...' })
+          const finalResult = await mergeWithSupabase(creatorData, supabase, startDate, endDate, days)
+          send({ type: 'complete', ...finalResult })
+        } catch (err: unknown) {
+          const message = err instanceof Error ? err.message : 'Unknown error'
+          console.error('Revenue data fetch error:', message)
+          send({ type: 'error', error: message })
+        } finally {
+          controller.close()
+        }
+      },
+    })
+
+    return new Response(readableStream, {
+      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+    })
+  }
+
+  // === Non-streaming mode ===
   try {
-    // 3. Fetch all creators from Infloww
     const creators = (await fetchAllPages(
       '/v1/creators',
       { platformCode: 'OnlyFans', limit: '100' },
-      headers
+      apiHeaders
     )) as InflowwCreator[]
 
-    // 3b. Cache Infloww creators in Supabase (upsert so dropdown is always fresh)
     for (const c of creators) {
       await supabase
         .from('infloww_creators_cache')
@@ -162,267 +422,14 @@ export async function GET(req: NextRequest) {
         )
     }
 
-    // 4. Fetch transactions for each creator SEQUENTIALLY to respect rate limits
-    //    Infloww allows 5 req/sec and 60 req/min — sequential with 250ms gaps keeps us safe
     const creatorData = []
     for (const creator of creators) {
-      const creatorResult = await (async () => {
-        // Fetch transactions for the requested period
-        const periodTransactions = (await fetchAllPages(
-          '/v1/transactions',
-          {
-            creatorId: creator.id,
-            platformCode: 'OnlyFans',
-            startTime,
-            endTime,
-            limit: '100',
-          },
-          headers
-        )) as InflowwTransaction[]
-
-        // Fetch 14-day transactions for sub average calculation
-        const transactions14d = days === 14
-          ? periodTransactions
-          : (await fetchAllPages(
-              '/v1/transactions',
-              {
-                creatorId: creator.id,
-                platformCode: 'OnlyFans',
-                startTime: startTime14d,
-                endTime,
-                limit: '100',
-              },
-              headers
-            )) as InflowwTransaction[]
-
-        // Calculate revenue breakdown for the period
-        const breakdown = calculateBreakdown(periodTransactions)
-
-        // Calculate 14d subscription stats
-        const subs14d = transactions14d.filter(
-          (t) => t.type === 'Subscription' || t.type === 'Recurring Subscription'
-        )
-        const newSubs14d = transactions14d.filter((t) => t.type === 'Subscription')
-        const subAvg14d = newSubs14d.length > 0 ? Math.round(newSubs14d.length / 14) : 0
-
-        // Calculate period subs
-        const periodNewSubs = periodTransactions.filter((t) => t.type === 'Subscription')
-        const periodRecSubs = periodTransactions.filter((t) => t.type === 'Recurring Subscription')
-
-        // Unique fans who sent messages
-        const messageFans = new Set(
-          periodTransactions
-            .filter((t) => t.type === 'Messages')
-            .map((t) => t.fanId)
-        )
-
-        // Fans who actually purchased (any type)
-        const purchasingFans = new Set(periodTransactions.map((t) => t.fanId))
-
-        // Selling chats = fans with message AND at least one other purchase type
-        const sellingChatFans = new Set(
-          periodTransactions
-            .filter((t) => t.type === 'Messages' && parseInt(t.amount) > 0)
-            .map((t) => t.fanId)
-        )
-
-        // Texting ratio = message revenue / total revenue
-        const textingRatio =
-          breakdown.totalNet > 0
-            ? (breakdown.messageNet / breakdown.totalNet) * 100
-            : 0
-
-        // Average fan spend
-        const avgFanSpend =
-          purchasingFans.size > 0
-            ? breakdown.totalNet / purchasingFans.size
-            : 0
-
-        // Build hourly data for charts (group transactions by hour)
-        const hourlyRevenue: Record<number, number> = {}
-        const hourlySubs: Record<number, number> = {}
-        for (let h = 0; h < 24; h++) {
-          hourlyRevenue[h] = 0
-          hourlySubs[h] = 0
-        }
-
-        // Only build hourly for single-day view
-        if (days === 1) {
-          for (const t of periodTransactions) {
-            const hour = new Date(parseInt(t.createdTime)).getHours()
-            hourlyRevenue[hour] += parseInt(t.net) / 100
-            if (t.type === 'Subscription') {
-              hourlySubs[hour] += 1
-            }
-          }
-        }
-
-        return {
-          infloww_id: creator.id,
-          name: creator.name,
-          userName: creator.userName,
-
-          // Revenue breakdown
-          totalRevenue: breakdown.totalNet,
-          totalGross: breakdown.totalGross,
-          subscriptionRevenue: breakdown.subscriptionNet,
-          recurringSubRevenue: breakdown.recurringSubNet,
-          newSubRevenue: breakdown.newSubNet,
-          messageRevenue: breakdown.messageNet,
-          tipRevenue: breakdown.tipNet,
-          otherRevenue: breakdown.otherNet,
-
-          // Counts
-          totalPurchases: periodTransactions.length,
-          newSubs: periodNewSubs.length,
-          recurringSubs: periodRecSubs.length,
-          openChats: messageFans.size,
-          sellingChats: sellingChatFans.size,
-
-          // Ratios
-          textingRatio: Math.round(textingRatio * 100) / 100,
-          avgFanSpend: Math.round(avgFanSpend * 100) / 100,
-
-          // 14d stats
-          subAvg14d,
-          totalSubs14d: newSubs14d.length,
-
-          // Hourly chart data (only for 1-day view)
-          hourlyRevenue: days === 1 ? hourlyRevenue : undefined,
-          hourlySubs: days === 1 ? hourlySubs : undefined,
-        }
-      })()
-      creatorData.push(creatorResult)
+      const result = await fetchCreatorTransactions(creator, { startTime, endTime, startTime14d, days }, apiHeaders)
+      creatorData.push(result)
     }
 
-    // 5. Get conversion data from Supabase (link clicks for conversion rate)
-    const startDateStr = startDate.toISOString().split('T')[0]
-    const endDateStr = endDate.toISOString().split('T')[0]
-
-    const { data: conversionData } = await supabase
-      .from('conversion_daily')
-      .select('creator_id, link_clicks, new_subs')
-      .gte('date', startDateStr)
-      .lte('date', endDateStr)
-
-    // Build a map of creator slug -> link clicks
-    const { data: allCreators } = await supabase
-      .from('creators')
-      .select('id, slug, display_name, avatar_url')
-
-    const creatorMap = new Map(allCreators?.map((c) => [c.slug, c]) || [])
-    const creatorIdMap = new Map(allCreators?.map((c) => [c.id, c]) || [])
-
-    // Aggregate conversion data by creator
-    const clicksByCreator: Record<string, { clicks: number; subs: number }> = {}
-    for (const row of conversionData || []) {
-      if (!clicksByCreator[row.creator_id]) {
-        clicksByCreator[row.creator_id] = { clicks: 0, subs: 0 }
-      }
-      clicksByCreator[row.creator_id].clicks += row.link_clicks || 0
-      clicksByCreator[row.creator_id].subs += row.new_subs || 0
-    }
-
-    // 6. Get expectations and emergency status
-    const { data: expectations } = await supabase
-      .from('revenue_expectations')
-      .select('*')
-
-    const { data: emergencies } = await supabase
-      .from('revenue_emergency_status')
-      .select('*')
-
-    const expMap = new Map(expectations?.map((e) => [e.creator_id, e]) || [])
-    const emergencyMap = new Map(emergencies?.map((e) => [e.creator_id, e]) || [])
-
-    // 6b. Get creator mappings (Infloww ID → Supabase creator)
-    const { data: creatorMappings } = await supabase
-      .from('infloww_creator_map')
-      .select('creator_id, infloww_creator_id')
-
-    const inflowwToSupabase = new Map(
-      creatorMappings?.map((m) => [m.infloww_creator_id, m.creator_id]) || []
-    )
-
-    // 7. Merge Infloww data with Supabase data
-    const mergedData = creatorData.map((cd) => {
-      // Use explicit mapping first, fall back to username/slug matching
-      const mappedCreatorId = inflowwToSupabase.get(cd.infloww_id)
-      const supabaseCreator = mappedCreatorId
-        ? creatorIdMap.get(mappedCreatorId)
-        : creatorMap.get(cd.userName?.toLowerCase()) ||
-          creatorMap.get(cd.name?.toLowerCase()) ||
-          null
-
-      const creatorId = supabaseCreator?.id || null
-      const convData = creatorId ? clicksByCreator[creatorId] : null
-      const expectation = creatorId ? expMap.get(creatorId) : null
-      const emergency = creatorId ? emergencyMap.get(creatorId) : null
-
-      const linkClicks = convData?.clicks || 0
-      const conversionRate =
-        linkClicks > 0 ? (cd.newSubs / linkClicks) * 100 : 0
-
-      return {
-        ...cd,
-        supabase_creator_id: creatorId,
-        avatar_url: supabaseCreator?.avatar_url || null,
-        display_name: supabaseCreator?.display_name || cd.name,
-
-        // Conversion data
-        linkClicks,
-        conversionRate: Math.round(conversionRate * 100) / 100,
-
-        // Expectations
-        expectation: expectation
-          ? {
-              daily_revenue_target: expectation.daily_revenue_target,
-              revenue_per_fan_baseline: expectation.revenue_per_fan_baseline,
-              check_frequency: expectation.check_frequency,
-              free_subs: expectation.free_subs,
-            }
-          : null,
-
-        // Generated revenue % = (actual / expected) - 1
-        generatedRevenuePct: expectation?.daily_revenue_target
-          ? Math.round(
-              ((cd.totalRevenue / (expectation.daily_revenue_target * days)) - 1) * 1000
-            ) / 10
-          : null,
-
-        // Emergency status
-        emergency_since: emergency?.emergency_since || null,
-        emergency_notes: emergency?.notes || '',
-      }
-    })
-
-    // 8. Calculate totals for the overview
-    const totals = {
-      totalTurnover: mergedData.reduce((s, c) => s + c.totalRevenue, 0),
-      totalNewSubs: mergedData.reduce((s, c) => s + c.newSubs, 0),
-      totalPurchases: mergedData.reduce((s, c) => s + c.totalPurchases, 0),
-      subscriptionRevenue: mergedData.reduce((s, c) => s + c.subscriptionRevenue, 0),
-      messageRevenue: mergedData.reduce((s, c) => s + c.messageRevenue, 0),
-      tipRevenue: mergedData.reduce((s, c) => s + c.tipRevenue, 0),
-    }
-
-    // 9. Build aggregated hourly chart data (only for 1-day view)
-    let hourlyChart = null
-    if (days === 1) {
-      hourlyChart = Array.from({ length: 24 }, (_, h) => ({
-        hour: h,
-        label: h === 0 ? '12 am' : h < 12 ? `${h} am` : h === 12 ? '12 pm' : `${h - 12} pm`,
-        revenue: mergedData.reduce((s, c) => s + (c.hourlyRevenue?.[h] || 0), 0),
-        subs: mergedData.reduce((s, c) => s + (c.hourlySubs?.[h] || 0), 0),
-      }))
-    }
-
-    return NextResponse.json({
-      creators: mergedData,
-      totals,
-      hourlyChart,
-      period: { days, startDate: startDate.toISOString(), endDate: endDate.toISOString() },
-    })
+    const finalResult = await mergeWithSupabase(creatorData, supabase, startDate, endDate, days)
+    return NextResponse.json(finalResult)
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'
     console.error('Revenue data fetch error:', message)
@@ -430,15 +437,10 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// ─── Revenue Breakdown Calculator ───────────────────────────────────
 function calculateBreakdown(transactions: InflowwTransaction[]) {
-  let totalGross = 0
-  let totalNet = 0
-  let subscriptionNet = 0
-  let recurringSubNet = 0
-  let newSubNet = 0
-  let messageNet = 0
-  let tipNet = 0
-  let otherNet = 0
+  let totalGross = 0, totalNet = 0, subscriptionNet = 0, recurringSubNet = 0
+  let newSubNet = 0, messageNet = 0, tipNet = 0, otherNet = 0
 
   for (const t of transactions) {
     const gross = parseInt(t.amount) / 100
@@ -447,34 +449,19 @@ function calculateBreakdown(transactions: InflowwTransaction[]) {
     totalNet += net
 
     switch (t.type) {
-      case 'Subscription':
-        subscriptionNet += net
-        newSubNet += net
-        break
-      case 'Recurring Subscription':
-        subscriptionNet += net
-        recurringSubNet += net
-        break
-      case 'Messages':
-        messageNet += net
-        break
-      case 'Tips':
-        tipNet += net
-        break
-      default:
-        otherNet += net
-        break
+      case 'Subscription': subscriptionNet += net; newSubNet += net; break
+      case 'Recurring Subscription': subscriptionNet += net; recurringSubNet += net; break
+      case 'Messages': messageNet += net; break
+      case 'Tips': tipNet += net; break
+      default: otherNet += net; break
     }
   }
 
+  const round = (n: number) => Math.round(n * 100) / 100
   return {
-    totalGross: Math.round(totalGross * 100) / 100,
-    totalNet: Math.round(totalNet * 100) / 100,
-    subscriptionNet: Math.round(subscriptionNet * 100) / 100,
-    recurringSubNet: Math.round(recurringSubNet * 100) / 100,
-    newSubNet: Math.round(newSubNet * 100) / 100,
-    messageNet: Math.round(messageNet * 100) / 100,
-    tipNet: Math.round(tipNet * 100) / 100,
-    otherNet: Math.round(otherNet * 100) / 100,
+    totalGross: round(totalGross), totalNet: round(totalNet),
+    subscriptionNet: round(subscriptionNet), recurringSubNet: round(recurringSubNet),
+    newSubNet: round(newSubNet), messageNet: round(messageNet),
+    tipNet: round(tipNet), otherNet: round(otherNet),
   }
 }

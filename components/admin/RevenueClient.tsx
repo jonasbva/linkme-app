@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from './ThemeProvider'
 
 // ─── Types ───────────────────────────────────────────────────────────
@@ -79,18 +79,10 @@ interface InflowwConfig {
   api_key_updated_at: string
 }
 
-interface InflowwCreatorItem {
-  id: string
-  name: string
-  userName: string
-  nickName?: string
-}
-
-interface CreatorMapping {
-  id: string
-  creator_id: string
-  infloww_creator_id: string
-  infloww_creator_name: string
+interface Toast {
+  id: number
+  type: 'success' | 'error' | 'info'
+  message: string
 }
 
 type SubTab = 'overview' | 'tracking' | 'expectations' | 'settings'
@@ -109,6 +101,43 @@ const pctColor = (pct: number | null, isLight: boolean) => {
   if (pct >= 0) return isLight ? 'bg-green-50 text-green-700' : 'bg-green-900/20 text-green-400'
   if (pct >= -20) return isLight ? 'bg-red-50 text-red-600' : 'bg-red-900/20 text-red-300'
   return isLight ? 'bg-red-100 text-red-800' : 'bg-red-900/40 text-red-400'
+}
+
+// ─── Toast Notification Component ───────────────────────────────────
+function ToastContainer({ toasts, onDismiss }: { toasts: Toast[]; onDismiss: (id: number) => void }) {
+  return (
+    <div className="fixed bottom-8 right-8 z-[100] flex flex-col gap-2">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={`flex items-center gap-3 px-4 py-3 rounded-xl backdrop-blur-xl shadow-lg transition-all animate-[slideIn_0.3s_ease-out] ${
+            t.type === 'error'
+              ? 'bg-red-500/90 text-white'
+              : t.type === 'success'
+              ? 'bg-emerald-500/90 text-white'
+              : 'bg-white/10 backdrop-blur-xl text-white/90 border border-white/10'
+          }`}
+        >
+          {t.type === 'error' && (
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          )}
+          {t.type === 'success' && (
+            <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+          <span className="text-[13px] font-medium">{t.message}</span>
+          <button onClick={() => onDismiss(t.id)} className="ml-2 opacity-60 hover:opacity-100">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ─── Mini SVG Sparkline ──────────────────────────────────────────────
@@ -172,9 +201,9 @@ function DonutChart({ segments, isLight }: {
 }
 
 // ─── Line Chart ──────────────────────────────────────────────────────
-function LineChart({ data, dataKey, label, isLight, formatY }: {
+function LineChart({ data, dataKey, label, isLight, formatY, color = '#3b82f6' }: {
   data: { label: string; [key: string]: unknown }[]
-  dataKey: string; label: string; isLight: boolean
+  dataKey: string; label: string; isLight: boolean; color?: string
   formatY?: (v: number) => string
 }) {
   if (!data.length) return null
@@ -185,18 +214,30 @@ function LineChart({ data, dataKey, label, isLight, formatY }: {
   const points = values
     .map((v, i) => `${padX + (i / (values.length - 1)) * chartW},${padY + chartH - (v / max) * chartH}`)
     .join(' ')
-  const gridColor = isLight ? '#e5e7eb' : '#374151'
-  const labelColor = isLight ? '#6b7280' : '#9ca3af'
+  const gridColor = isLight ? '#e5e7eb' : '#1f2937'
+  const labelColor = isLight ? '#6b7280' : '#6b7280'
   const ySteps = 4
   const yLabels = Array.from({ length: ySteps + 1 }, (_, i) => {
     const val = (max / ySteps) * i
     return formatY ? formatY(val) : String(Math.round(val))
   })
 
+  // Build gradient fill path
+  const firstX = padX
+  const lastX = padX + chartW
+  const bottomY = padY + chartH
+  const fillPoints = `${firstX},${bottomY} ${points} ${lastX},${bottomY}`
+
   return (
     <div>
       {label && <div className={`text-xs mb-2 ${isLight ? 'text-black/40' : 'text-white/40'}`}>{label}</div>}
       <svg width="100%" viewBox={`0 0 ${w} ${h}`} className="overflow-visible">
+        <defs>
+          <linearGradient id={`grad-${dataKey}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+            <stop offset="100%" stopColor={color} stopOpacity="0" />
+          </linearGradient>
+        </defs>
         {yLabels.map((lbl, i) => {
           const y = padY + chartH - (i / ySteps) * chartH
           return (
@@ -206,7 +247,8 @@ function LineChart({ data, dataKey, label, isLight, formatY }: {
             </g>
           )
         })}
-        <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+        <polygon points={fillPoints} fill={`url(#grad-${dataKey})`} />
+        <polyline points={points} fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
         {data.filter((_, i) => i % 3 === 0).map((d) => {
           const idx = data.indexOf(d)
           const x = padX + (idx / (data.length - 1)) * chartW
@@ -235,6 +277,184 @@ function SortHeader({ label, field, sortField, sortDir, onSort, isLight, tooltip
   )
 }
 
+// ─── Date Picker (matches Link Analysis design) ─────────────────────
+function DatePicker({ dateStart, dateEnd, dateLabel, onApply, isLight }: {
+  dateStart: Date; dateEnd: Date; dateLabel: string
+  onApply: (label: string, start: Date, end: Date) => void
+  isLight: boolean
+}) {
+  const [show, setShow] = useState(false)
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setShow(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const applyPreset = (label: string, start: Date, end: Date) => {
+    onApply(label, start, end)
+    setShow(false)
+  }
+
+  const applyCustomRange = () => {
+    if (!customStart || !customEnd) return
+    const s = new Date(customStart + 'T00:00:00')
+    const e = new Date(customEnd + 'T23:59:59')
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return
+    applyPreset(`${customStart} — ${customEnd}`, s, e)
+  }
+
+  const selectMonth = (offset: number) => {
+    const now = new Date()
+    const mStart = new Date(now.getFullYear(), now.getMonth() - offset, 1)
+    const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
+    const shortMonth = mStart.toLocaleString('en-US', { month: 'short' })
+    applyPreset(`${shortMonth} ${mStart.getFullYear()}`, mStart, mEnd)
+  }
+
+  const monthOptions = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      return { offset: i, label: d.toLocaleString('en-US', { month: 'short' }) }
+    })
+  }, [])
+
+  // Dropdown styling — matches Link Analysis (dark popup always, looks cleaner)
+  const popBg = isLight ? 'bg-white border-black/10 shadow-xl' : 'bg-[#0e0e0e] border-white/[0.08] shadow-2xl shadow-black/60'
+  const popLabel = isLight ? 'text-black/30' : 'text-white/25'
+  const popDivider = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
+  const btnActive = isLight ? 'bg-black text-white' : 'bg-white text-black'
+  const btnInactive = isLight
+    ? 'bg-black/[0.04] text-black/40 hover:bg-black/[0.08] hover:text-black/60'
+    : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
+  const popInput = isLight
+    ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20'
+    : 'bg-white/[0.04] border-white/[0.08] text-white/80 focus:border-white/20'
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        onClick={() => {
+          setCustomStart(dateStart.toISOString().split('T')[0])
+          setCustomEnd(dateEnd.toISOString().split('T')[0])
+          setShow(!show)
+        }}
+        className={`flex items-center gap-2.5 px-4 py-2 rounded-lg transition-all ${
+          isLight
+            ? 'bg-black/[0.03] border border-black/[0.06] hover:bg-black/[0.06]'
+            : 'bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06]'
+        }`}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+          className={isLight ? 'text-black/30' : 'text-white/30'}>
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+        <span className={`text-[13px] font-medium ${isLight ? 'text-black/70' : 'text-white/70'}`}>{dateLabel}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          className={isLight ? 'text-black/25' : 'text-white/25'}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {show && (
+        <div className={`absolute left-0 top-full mt-2 z-50 ${popBg} border rounded-2xl p-0`} style={{ width: 340 }}>
+          {/* Quick presets */}
+          <div className={`p-4 pb-3 border-b ${popDivider}`}>
+            <p className={`text-[11px] ${popLabel} uppercase tracking-widest font-medium mb-3`}>Quick select</p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: 'Today', fn: () => { const s = new Date(); s.setHours(0,0,0,0); applyPreset('Today', s, new Date()) } },
+                { label: 'Yesterday', fn: () => { const s = new Date(); s.setDate(s.getDate() - 1); s.setHours(0,0,0,0); const e = new Date(s); e.setHours(23,59,59,999); applyPreset('Yesterday', s, e) } },
+                { label: 'Last 7 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 7); applyPreset('Last 7 days', s, new Date()) } },
+                { label: 'Last 30 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 30); applyPreset('Last 30 days', s, new Date()) } },
+              ].map(p => (
+                <button key={p.label} onClick={p.fn}
+                  className={`px-3 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
+                    dateLabel === p.label ? btnActive : btnInactive
+                  }`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Month grid */}
+          <div className={`p-4 pb-3 border-b ${popDivider}`}>
+            <p className={`text-[11px] ${popLabel} uppercase tracking-widest font-medium mb-3`}>By month</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {monthOptions.map(m => {
+                const now = new Date()
+                const mStart = new Date(now.getFullYear(), now.getMonth() - m.offset, 1)
+                const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
+                const isActive = dateStart.getTime() === mStart.getTime() && dateEnd.getTime() === mEnd.getTime()
+                return (
+                  <button key={m.offset} onClick={() => selectMonth(m.offset)}
+                    className={`px-2 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
+                      isActive ? btnActive : btnInactive
+                    }`}>
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Custom range */}
+          <div className="p-4">
+            <p className={`text-[11px] ${popLabel} uppercase tracking-widest font-medium mb-3`}>Custom range</p>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className={`text-[10px] ${popLabel} mb-1 block`}>From</label>
+                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                  className={`w-full px-2.5 py-1.5 ${popInput} border rounded-lg text-[12px] transition-colors outline-none`} />
+              </div>
+              <div className="flex-1">
+                <label className={`text-[10px] ${popLabel} mb-1 block`}>To</label>
+                <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+                  className={`w-full px-2.5 py-1.5 ${popInput} border rounded-lg text-[12px] transition-colors outline-none`} />
+              </div>
+              <button onClick={applyCustomRange} disabled={!customStart || !customEnd}
+                className={`px-4 py-1.5 text-[12px] font-medium rounded-lg transition-colors disabled:opacity-30 shrink-0 ${
+                  isLight ? 'bg-black text-white hover:bg-black/90' : 'bg-white text-black hover:bg-white/90'
+                }`}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Progress Bar ────────────────────────────────────────────────────
+function ProgressBar({ message, current, total, isLight }: {
+  message: string; current: number; total: number; isLight: boolean
+}) {
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0
+  return (
+    <div className="flex flex-col items-center justify-center py-16 gap-4">
+      <div className={`w-80 h-2 rounded-full overflow-hidden ${isLight ? 'bg-black/[0.06]' : 'bg-white/[0.06]'}`}>
+        <div
+          className="h-full rounded-full bg-blue-500 transition-all duration-300 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      <div className={`text-sm ${isLight ? 'text-black/50' : 'text-white/50'}`}>{message}</div>
+      {total > 0 && (
+        <div className={`text-xs ${isLight ? 'text-black/30' : 'text-white/30'}`}>{pct}% complete</div>
+      )}
+    </div>
+  )
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════
@@ -243,10 +463,32 @@ export default function RevenueClient() {
   const isLight = resolved === 'light'
 
   const [activeTab, setActiveTab] = useState<SubTab>('overview')
-  const [days, setDays] = useState(1)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [data, setData] = useState<RevenueData | null>(null)
+
+  // Date picker state
+  const [dateStart, setDateStart] = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d })
+  const [dateEnd, setDateEnd] = useState<Date>(new Date())
+  const [dateLabel, setDateLabel] = useState('Today')
+
+  // Progress state (SSE)
+  const [progressMsg, setProgressMsg] = useState('')
+  const [progressCurrent, setProgressCurrent] = useState(0)
+  const [progressTotal, setProgressTotal] = useState(0)
+
+  // Toast notifications
+  const [toasts, setToasts] = useState<Toast[]>([])
+  const toastIdRef = useRef(0)
+
+  const addToast = useCallback((type: Toast['type'], message: string) => {
+    const id = ++toastIdRef.current
+    setToasts(prev => [...prev, { id, type, message }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 5000)
+  }, [])
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id))
+  }, [])
 
   // Expectations
   const [expCreators, setExpCreators] = useState<ExpectationCreator[]>([])
@@ -258,9 +500,6 @@ export default function RevenueClient() {
   const [configLoading, setConfigLoading] = useState(false)
   const [configForm, setConfigForm] = useState({ api_key: '', agency_oid: '', refund_threshold_dollars: 20 })
   const [configSaving, setConfigSaving] = useState(false)
-  const [configMsg, setConfigMsg] = useState('')
-
-  // (Creator mapping is now per-creator in CreatorEditor)
 
   // Sorting
   const [sortField, setSortField] = useState('totalRevenue')
@@ -282,39 +521,101 @@ export default function RevenueClient() {
   const tableBorder = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
   const tableRowHover = isLight ? 'hover:bg-black/[0.02]' : 'hover:bg-white/[0.03]'
 
-  // ─── Data Fetching ───────────────────────────────────────────────
+  // ─── Data Fetching (SSE with progress) ───────────────────────────
   const fetchData = useCallback(async () => {
-    setLoading(true); setError(null)
+    setLoading(true)
+    setProgressMsg('Connecting...')
+    setProgressCurrent(0)
+    setProgressTotal(0)
+
+    // Calculate days from date range
+    const diffMs = dateEnd.getTime() - dateStart.getTime()
+    const days = Math.max(1, Math.ceil(diffMs / 86400000))
+    const dateParam = dateEnd.toISOString().split('T')[0]
+
     try {
-      const res = await fetch(`/api/admin/revenue/data?days=${days}`)
-      const json = await res.json()
-      if (!res.ok) throw new Error(json.error || 'Failed to fetch')
-      setData(json)
-    } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Unknown error') }
-    finally { setLoading(false) }
-  }, [days])
+      const response = await fetch(`/api/admin/revenue/data?days=${days}&date=${dateParam}&stream=true`)
+
+      if (!response.ok) {
+        const json = await response.json().catch(() => ({ error: 'Unknown error' }))
+        throw new Error(json.error || `HTTP ${response.status}`)
+      }
+
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
+
+      const decoder = new TextDecoder()
+      let buffer = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const event = JSON.parse(line.slice(6))
+
+            if (event.type === 'progress') {
+              setProgressMsg(event.message || '')
+              if (event.total) setProgressTotal(event.total)
+              if (event.current !== undefined) setProgressCurrent(event.current)
+            } else if (event.type === 'complete') {
+              setData(event as RevenueData)
+              addToast('success', `Data loaded — ${event.creators?.length || 0} creators`)
+            } else if (event.type === 'error') {
+              addToast('error', event.error || 'Failed to fetch revenue data')
+            }
+          } catch { /* skip malformed SSE lines */ }
+        }
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      addToast('error', msg)
+    } finally {
+      setLoading(false)
+      setProgressMsg('')
+    }
+  }, [dateStart, dateEnd, addToast])
 
   const fetchExpectations = useCallback(async () => {
     setExpLoading(true)
-    try { const res = await fetch('/api/admin/revenue/expectations'); const json = await res.json(); if (res.ok) setExpCreators(json.creators || []) }
-    catch { /* */ } finally { setExpLoading(false) }
-  }, [])
+    try {
+      const res = await fetch('/api/admin/revenue/expectations')
+      const json = await res.json()
+      if (res.ok) setExpCreators(json.creators || [])
+      else addToast('error', json.error || 'Failed to load expectations')
+    } catch { addToast('error', 'Failed to load expectations') }
+    finally { setExpLoading(false) }
+  }, [addToast])
 
   const fetchConfig = useCallback(async () => {
     setConfigLoading(true)
     try {
-      const res = await fetch('/api/admin/revenue/config'); const json = await res.json()
+      const res = await fetch('/api/admin/revenue/config')
+      const json = await res.json()
       if (res.ok && json.config) {
         setConfig(json.config)
         setConfigForm({ api_key: '', agency_oid: json.config.agency_oid || '', refund_threshold_dollars: json.config.refund_threshold_dollars || 20 })
       }
-    } catch { /* */ } finally { setConfigLoading(false) }
-  }, [])
-
+    } catch { addToast('error', 'Failed to load config') }
+    finally { setConfigLoading(false) }
+  }, [addToast])
 
   useEffect(() => { if (activeTab === 'overview' || activeTab === 'tracking') fetchData() }, [activeTab, fetchData])
   useEffect(() => { if (activeTab === 'expectations') fetchExpectations() }, [activeTab, fetchExpectations])
   useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
+
+  // ─── Date picker handler ────────────────────────────────────────
+  const handleDateApply = useCallback((label: string, start: Date, end: Date) => {
+    setDateLabel(label)
+    setDateStart(start)
+    setDateEnd(end)
+  }, [])
 
   // ─── Sort handlers ───────────────────────────────────────────────
   const handleSort = (f: string) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('desc') } }
@@ -339,41 +640,51 @@ export default function RevenueClient() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ creator_id: creatorId, ...existing, [field]: value }),
       })
-      if (res.ok) setExpCreators(prev => prev.map(c => c.id === creatorId ? { ...c, expectation: { ...existing, [field]: value } } : c))
-    } catch { /* */ } finally { setExpSaving(null) }
+      if (res.ok) {
+        setExpCreators(prev => prev.map(c => c.id === creatorId ? { ...c, expectation: { ...existing, [field]: value } } : c))
+        addToast('success', 'Expectation saved')
+      } else { addToast('error', 'Failed to save expectation') }
+    } catch { addToast('error', 'Failed to save expectation') }
+    finally { setExpSaving(null) }
   }
 
   const saveEmergency = async (creatorId: string, emergencySince: string | null, notes: string) => {
     try {
-      await fetch('/api/admin/revenue/emergency', {
+      const res = await fetch('/api/admin/revenue/emergency', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ creator_id: creatorId, emergency_since: emergencySince, notes }),
       })
-    } catch { /* */ }
+      if (res.ok) addToast('success', 'Emergency status updated')
+      else addToast('error', 'Failed to update emergency status')
+    } catch { addToast('error', 'Failed to update emergency status') }
   }
 
   const saveConfig = async () => {
-    setConfigSaving(true); setConfigMsg('')
+    setConfigSaving(true)
     try {
       const payload: Record<string, unknown> = { agency_oid: configForm.agency_oid, refund_threshold_dollars: configForm.refund_threshold_dollars }
       if (configForm.api_key) payload.api_key = configForm.api_key
       const res = await fetch('/api/admin/revenue/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const json = await res.json()
-      if (res.ok) { setConfig(json.config); setConfigForm(p => ({ ...p, api_key: '' })); setConfigMsg('Settings saved!') }
-      else setConfigMsg(`Error: ${json.error}`)
-    } catch { setConfigMsg('Failed to save') } finally { setConfigSaving(false) }
+      if (res.ok) {
+        setConfig(json.config)
+        setConfigForm(p => ({ ...p, api_key: '' }))
+        addToast('success', 'Settings saved')
+      } else addToast('error', `Failed to save: ${json.error}`)
+    } catch { addToast('error', 'Failed to save settings') }
+    finally { setConfigSaving(false) }
   }
-
 
   const exportCSV = () => {
     if (!data?.creators) return
-    const h = ['Creator','Total Revenue','New Subs','New Subs Revenue','Rec Subs Revenue','Tips Revenue','Message Revenue','Texting Ratio','Open Chats','Selling Chats','Avg Fan Spend','Link Clicks','Conversion Rate']
+    const h = ['Creator','Total Revenue','New Subs','New Subs Rev','Rec Subs Rev','Tips Rev','Message Rev','Texting Ratio','Open Chats','Selling Chats','Avg Fan Spend','Link Clicks','CVR']
     const rows = sortedCreators.map(c => [c.display_name,c.totalRevenue,c.newSubs,c.newSubRevenue,c.recurringSubRevenue,c.tipRevenue,c.messageRevenue,c.textingRatio,c.openChats,c.sellingChats,c.avgFanSpend,c.linkClicks,c.conversionRate])
     const csv = [h.join(','), ...rows.map(r => r.join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
-    const a = document.createElement('a'); a.href = url; a.download = `revenue_${days}d_${new Date().toISOString().split('T')[0]}.csv`; a.click()
+    const a = document.createElement('a'); a.href = url; a.download = `revenue_${dateLabel.replace(/\s/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`; a.click()
     URL.revokeObjectURL(url)
+    addToast('success', 'CSV exported')
   }
 
   const getTrackingCreators = (freq: number) => {
@@ -397,21 +708,19 @@ export default function RevenueClient() {
         : isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.03]' : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
     }`
 
+  const days = Math.max(1, Math.ceil((dateEnd.getTime() - dateStart.getTime()) / 86400000))
+
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
+      {/* Toasts */}
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <h1 className={`text-2xl font-bold ${text1}`}>Revenue</h1>
         {(activeTab === 'overview' || activeTab === 'tracking') && (
           <div className="flex items-center gap-3">
-            <select value={days} onChange={e => setDays(Number(e.target.value))}
-              className={`${selectCls} text-sm rounded-lg px-3 py-2 outline-none`}>
-              <option value={1}>Today</option>
-              <option value={3}>Last 3 Days</option>
-              <option value={7}>Last 7 Days</option>
-              <option value={14}>Last 14 Days</option>
-              <option value={30}>Last 30 Days</option>
-            </select>
+            <DatePicker dateStart={dateStart} dateEnd={dateEnd} dateLabel={dateLabel} onApply={handleDateApply} isLight={isLight} />
             <button onClick={fetchData} disabled={loading}
               className={`p-2 rounded-lg transition-all ${isLight ? 'hover:bg-black/[0.04] text-black/40' : 'hover:bg-white/[0.06] text-white/40'} disabled:opacity-50`}>
               <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -431,19 +740,9 @@ export default function RevenueClient() {
         ))}
       </div>
 
-      {/* Error */}
-      {error && (
-        <div className={`px-4 py-3 rounded-lg mb-6 ${isLight ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-red-900/20 border border-red-800/40 text-red-300'}`}>
-          {error}
-        </div>
-      )}
-
-      {/* Loading */}
+      {/* Loading with Progress */}
       {loading && (activeTab === 'overview' || activeTab === 'tracking') && (
-        <div className="flex items-center justify-center py-20">
-          <div className={`animate-spin rounded-full h-8 w-8 border-t-2 ${isLight ? 'border-black/20' : 'border-white/30'}`} />
-          <span className={`ml-3 ${text2}`}>Fetching data from Infloww...</span>
-        </div>
+        <ProgressBar message={progressMsg} current={progressCurrent} total={progressTotal} isLight={isLight} />
       )}
 
       {/* ─── OVERVIEW ──────────────────────────────────────────── */}
@@ -483,12 +782,12 @@ export default function RevenueClient() {
               <div className={`${card} rounded-xl p-5`}>
                 <div className={`text-lg font-semibold ${text1}`}>{data.totals.totalNewSubs}</div>
                 <div className={`text-sm mb-4 ${text2}`}>Subscriptions</div>
-                <LineChart data={data.hourlyChart} dataKey="subs" label="" isLight={isLight} />
+                <LineChart data={data.hourlyChart} dataKey="subs" label="" isLight={isLight} color="#a855f7" />
               </div>
               <div className={`${card} rounded-xl p-5`}>
                 <div className={`text-lg font-semibold ${text1}`}>{fmt(data.totals.totalTurnover)}</div>
                 <div className={`text-sm mb-4 ${text2}`}>Revenue</div>
-                <LineChart data={data.hourlyChart} dataKey="revenue" label="" isLight={isLight} formatY={v => `$${Math.round(v).toLocaleString()}`} />
+                <LineChart data={data.hourlyChart} dataKey="revenue" label="" isLight={isLight} color="#3b82f6" formatY={v => `$${Math.round(v).toLocaleString()}`} />
               </div>
             </div>
           )}
@@ -717,7 +1016,6 @@ export default function RevenueClient() {
       {/* ─── SETTINGS ──────────────────────────────────────────── */}
       {activeTab === 'settings' && (
         <div className="space-y-10">
-          {/* API Configuration */}
           <div className="max-w-xl">
             <h2 className={`text-lg font-bold mb-1 ${text1}`}>Infloww API Configuration</h2>
             <p className={`text-sm mb-6 ${text2}`}>API key expires every 30 days. Update it here.</p>
@@ -768,15 +1066,12 @@ export default function RevenueClient() {
                 </div>
                 <button onClick={saveConfig} disabled={configSaving}
                   className={`px-5 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50
-                    ${isLight ? 'bg-black/[0.06] hover:bg-black/[0.10] text-black/80' : 'bg-white/[0.08] hover:bg-white/[0.12] text-white/90'}`}>
+                    ${isLight ? 'bg-black text-white hover:bg-black/90' : 'bg-white text-black hover:bg-white/90'}`}>
                   {configSaving ? 'Saving...' : 'Save Settings'}
                 </button>
-                {configMsg && <p className={`text-sm ${configMsg.startsWith('Error') ? 'text-red-500' : isLight ? 'text-green-700' : 'text-green-400'}`}>{configMsg}</p>}
               </div>
             )}
           </div>
-
-          {/* Creator mapping is now in each creator's Profile settings */}
         </div>
       )}
     </div>

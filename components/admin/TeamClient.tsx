@@ -238,10 +238,7 @@ export default function TeamClient() {
     <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className={`text-xl font-semibold tracking-tight ${textPrimary}`}>Team Management</h1>
-          <p className={`text-[13px] mt-1 ${textSecondary}`}>Manage users and assign roles. Permissions are configured in Roles.</p>
-        </div>
+        <p className={`text-[13px] ${textSecondary}`}>Manage users and assign roles. Permissions are configured in Roles.</p>
         <button
           onClick={openCreateModal}
           className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors"

@@ -257,24 +257,17 @@ export default function RolesClient() {
   }
 
   return (
-    <div className="p-6 max-w-7xl">
+    <div className="space-y-6">
       {/* Header */}
-      <div className="mb-8">
-        <h1 className={`text-2xl font-bold mb-2 ${isLight ? 'text-black/90' : 'text-white/90'}`}>
-          Roles Management
-        </h1>
+      <div className="flex items-center justify-between">
         <p className={`text-[13px] ${isLight ? 'text-black/50' : 'text-white/60'}`}>
           Manage roles and their permissions for creators
         </p>
-      </div>
-
-      {/* Create Button */}
-      <div className="mb-6">
         <button
           onClick={() => setShowCreateModal(true)}
-          className="px-4 py-2 rounded-lg bg-white text-black text-[13px] font-medium hover:opacity-90 transition"
+          className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors"
         >
-          Create Role
+          Create role
         </button>
       </div>
 
