@@ -633,9 +633,16 @@ export default function RevenueClient() {
       }
 
       // Now read the freshly updated cache (use date key for today)
+      // Use local date formatting to avoid timezone issues
+      const pad = (n: number) => String(n).padStart(2, '0')
+      const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+      const now = new Date()
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+      const startStr = localDate(dateStart)
       const diffMs = dateEnd.getTime() - dateStart.getTime()
       const days = Math.max(1, Math.ceil(diffMs / 86400000))
-      const dateKey = days === 1 ? dateStart.toISOString().split('T')[0] : 'today'
+      const isToday = days === 1 && startStr === todayStr
+      const dateKey = isToday ? 'today' : (days === 1 ? startStr : 'today')
       const cacheRes = await fetch(`/api/admin/revenue/cache?key=${dateKey}`)
       const cached = await cacheRes.json()
       if (cached?.totals && cached?.creators) {
@@ -726,10 +733,21 @@ export default function RevenueClient() {
 
   // ─── Load cached data for a specific date key ──────────────────
   const loadCacheForDate = useCallback(async (start: Date, end: Date) => {
-    // For single-day views, use the date as cache key; otherwise use 'today'
+    // Format date as local YYYY-MM-DD (avoid timezone shift from toISOString)
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
     const diffMs = end.getTime() - start.getTime()
     const days = Math.max(1, Math.ceil(diffMs / 86400000))
-    const dateKey = days === 1 ? start.toISOString().split('T')[0] : 'today'
+
+    // Check if the selected date is today
+    const now = new Date()
+    const todayStr = localDate(now)
+    const startStr = localDate(start)
+    const isToday = days === 1 && startStr === todayStr
+
+    // Use 'today' key for today (always exists), date key for other days
+    const dateKey = isToday ? 'today' : (days === 1 ? startStr : 'today')
 
     try {
       const res = await fetch(`/api/admin/revenue/cache?key=${dateKey}`)
@@ -741,7 +759,7 @@ export default function RevenueClient() {
         addToast('info', mins !== null ? `Cached data (${mins}m ago)` : 'Showing cached data.')
       } else {
         setData(null as unknown as RevenueData)
-        addToast('info', `No cached data for ${dateKey}. Click refresh to fetch.`)
+        addToast('info', `No cached data for ${startStr}. Click refresh to fetch.`)
       }
     } catch {
       addToast('error', 'Failed to load cached data')

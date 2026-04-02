@@ -202,13 +202,20 @@ export async function GET(req: NextRequest) {
       .select('id, slug, display_name, avatar_url')
 
     // Build infloww_id -> supabase creator mapping
-    const { data: creatorMap } = await supabase
+    const { data: creatorMappings } = await supabase
       .from('infloww_creator_map')
-      .select('infloww_creator_id, supabase_creator_id')
+      .select('infloww_creator_id, creator_id')
 
     const inflowwToSupabase: Record<string, string> = {}
-    for (const m of creatorMap || []) {
-      inflowwToSupabase[m.infloww_creator_id] = m.supabase_creator_id
+    for (const m of creatorMappings || []) {
+      inflowwToSupabase[m.infloww_creator_id] = m.creator_id
+    }
+
+    // Also build slug/name lookup for fallback matching
+    const creatorBySlug: Record<string, any> = {}
+    for (const sc of supabaseCreators || []) {
+      if ((sc as any).slug) creatorBySlug[(sc as any).slug.toLowerCase()] = sc
+      if ((sc as any).display_name) creatorBySlug[(sc as any).display_name.toLowerCase()] = sc
     }
 
     console.log(`[cron] Fetching transactions for ${creators.length} creators...`)
@@ -244,7 +251,11 @@ export async function GET(req: NextRequest) {
       const avgFanSpend = purchasingFans.size > 0 ? breakdown.totalNet / purchasingFans.size : 0
 
       const sbCreatorId = inflowwToSupabase[creator.id] || null
-      const sbCreator = sbCreatorId ? (supabaseCreators || []).find((sc: any) => sc.id === sbCreatorId) : null
+      let sbCreator = sbCreatorId ? (supabaseCreators || []).find((sc: any) => sc.id === sbCreatorId) : null
+      // Fallback: match by username or name if no explicit mapping
+      if (!sbCreator) {
+        sbCreator = creatorBySlug[creator.userName?.toLowerCase()] || creatorBySlug[creator.name?.toLowerCase()] || null
+      }
 
       creatorData.push({
         infloww_id: creator.id,
@@ -290,7 +301,7 @@ export async function GET(req: NextRequest) {
     }
 
     // Upsert into cache — save as both 'today' and the actual date key
-    const dateKey = startOfDay.toISOString().split('T')[0]
+    const dateKey = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`
     const fetchedAt = new Date().toISOString()
     await Promise.all([
       supabase.from('revenue_cache').upsert(
