@@ -952,7 +952,7 @@ export default function RevenueClient() {
                 <div className={`text-sm ${text2}`}>New Subs</div>
               </div>
               <div className={`${card} rounded-xl p-4`}>
-                <div className={`text-2xl font-bold ${text1}`}>{data.totals.totalTurnover > 0 ? (data.totals.messageRevenue / data.totals.totalTurnover * 100).toFixed(1) : '0.0'}%</div>
+                <div className={`text-2xl font-bold ${text1}`}>{data.totals.messageRevenue > 0 ? (data.totals.totalTurnover / data.totals.messageRevenue).toFixed(1) : '—'}</div>
                 <div className={`text-sm ${text2}`}>Texting Ratio</div>
               </div>
             </div>
@@ -1003,7 +1003,7 @@ export default function RevenueClient() {
                   <SortHeader label="Rec. Subs Rev" field="recurringSubRevenue" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} />
                   <SortHeader label="Tips Rev" field="tipRevenue" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} />
                   <SortHeader label="Message Rev" field="messageRevenue" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} />
-                  <SortHeader label="Texting Ratio" field="textingRatio" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} tooltip="Message Revenue / Total Revenue" />
+                  <SortHeader label="Texting Ratio" field="textingRatio" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} tooltip="Total Revenue / Message Revenue" />
                   <SortHeader label="Open Chats" field="openChats" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} />
                   <SortHeader label="Selling Chats" field="sellingChats" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} />
                   <SortHeader label="Avg Fan Spend" field="avgFanSpend" sortField={sortField} sortDir={sortDir} onSort={handleSort} isLight={isLight} />
@@ -1029,7 +1029,7 @@ export default function RevenueClient() {
                     <td className={`px-3 py-3 ${text1}`}>{fmt(c.recurringSubRevenue)}</td>
                     <td className={`px-3 py-3 ${text1}`}>{fmt(c.tipRevenue)}</td>
                     <td className={`px-3 py-3 ${text1}`}>{fmt(c.messageRevenue)}</td>
-                    <td className={`px-3 py-3 ${text1}`}>{c.textingRatio.toFixed(1)}%</td>
+                    <td className={`px-3 py-3 ${text1}`}>{c.messageRevenue > 0 ? (c.totalRevenue / c.messageRevenue).toFixed(1) : '—'}</td>
                     <td className={`px-3 py-3 ${text1}`}>{c.openChats}</td>
                     <td className={`px-3 py-3 ${text1}`}>{c.sellingChats}</td>
                     <td className={`px-3 py-3 ${text1}`}>{fmtDec(c.avgFanSpend)}</td>
@@ -1065,7 +1065,7 @@ export default function RevenueClient() {
                     <td className={`px-3 py-3 ${text2}`}>{fmt(c.recurringSubRevenue)}</td>
                     <td className={`px-3 py-3 ${text2}`}>{fmt(c.tipRevenue)}</td>
                     <td className={`px-3 py-3 ${text2}`}>{fmt(c.messageRevenue)}</td>
-                    <td className={`px-3 py-3 ${text2}`}>{c.textingRatio.toFixed(1)}%</td>
+                    <td className={`px-3 py-3 ${text2}`}>{c.messageRevenue > 0 ? (c.totalRevenue / c.messageRevenue).toFixed(1) : '—'}</td>
                     <td className={`px-3 py-3 ${text2}`}>{c.openChats}</td>
                     <td className={`px-3 py-3 ${text2}`}>{c.sellingChats}</td>
                     <td className={`px-3 py-3 ${text2}`}>{fmtDec(c.avgFanSpend)}</td>
