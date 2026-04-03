@@ -217,7 +217,7 @@ export default function CreatorPage({ creator, links }: Props) {
               </span>
               {creator.show_verified && (
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="#a78bfa" style={{ flexShrink: 0 }}>
-                  <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                  <path d="M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/><path d="M8 12.5l3 3 5.5-5.5" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                 </svg>
               )}
             </div>
@@ -265,7 +265,7 @@ export default function CreatorPage({ creator, links }: Props) {
                 </h1>
                 {creator.show_verified && (
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="#a78bfa" style={{ flexShrink: 0 }}>
-                    <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                    <path d="M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/><path d="M8 12.5l3 3 5.5-5.5" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                   </svg>
                 )}
               </div>
@@ -279,7 +279,7 @@ export default function CreatorPage({ creator, links }: Props) {
               <h1 style={{ fontSize: 22, fontWeight: 700, color: '#fff', margin: 0 }}>{creator.display_name}</h1>
               {creator.show_verified && (
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="#a78bfa">
-                  <path d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/>
+                  <path d="M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"/><path d="M8 12.5l3 3 5.5-5.5" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
                 </svg>
               )}
             </div>
@@ -288,7 +288,7 @@ export default function CreatorPage({ creator, links }: Props) {
         )}
 
         {/* ── Below hero ── */}
-        <div style={{ width: '100%', padding: '16px 16px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+        <div style={{ width: '100%', padding: '8px 16px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
 
           {/* Lock / badge icon */}
           {(() => {
@@ -304,11 +304,11 @@ export default function CreatorPage({ creator, links }: Props) {
               </svg>
             )
             return creator.lock_link_url ? (
-              <a href={creator.lock_link_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: 40, height: 40, marginTop: -4, marginBottom: -4 }}>
+              <a href={creator.lock_link_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: 40, height: 40 }}>
                 {lockIcon}
               </a>
             ) : (
-              <div style={{ width: 40, height: 40, marginTop: -4, marginBottom: -4 }}>
+              <div style={{ width: 40, height: 40 }}>
                 {lockIcon}
               </div>
             )
