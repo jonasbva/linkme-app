@@ -780,18 +780,35 @@ export default function RevenueClient() {
   const handleTrackSort = (f: string) => { if (trackSortField === f) setTrackSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setTrackSortField(f); setTrackSortDir('asc') } }
 
   // Only show mapped creators (those linked to a LinkMe profile) in Revenue lists
-  const mappedCreators = useMemo(() => {
+  // Split creators into linked (mapped to a LinkMe creator) and unlinked Infloww accounts
+  const linkedCreators = useMemo(() => {
     if (!data?.creators) return []
-    return data.creators
+    return data.creators.filter(c => c.supabase_creator_id !== null)
   }, [data])
 
-  const sortedCreators = useMemo(() => {
-    return [...mappedCreators].sort((a, b) => {
+  const unlinkedCreators = useMemo(() => {
+    if (!data?.creators) return []
+    return data.creators.filter(c => c.supabase_creator_id === null)
+  }, [data])
+
+  const sortedLinked = useMemo(() => {
+    return [...linkedCreators].sort((a, b) => {
       const aVal = (a as Record<string, unknown>)[sortField] as number || 0
       const bVal = (b as Record<string, unknown>)[sortField] as number || 0
       return sortDir === 'asc' ? aVal - bVal : bVal - aVal
     })
-  }, [mappedCreators, sortField, sortDir])
+  }, [linkedCreators, sortField, sortDir])
+
+  const sortedUnlinked = useMemo(() => {
+    return [...unlinkedCreators].sort((a, b) => {
+      const aVal = (a as Record<string, unknown>)[sortField] as number || 0
+      const bVal = (b as Record<string, unknown>)[sortField] as number || 0
+      return sortDir === 'asc' ? aVal - bVal : bVal - aVal
+    })
+  }, [unlinkedCreators, sortField, sortDir])
+
+  // Combined for CSV export compatibility
+  const sortedCreators = useMemo(() => [...sortedLinked, ...sortedUnlinked], [sortedLinked, sortedUnlinked])
 
   // ─── Save handlers ──────────────────────────────────────────────
   const saveExpectation = async (creatorId: string, field: string, value: number | boolean) => {
@@ -995,7 +1012,8 @@ export default function RevenueClient() {
                 </tr>
               </thead>
               <tbody>
-                {sortedCreators.map(c => (
+                {/* ── Linked Creators (mapped to a LinkMe profile) ── */}
+                {sortedLinked.map(c => (
                   <tr key={c.infloww_id} className={`border-b ${tableBorder} ${tableRowHover}`}>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2.5">
@@ -1019,9 +1037,45 @@ export default function RevenueClient() {
                     <td className={`px-3 py-3 ${text1}`}>{c.conversionRate.toFixed(1)}%</td>
                   </tr>
                 ))}
+
+                {/* ── Divider between linked and unlinked ── */}
+                {sortedLinked.length > 0 && sortedUnlinked.length > 0 && (
+                  <tr>
+                    <td colSpan={13} className={`px-3 py-2 text-xs font-semibold uppercase tracking-wider ${isLight ? 'bg-black/[0.03] text-black/40 border-y border-black/10' : 'bg-white/[0.03] text-white/30 border-y border-white/10'}`}>
+                      Unlinked Infloww Accounts
+                    </td>
+                  </tr>
+                )}
+
+                {/* ── Unlinked Infloww accounts (not mapped to any LinkMe creator) ── */}
+                {sortedUnlinked.map(c => (
+                  <tr key={c.infloww_id} className={`border-b ${tableBorder} ${tableRowHover} ${isLight ? 'bg-black/[0.015]' : 'bg-white/[0.015]'}`}>
+                    <td className="px-3 py-3">
+                      <div className="flex items-center gap-2.5">
+                        {c.avatar_url
+                          ? <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover opacity-60" />
+                          : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
+                        <span className={`font-medium ${text2}`}>{c.display_name || c.name}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-900/30 text-amber-400'}`}>Unlinked</span>
+                      </div>
+                    </td>
+                    <td className={`px-3 py-3 font-semibold ${text2}`}>{fmt(c.totalRevenue)}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{c.newSubs}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{fmt(c.newSubRevenue)}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{fmt(c.recurringSubRevenue)}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{fmt(c.tipRevenue)}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{fmt(c.messageRevenue)}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{c.textingRatio.toFixed(1)}%</td>
+                    <td className={`px-3 py-3 ${text2}`}>{c.openChats}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{c.sellingChats}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{fmtDec(c.avgFanSpend)}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{c.linkClicks}</td>
+                    <td className={`px-3 py-3 ${text2}`}>{c.conversionRate.toFixed(1)}%</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-            {sortedCreators.length === 0 && <div className={`text-center py-10 ${text2}`}>No data. Configure API key in Settings first.</div>}
+            {sortedLinked.length === 0 && sortedUnlinked.length === 0 && <div className={`text-center py-10 ${text2}`}>No data. Configure API key in Settings first.</div>}
           </div>
         </div>
       )}
