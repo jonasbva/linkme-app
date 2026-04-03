@@ -176,12 +176,14 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   async function uploadLinkImage(file: File, field: string): Promise<string | null> {
     setUploadingField(field)
     try {
+      // Re-wrap file to avoid Safari FormData issues
+      const blob = new Blob([await file.arrayBuffer()], { type: file.type || 'image/jpeg' })
       const form = new FormData()
-      form.append('file', file)
+      form.append('file', new File([blob], file.name || 'upload.jpg', { type: blob.type }))
       form.append('bucket', 'images')
       const res = await fetch('/api/admin/upload', { method: 'POST', body: form })
       if (!res.ok) {
-        const err = await res.json()
+        const err = await res.json().catch(() => ({}))
         throw new Error(err.error || 'Upload failed')
       }
       const { url } = await res.json()
