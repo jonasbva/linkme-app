@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'snapchat', 'youtube', 'reddit', 'twitch', 'telegram', 'discord', 'spotify', 'link', 'custom']
 
 const PLATFORM_ICONS: Record<string, { color: string; svg: string }> = {
-  onlyfans: { color: '#00AFF0', svg: `<svg viewBox="0 0 24 24" width="100%" height="100%"><circle cx="12" cy="12" r="11.5" fill="#00AFF0"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="12" r="3" fill="#fff"/></svg>` },
+  onlyfans: { color: '#00AFF0', svg: `<img src="https://sogytagzrkfuvwrqzqgk.supabase.co/storage/v1/object/public/creators/Logos/OFIconBlue.svg" width="100%" height="100%" style="object-fit:contain" />` },
   fansly: { color: '#1DA1F2', svg: `<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>` },
   instagram: { color: '#E1306C', svg: `<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/></svg>` },
   twitter: { color: '#ffffff', svg: `<svg viewBox="0 0 24 24" fill="currentColor" width="100%" height="100%"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.744l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>` },
@@ -159,6 +159,28 @@ export default function LinksManager({ creator, initialLinks }: Props) {
   const [newLink, setNewLink] = useState({ ...EMPTY_LINK })
   const [toast, setToast] = useState<Toast | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [uploadingField, setUploadingField] = useState<string | null>(null)
+
+  async function uploadImage(file: File, field: string) {
+    setUploadingField(field)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('bucket', 'images')
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: form })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Upload failed')
+      }
+      const { url } = await res.json()
+      return url
+    } catch (e: any) {
+      showToast(e.message || 'Upload failed', 'error')
+      return null
+    } finally {
+      setUploadingField(null)
+    }
+  }
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
@@ -377,7 +399,15 @@ export default function LinksManager({ creator, initialLinks }: Props) {
                     <div className="flex-1 space-y-2.5">
                       <Field label="Title" value={link.title} onChange={v => updateField(link.id, 'title', v)} placeholder="OnlyFans" />
                       <Field label="URL" value={link.url} onChange={v => updateField(link.id, 'url', v)} placeholder="https://..." />
-                      <Field label="Image" value={link.thumbnail_url || ''} onChange={v => updateField(link.id, 'thumbnail_url', v)} placeholder="Paste image URL…" />
+                      <div className="space-y-1">
+                        <Field label="Image" value={link.thumbnail_url || ''} onChange={v => updateField(link.id, 'thumbnail_url', v)} placeholder="Paste image URL…" />
+                        <label className="flex items-center gap-2 cursor-pointer w-fit ml-16">
+                          <input type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadImage(f, `thumbnail_${link.id}`); if (url) updateField(link.id, 'thumbnail_url', url); } }} />
+                          <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
+                            {uploadingField === `thumbnail_${link.id}` ? 'Uploading…' : '↑ Upload image instead'}
+                          </span>
+                        </label>
+                      </div>
 
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-white/35 w-14 shrink-0">Icon</span>
@@ -435,7 +465,15 @@ export default function LinksManager({ creator, initialLinks }: Props) {
           <div className="flex-1 space-y-2.5">
             <Field label="Title" value={newLink.title} onChange={v => setNewLink(p => ({ ...p, title: v }))} placeholder="OnlyFans (free for a short time)" />
             <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
-            <Field label="Image" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional thumbnail URL" />
+            <div className="space-y-1">
+              <Field label="Image" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional thumbnail URL" />
+              <label className="flex items-center gap-2 cursor-pointer w-fit ml-16">
+                <input type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadImage(f, 'thumbnail_new'); if (url) setNewLink(p => ({ ...p, thumbnail_url: url })); } }} />
+                <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
+                  {uploadingField === 'thumbnail_new' ? 'Uploading…' : '↑ Upload image instead'}
+                </span>
+              </label>
+            </div>
 
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-white/35 w-14 shrink-0">Icon</span>
