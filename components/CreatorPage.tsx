@@ -291,23 +291,28 @@ export default function CreatorPage({ creator, links }: Props) {
         <div style={{ width: '100%', padding: '16px 16px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
 
           {/* Lock / badge icon */}
-          {creator.lock_link_url ? (
-            <a href={creator.lock_link_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: 36, height: 36, marginTop: -4, marginBottom: -4 }}>
-              <img
-                src={creator.lock_icon_url || 'https://sogytagzrkfuvwrqzqgk.supabase.co/storage/v1/object/public/creators/Logos/OFIconBlue.svg'}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-              />
-            </a>
-          ) : (
-            <div style={{ width: 36, height: 36, marginTop: -4, marginBottom: -4 }}>
-              <img
-                src={creator.lock_icon_url || 'https://sogytagzrkfuvwrqzqgk.supabase.co/storage/v1/object/public/creators/Logos/OFIconBlue.svg'}
-                alt=""
-                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-              />
-            </div>
-          )}
+          {(() => {
+            const lockIcon = creator.lock_icon_url ? (
+              <img src={creator.lock_icon_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : (
+              <svg width="100%" height="100%" viewBox="0 0 48 48" fill="none">
+                <circle cx="24" cy="24" r="23" fill="#00AFF0" stroke="#00AFF0" strokeWidth="2"/>
+                <circle cx="24" cy="24" r="18" fill="none" stroke="rgba(255,255,255,0.25)" strokeWidth="2"/>
+                <rect x="16" y="22" width="16" height="12" rx="2.5" fill="#fff"/>
+                <path d="M19 22v-4a5 5 0 0 1 10 0v4" stroke="#fff" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+                <circle cx="24" cy="28" r="1.5" fill="#00AFF0"/>
+              </svg>
+            )
+            return creator.lock_link_url ? (
+              <a href={creator.lock_link_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: 40, height: 40, marginTop: -4, marginBottom: -4 }}>
+                {lockIcon}
+              </a>
+            ) : (
+              <div style={{ width: 40, height: 40, marginTop: -4, marginBottom: -4 }}>
+                {lockIcon}
+              </div>
+            )
+          })()}
 
           {creator.bio && (
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.65)', textAlign: 'center', lineHeight: 1.5, margin: 0, maxWidth: 320 }}>
