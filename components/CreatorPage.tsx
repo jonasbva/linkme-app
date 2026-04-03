@@ -46,7 +46,7 @@ interface Props {
 const PLATFORM_ICONS: Record<string, { color: string; svg: string }> = {
   onlyfans: {
     color: '#00AFF0',
-    svg: `<svg viewBox="0 0 24 24" width="100%" height="100%"><circle cx="12" cy="12" r="11.5" fill="#00AFF0"/><circle cx="12" cy="12" r="7.5" fill="none" stroke="#fff" stroke-width="2.5"/><circle cx="12" cy="12" r="3" fill="#fff"/></svg>`,
+    svg: `<img src="https://sogytagzrkfuvwrqzqgk.supabase.co/storage/v1/object/public/creators/Logos/OFIconBlue.svg" width="100%" height="100%" style="object-fit:contain" />`,
   },
   fansly: {
     color: '#1DA1F2',
@@ -290,13 +290,24 @@ export default function CreatorPage({ creator, links }: Props) {
         {/* ── Below hero ── */}
         <div style={{ width: '100%', padding: '16px 16px 48px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
 
-          {/* Lock icon */}
-          <div style={{ width: 42, height: 42, background: '#1a1a1a', border: '1.5px solid rgba(255,255,255,0.12)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.65)" strokeWidth="2">
-              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-            </svg>
-          </div>
+          {/* Lock / badge icon */}
+          {creator.lock_link_url ? (
+            <a href={creator.lock_link_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: 36, height: 36, marginTop: -4, marginBottom: -4 }}>
+              <img
+                src={creator.lock_icon_url || 'https://sogytagzrkfuvwrqzqgk.supabase.co/storage/v1/object/public/creators/Logos/OFIconBlue.svg'}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            </a>
+          ) : (
+            <div style={{ width: 36, height: 36, marginTop: -4, marginBottom: -4 }}>
+              <img
+                src={creator.lock_icon_url || 'https://sogytagzrkfuvwrqzqgk.supabase.co/storage/v1/object/public/creators/Logos/OFIconBlue.svg'}
+                alt=""
+                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+              />
+            </div>
+          )}
 
           {creator.bio && (
             <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.65)', textAlign: 'center', lineHeight: 1.5, margin: 0, maxWidth: 320 }}>

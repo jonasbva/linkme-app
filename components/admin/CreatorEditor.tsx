@@ -173,28 +173,45 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     setUploadingField(null)
   }
 
-  async function uploadLinkImage(file: File, field: string): Promise<string | null> {
-    setUploadingField(field)
+  async function uploadLinkImage(file: File, linkId: string, field: string) {
+    const key = `thumbnail_${linkId}`
+    setUploadingField(key)
     try {
-      // Re-wrap file to avoid Safari FormData issues
-      const blob = new Blob([await file.arrayBuffer()], { type: file.type || 'image/jpeg' })
       const form = new FormData()
-      form.append('file', new File([blob], file.name || 'upload.jpg', { type: blob.type }))
+      form.append('file', file)
       form.append('bucket', 'images')
       const res = await fetch('/api/admin/upload', { method: 'POST', body: form })
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
+        const err = await res.json()
         throw new Error(err.error || 'Upload failed')
       }
       const { url } = await res.json()
+      updateLinkField(linkId, field, url)
       showToast('Image uploaded', 'success')
-      return url
     } catch (e: any) {
       showToast(e.message || 'Upload failed', 'error')
-      return null
-    } finally {
-      setUploadingField(null)
     }
+    setUploadingField(null)
+  }
+
+  async function uploadNewLinkImage(file: File) {
+    setUploadingField('thumbnail_new')
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('bucket', 'images')
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: form })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Upload failed')
+      }
+      const { url } = await res.json()
+      setNewLink(p => ({ ...p, thumbnail_url: url }))
+      showToast('Image uploaded', 'success')
+    } catch (e: any) {
+      showToast(e.message || 'Upload failed', 'error')
+    }
+    setUploadingField(null)
   }
 
   const [links, setLinks] = useState<any[]>(initialLinks || [])
@@ -576,6 +593,16 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   </span>
                 </label>
               </div>
+              <div className="space-y-1">
+                <Field label="Badge Icon URL" value={creator.lock_icon_url} onChange={v => updateCreator('lock_icon_url', v)} placeholder="https://... (defaults to OF logo)" />
+                <label className="flex items-center gap-2 cursor-pointer w-fit">
+                  <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadImage(f, 'lock_icon_url') }} />
+                  <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
+                    {uploadingField === 'lock_icon_url' ? 'Uploading…' : '↑ Upload image instead'}
+                  </span>
+                </label>
+              </div>
+              <Field label="Badge Link URL" value={creator.lock_link_url} onChange={v => updateCreator('lock_link_url', v)} placeholder="https://onlyfans.com/..." />
             </div>
           </Section>
 
@@ -766,7 +793,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                         />
                       </div>
                       <label className="flex items-center gap-2 cursor-pointer w-fit ml-16">
-                        <input type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadLinkImage(f, `thumbnail_${link.id}`); if (url) updateLinkField(link.id, 'thumbnail_url', url); } }} />
+                        <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadLinkImage(f, link.id, 'thumbnail_url') }} />
                         <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
                           {uploadingField === `thumbnail_${link.id}` ? 'Uploading…' : '↑ Upload image instead'}
                         </span>
@@ -867,7 +894,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                   <div className="space-y-1">
                     <Field label="Image URL" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional" />
                     <label className="flex items-center gap-2 cursor-pointer w-fit ml-16">
-                      <input type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadLinkImage(f, 'thumbnail_new'); if (url) setNewLink(p => ({ ...p, thumbnail_url: url })); } }} />
+                      <input type="file" accept="image/*" className="hidden" onChange={e => { const f = e.target.files?.[0]; if (f) uploadNewLinkImage(f) }} />
                       <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
                         {uploadingField === 'thumbnail_new' ? 'Uploading…' : '↑ Upload image instead'}
                       </span>
