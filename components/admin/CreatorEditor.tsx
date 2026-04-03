@@ -172,6 +172,29 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
     }
     setUploadingField(null)
   }
+
+  async function uploadLinkImage(file: File, field: string): Promise<string | null> {
+    setUploadingField(field)
+    try {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('bucket', 'images')
+      const res = await fetch('/api/admin/upload', { method: 'POST', body: form })
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Upload failed')
+      }
+      const { url } = await res.json()
+      showToast('Image uploaded', 'success')
+      return url
+    } catch (e: any) {
+      showToast(e.message || 'Upload failed', 'error')
+      return null
+    } finally {
+      setUploadingField(null)
+    }
+  }
+
   const [links, setLinks] = useState<any[]>(initialLinks || [])
   const [newLink, setNewLink] = useState({ title: '', url: '', icon: 'link', custom_icon_url: '', thumbnail_url: '', thumbnail_position: '50', thumbnail_height: 200 })
   const [addLinkStatus, setAddLinkStatus] = useState<'idle' | 'saving' | 'saved'>('idle')
@@ -729,15 +752,23 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                       </div>
                     )}
 
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] text-white/35 w-14 shrink-0">Image</span>
-                      <input
-                        type="text"
-                        value={link.thumbnail_url || ''}
-                        onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
-                        placeholder="Paste image URL…"
-                        className="flex-1 px-2.5 py-1 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
-                      />
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-white/35 w-14 shrink-0">Image</span>
+                        <input
+                          type="text"
+                          value={link.thumbnail_url || ''}
+                          onChange={e => updateLinkField(link.id, 'thumbnail_url', e.target.value)}
+                          placeholder="Paste image URL…"
+                          className="flex-1 px-2.5 py-1 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 placeholder:text-white/15 focus:border-white/15 transition-colors"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 cursor-pointer w-fit ml-16">
+                        <input type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadLinkImage(f, `thumbnail_${link.id}`); if (url) updateLinkField(link.id, 'thumbnail_url', url); } }} />
+                        <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
+                          {uploadingField === `thumbnail_${link.id}` ? 'Uploading…' : '↑ Upload image instead'}
+                        </span>
+                      </label>
                     </div>
 
                     {link.thumbnail_url && (
@@ -831,7 +862,15 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 <div className="grid grid-cols-1 gap-3">
                   <Field label="Title" value={newLink.title} onChange={v => setNewLink(p => ({ ...p, title: v }))} placeholder="OnlyFans (free for a short time)" />
                   <Field label="URL" value={newLink.url} onChange={v => setNewLink(p => ({ ...p, url: v }))} placeholder="https://onlyfans.com/..." />
-                  <Field label="Image URL" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional" />
+                  <div className="space-y-1">
+                    <Field label="Image URL" value={newLink.thumbnail_url} onChange={v => setNewLink(p => ({ ...p, thumbnail_url: v }))} placeholder="Optional" />
+                    <label className="flex items-center gap-2 cursor-pointer w-fit ml-16">
+                      <input type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files?.[0]; if (f) { const url = await uploadLinkImage(f, 'thumbnail_new'); if (url) setNewLink(p => ({ ...p, thumbnail_url: url })); } }} />
+                      <span className="text-[11px] text-white/40 hover:text-white/70 transition-colors underline underline-offset-2">
+                        {uploadingField === 'thumbnail_new' ? 'Uploading…' : '↑ Upload image instead'}
+                      </span>
+                    </label>
+                  </div>
                   <SelectField label="Icon" value={newLink.icon} onChange={v => setNewLink(p => ({ ...p, icon: v }))}
                     options={ICON_OPTIONS.map(o => [o, o])} />
                 </div>
