@@ -76,6 +76,7 @@ interface InflowwConfig {
   api_key_masked?: string
   agency_oid: string
   refund_threshold_dollars: number
+  fetching_enabled: boolean
   api_key_updated_at: string
 }
 
@@ -594,7 +595,7 @@ export default function RevenueClient() {
   // Settings
   const [config, setConfig] = useState<InflowwConfig | null>(null)
   const [configLoading, setConfigLoading] = useState(false)
-  const [configForm, setConfigForm] = useState({ api_key: '', agency_oid: '', refund_threshold_dollars: 20 })
+  const [configForm, setConfigForm] = useState({ api_key: '', agency_oid: '', refund_threshold_dollars: 20, fetching_enabled: true })
   const [configSaving, setConfigSaving] = useState(false)
 
   // Sorting
@@ -701,7 +702,7 @@ export default function RevenueClient() {
       const json = await res.json()
       if (res.ok && json.config) {
         setConfig(json.config)
-        setConfigForm({ api_key: '', agency_oid: json.config.agency_oid || '', refund_threshold_dollars: json.config.refund_threshold_dollars || 20 })
+        setConfigForm({ api_key: '', agency_oid: json.config.agency_oid || '', refund_threshold_dollars: json.config.refund_threshold_dollars || 20, fetching_enabled: json.config.fetching_enabled !== false })
       }
     } catch { addToast('error', 'Failed to load config') }
     finally { setConfigLoading(false) }
@@ -842,7 +843,7 @@ export default function RevenueClient() {
   const saveConfig = async () => {
     setConfigSaving(true)
     try {
-      const payload: Record<string, unknown> = { agency_oid: configForm.agency_oid, refund_threshold_dollars: configForm.refund_threshold_dollars }
+      const payload: Record<string, unknown> = { agency_oid: configForm.agency_oid, refund_threshold_dollars: configForm.refund_threshold_dollars, fetching_enabled: configForm.fetching_enabled }
       if (configForm.api_key) payload.api_key = configForm.api_key
       const res = await fetch('/api/admin/revenue/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const json = await res.json()
@@ -1252,6 +1253,36 @@ export default function RevenueClient() {
               </div>
             ) : (
               <div className="space-y-5">
+                {/* Fetching Toggle */}
+                <div className={`${card} rounded-lg p-4 flex items-center justify-between`}>
+                  <div>
+                    <div className={`text-sm font-medium ${text1}`}>Revenue Data Fetching</div>
+                    <div className={`text-xs mt-0.5 ${text3}`}>
+                      {configForm.fetching_enabled
+                        ? 'Live fetching and cron cache refresh are active.'
+                        : 'All Infloww API calls are paused. Cached data is still visible.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={configForm.fetching_enabled}
+                    onClick={() => setConfigForm(p => ({ ...p, fetching_enabled: !p.fetching_enabled }))}
+                    className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none
+                      ${configForm.fetching_enabled
+                        ? (isLight ? 'bg-black' : 'bg-white')
+                        : (isLight ? 'bg-black/20' : 'bg-white/20')}`}
+                  >
+                    <span
+                      className={`pointer-events-none inline-block h-5 w-5 transform rounded-full shadow ring-0 transition duration-200 ease-in-out
+                        ${configForm.fetching_enabled ? 'translate-x-5' : 'translate-x-0'}
+                        ${configForm.fetching_enabled
+                          ? (isLight ? 'bg-white' : 'bg-black')
+                          : (isLight ? 'bg-white' : 'bg-black')}`}
+                    />
+                  </button>
+                </div>
+
                 {config?.api_key_masked && (
                   <div className={`${card} rounded-lg p-4`}>
                     <div className={`text-xs mb-1 ${text3}`}>Current API Key</div>

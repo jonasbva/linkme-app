@@ -151,9 +151,14 @@ export async function GET(req: NextRequest) {
 
   const { data: config } = await supabase
     .from('infloww_config')
-    .select('api_key, agency_oid')
+    .select('api_key, agency_oid, fetching_enabled')
     .limit(1)
     .single()
+
+  if (config?.fetching_enabled === false) {
+    console.log('[cron] Revenue fetching is disabled. Skipping.')
+    return NextResponse.json({ ok: true, skipped: true, reason: 'fetching_disabled' })
+  }
 
   if (!config?.api_key || !config?.agency_oid) {
     return NextResponse.json({ error: 'Infloww API not configured' }, { status: 400 })

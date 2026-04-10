@@ -317,9 +317,19 @@ export async function GET(req: NextRequest) {
 
   const { data: config } = await supabase
     .from('infloww_config')
-    .select('api_key, agency_oid')
+    .select('api_key, agency_oid, fetching_enabled')
     .limit(1)
     .single()
+
+  if (config?.fetching_enabled === false) {
+    const errMsg = 'Revenue data fetching is currently disabled. Enable it in Settings to fetch live data.'
+    if (stream) {
+      return new Response(`data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`, {
+        headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
+      })
+    }
+    return NextResponse.json({ error: errMsg, fetching_disabled: true }, { status: 403 })
+  }
 
   if (!config?.api_key || !config?.agency_oid) {
     const errMsg = 'Infloww API not configured. Please set your API key and Agency OID in Settings.'

@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.infloww_config (
   api_key text NOT NULL DEFAULT '',
   agency_oid text NOT NULL DEFAULT '',
   refund_threshold_dollars integer NOT NULL DEFAULT 20,
+  fetching_enabled boolean NOT NULL DEFAULT true,
   api_key_updated_at timestamp with time zone DEFAULT now(),
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),

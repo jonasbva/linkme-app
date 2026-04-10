@@ -42,7 +42,7 @@ export async function PUT(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { api_key, agency_oid, refund_threshold_dollars } = body
+  const { api_key, agency_oid, refund_threshold_dollars, fetching_enabled } = body
 
   const supabase = createServerSupabaseClient()
 
@@ -63,6 +63,7 @@ export async function PUT(req: NextRequest) {
   }
   if (agency_oid !== undefined) updates.agency_oid = agency_oid
   if (refund_threshold_dollars !== undefined) updates.refund_threshold_dollars = refund_threshold_dollars
+  if (fetching_enabled !== undefined) updates.fetching_enabled = fetching_enabled
 
   let result
   if (existing) {
