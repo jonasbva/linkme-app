@@ -43,6 +43,7 @@ interface Props {
   tags: Tag[]
   unmappedCreators: UnmappedCreator[]
   isSuperAdmin?: boolean
+  userPermissions?: Record<string, string[]>
 }
 
 function fmt(n: number): string {
@@ -74,9 +75,19 @@ export default function DashboardClient({
   tags,
   unmappedCreators,
   isSuperAdmin,
+  userPermissions,
 }: Props) {
   const { resolved } = useTheme()
   const isLight = resolved === 'light'
+
+  // Permission check: super admins see everything, others check per-creator permissions
+  function hasPermission(creatorId: string, permission: string): boolean {
+    if (isSuperAdmin) return true
+    if (!userPermissions) return false
+    // Check creator-specific permissions or global all-creators permissions
+    return (userPermissions[creatorId]?.includes(permission) ?? false)
+      || (userPermissions['__all__']?.includes(permission) ?? false)
+  }
 
   const [creators, setCreators] = useState(initialStats)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -389,32 +400,36 @@ export default function DashboardClient({
 
               {/* Creator action buttons — visible on hover */}
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
-                <Link
-                  href={`/admin/creators/${c.id}/edit`}
-                  className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
-                    isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
-                  }`}
-                >
-                  Settings
-                </Link>
-                <Link
-                  href={c.custom_domain ? `https://${c.custom_domain}` : `/${c.slug}`}
-                  target="_blank"
-                  className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
-                    isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
-                  }`}
-                >
-                  Preview
-                </Link>
-                {isSuperAdmin && <button
-                  onClick={(e) => { e.preventDefault(); deleteCreator(c.id, c.display_name) }}
-                  disabled={deleting === c.id}
-                  className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
-                    isLight ? 'text-red-500/50 hover:text-red-600 hover:bg-red-500/10' : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
-                  }`}
-                >
-                  {deleting === c.id ? '...' : 'Delete'}
-                </button>}
+                {hasPermission(c.id, 'view_social') && (
+                  <Link
+                    href={`/admin/creators/${c.id}/analysis`}
+                    className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
+                      isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    Social Media
+                  </Link>
+                )}
+                {hasPermission(c.id, 'view_links') && (
+                  <Link
+                    href={`/admin/creators/${c.id}/edit`}
+                    className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
+                      isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    LinkMe
+                  </Link>
+                )}
+                {hasPermission(c.id, 'view_conversions') && (
+                  <Link
+                    href={`/admin/conversions?creator=${c.id}`}
+                    className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
+                      isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    Conversions
+                  </Link>
+                )}
               </div>
             </div>
           )

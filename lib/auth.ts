@@ -73,7 +73,7 @@ export async function requireAuth(): Promise<SessionUser | null> {
 
 // ── Permission helpers ──
 
-export type PermissionType = 'view_links' | 'view_social' | 'view_conversions' | 'edit_settings' | 'edit_links' | 'input_conversions' | 'edit_social'
+export type PermissionType = 'view_links' | 'view_social' | 'view_conversions' | 'view_link_analytics' | 'edit_settings' | 'edit_links' | 'input_conversions' | 'edit_social'
 
 export async function getUserPermissions(userId: string): Promise<{
   visibleCreatorIds: string[]

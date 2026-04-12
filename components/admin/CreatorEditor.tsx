@@ -546,7 +546,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
 
       {/* Sub-tabs */}
       <div className={`flex items-center gap-6 border-b pb-px ${isLight ? 'border-black/[0.08]' : 'border-white/[0.08]'}`}>
-        {mode === 'edit' && (['profile', 'links'] as const).map(tab => (
+        {mode === 'edit' && (['profile', 'links', 'analytics'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveSubTab(tab)}
@@ -556,22 +556,21 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
                 : isLight ? 'text-black/40 border-transparent hover:text-black/60' : 'text-white/40 border-transparent hover:text-white/60'
             }`}
           >
-            {tab === 'profile' ? 'Profile' : 'Links'}
+            {tab === 'profile' ? 'Profile' : tab === 'links' ? 'Links' : 'Link Analytics'}
           </button>
         ))}
-        {mode === 'analysis' && (['social', 'links-combined'] as const).map(tab => (
+        {mode === 'analysis' && (
           <button
-            key={tab}
-            onClick={() => setActiveSubTab(tab)}
+            onClick={() => setActiveSubTab('social')}
             className={`pb-2.5 text-[13px] font-medium transition-all duration-200 border-b-2 -mb-px ${
-              activeSubTab === tab
+              activeSubTab === 'social'
                 ? isLight ? 'text-black/90 border-black' : 'text-white border-white'
                 : isLight ? 'text-black/40 border-transparent hover:text-black/60' : 'text-white/40 border-transparent hover:text-white/60'
             }`}
           >
-            {tab === 'social' ? 'Social Media' : 'Links'}
+            Social Media
           </button>
-        ))}
+        )}
       </div>
 
       {/* ─── PROFILE SUB-TAB ─── */}
@@ -1007,8 +1006,8 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         </div>
       )}
 
-      {/* ─── LINK ANALYSIS SUB-TAB ─── */}
-      {mode === 'analysis' && activeSubTab === 'analytics' && (
+      {/* ─── LINK ANALYSIS SUB-TAB (in edit mode) ─── */}
+      {((mode === 'edit' && activeSubTab === 'analytics') || (mode === 'analysis' && activeSubTab === 'analytics')) && (
         <div className="space-y-6">
           {/* Date range trigger — popup only */}
           <div className="relative inline-block">

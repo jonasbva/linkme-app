@@ -162,12 +162,25 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
 export default async function AdminDashboard() {
   const user = await getSessionUser()
   let visibleCreatorIds: string[] | undefined
+  let userPermissions: Record<string, string[]> | undefined
   if (user && !user.is_super_admin) {
-    const { visibleCreatorIds: ids, grantAllCreators } = await getUserPermissions(user.id)
+    const { visibleCreatorIds: ids, grantAllCreators, permissions, allCreatorsPermissions } = await getUserPermissions(user.id)
     if (!grantAllCreators) {
       visibleCreatorIds = ids
     }
+    // Serialize permissions (Sets → arrays) for client component
+    const serialized: Record<string, string[]> = {}
+    for (const [creatorId, perms] of Object.entries(permissions)) {
+      serialized[creatorId] = Array.from(perms)
+    }
+    // If grantAllCreators, merge allCreatorsPermissions into every creator's entry
+    if (grantAllCreators) {
+      const allPermsArr = Array.from(allCreatorsPermissions)
+      // Will be applied client-side via isSuperAdmin or allCreatorsPermissions
+      serialized['__all__'] = allPermsArr
+    }
+    userPermissions = serialized
   }
   const data = await getDashboardStats(visibleCreatorIds)
-  return <DashboardClient {...data} isSuperAdmin={user?.is_super_admin} />
+  return <DashboardClient {...data} isSuperAdmin={user?.is_super_admin} userPermissions={userPermissions} />
 }
