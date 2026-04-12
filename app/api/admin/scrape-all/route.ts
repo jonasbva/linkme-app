@@ -17,11 +17,12 @@ export async function POST(req: NextRequest) {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`))
       }
 
-      // Heartbeat: send a ping every 8 seconds to keep the connection alive
-      // (Vercel/browsers drop idle SSE connections after ~15-30s)
+      // Heartbeat: send a real data event every 5 seconds to keep the connection alive.
+      // SSE comments (`: heartbeat`) get buffered by Vercel and never reach the client.
+      // Real data events force a flush.
       const heartbeat = setInterval(() => {
-        try { controller.enqueue(encoder.encode(`: heartbeat\n\n`)) } catch {}
-      }, 8000)
+        try { send({ type: 'heartbeat' }) } catch {}
+      }, 5000)
 
       try {
         const supabase = createServerSupabaseClient()

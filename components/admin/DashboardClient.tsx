@@ -205,6 +205,8 @@ export default function DashboardClient({
           if (!line.startsWith('data: ')) continue
           try {
             const data = JSON.parse(line.slice(6))
+            // Ignore heartbeat pings — they just keep the connection alive
+            if (data.type === 'heartbeat') continue
             if (data.type === 'progress' || data.type === 'scraped') setScrapeProgress({ index: data.index, total: data.total, username: data.username })
             if (data.type === 'start') setScrapeProgress({ index: 0, total: data.total, username: 'Starting...' })
             if (data.type === 'batch') setScrapeProgress(prev => {
@@ -225,48 +227,18 @@ export default function DashboardClient({
         }
       }
 
-      // Stream ended without a 'done' event — connection was likely dropped
-      // Keep showing progress; the scrape is still running server-side
+      // Stream closed cleanly without 'done' — shouldn't happen with heartbeats but handle gracefully
       if (!gotDone) {
-        setScrapeProgress(prev => {
-          const base = prev ?? { index: 0, total: 0, username: '' }
-          return { ...base, username: 'Still scraping (connection refreshing)...' }
-        })
-        // Poll every 5s to check if new snapshots appeared (scrape finished server-side)
-        const pollInterval = setInterval(async () => {
-          try {
-            // Check if new snapshots were created in the last 5 minutes
-            const checkRes = await fetch('/api/admin/scrape?social_account_id=poll_check&limit=1')
-            // If we get here, server is responsive. Check if scraping finished by looking at recent timestamps.
-            // Simple heuristic: after stream drops, wait up to 5 minutes then assume done
-          } catch {}
-        }, 5000)
-        // Auto-stop after 5 minutes max
-        setTimeout(() => {
-          clearInterval(pollInterval)
-          if (!gotDone) {
-            setScrapeResult({ success: 0, errors: 0, total: 0 })
-            setScrapeProgress(null)
-            setScraping(false)
-          }
-        }, 300000)
-      }
-    } catch (err: any) {
-      if (err.name === 'AbortError') {
-        setScraping(false)
-        return
-      }
-      // Network error — the scrape may still be running server-side
-      setScrapeProgress(prev => {
-        const base = prev ?? { index: 0, total: 0, username: '' }
-        return { ...base, username: 'Connection lost — scrape continues server-side...' }
-      })
-      // Keep the UI active for a while, then clean up
-      setTimeout(() => {
         setScrapeResult({ success: 0, errors: 0, total: 0 })
         setScrapeProgress(null)
         setScraping(false)
-      }, 300000)
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        setScrapeResult({ success: 0, errors: 1, total: 0 })
+      }
+      setScrapeProgress(null)
+      setScraping(false)
     }
   }
 
