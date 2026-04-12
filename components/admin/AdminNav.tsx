@@ -20,6 +20,7 @@ export default function AdminNav({ isSuperAdmin, displayName }: AdminNavProps) {
     { href: '/admin/revenue', label: 'Revenue' },
     { href: '/admin/domains', label: 'Domains' },
     ...(isSuperAdmin ? [
+      { href: '/admin/social-accounts', label: 'Accounts' },
       { href: '/admin/access', label: 'Access' },
     ] : []),
   ]
