@@ -12,7 +12,11 @@ interface Account {
   is_active: boolean
   created_at: string
   last_scraped: string | null
+  followers: number | null
 }
+
+type SortKey = 'username' | 'creator_name' | 'followers' | 'last_scraped' | 'platform' | 'is_active'
+type SortDir = 'asc' | 'desc'
 
 interface EditState {
   username?: string
@@ -31,6 +35,8 @@ export default function SocialAccountsClient() {
   const [edits, setEdits] = useState<Record<string, EditState>>({})
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [sortKey, setSortKey] = useState<SortKey>('followers')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
@@ -51,7 +57,12 @@ export default function SocialAccountsClient() {
 
   useEffect(() => { loadAccounts() }, [])
 
-  // Filtered + searched list
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) setSortDir(d => d === 'desc' ? 'asc' : 'desc')
+    else { setSortKey(key); setSortDir(key === 'username' || key === 'creator_name' || key === 'platform' ? 'asc' : 'desc') }
+  }
+
+  // Filtered, searched, sorted list
   const filtered = useMemo(() => {
     let list = accounts
     if (filterActive === 'active') list = list.filter(a => a.is_active)
@@ -64,8 +75,26 @@ export default function SocialAccountsClient() {
         a.platform.toLowerCase().includes(q)
       )
     }
+    // Sort
+    list = [...list].sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'username': cmp = a.username.localeCompare(b.username); break
+        case 'creator_name': cmp = a.creator_name.localeCompare(b.creator_name); break
+        case 'platform': cmp = a.platform.localeCompare(b.platform); break
+        case 'followers': cmp = (a.followers ?? -1) - (b.followers ?? -1); break
+        case 'is_active': cmp = (a.is_active ? 1 : 0) - (b.is_active ? 1 : 0); break
+        case 'last_scraped': {
+          const aTime = a.last_scraped ? new Date(a.last_scraped).getTime() : 0
+          const bTime = b.last_scraped ? new Date(b.last_scraped).getTime() : 0
+          cmp = aTime - bTime
+          break
+        }
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
     return list
-  }, [accounts, filterActive, search])
+  }, [accounts, filterActive, search, sortKey, sortDir])
 
   // Select all visible
   function toggleSelectAll() {
@@ -294,11 +323,27 @@ export default function SocialAccountsClient() {
                     className="rounded"
                   />
                 </th>
-                <th className={`text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider ${textMuted}`}>Username</th>
-                <th className={`text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider ${textMuted}`}>Creator</th>
-                <th className={`text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider ${textMuted}`}>Platform</th>
-                <th className={`text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider ${textMuted}`}>Status</th>
-                <th className={`text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider ${textMuted}`}>Last Scraped</th>
+                {([
+                  { key: 'username' as SortKey, label: 'Username' },
+                  { key: 'creator_name' as SortKey, label: 'Creator' },
+                  { key: 'platform' as SortKey, label: 'Platform' },
+                  { key: 'followers' as SortKey, label: 'Followers' },
+                  { key: 'is_active' as SortKey, label: 'Status' },
+                  { key: 'last_scraped' as SortKey, label: 'Last Scraped' },
+                ]).map(col => (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key)}
+                    className={`text-left px-4 py-3 text-[11px] font-medium uppercase tracking-wider cursor-pointer select-none transition-colors hover:${isLight ? 'text-black/60' : 'text-white/60'} ${
+                      sortKey === col.key ? (isLight ? 'text-black/70' : 'text-white/70') : textMuted
+                    }`}
+                  >
+                    {col.label}
+                    {sortKey === col.key && (
+                      <span className="ml-1">{sortDir === 'asc' ? '↑' : '↓'}</span>
+                    )}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -348,6 +393,16 @@ export default function SocialAccountsClient() {
                       }`}>
                         {account.platform}
                       </span>
+                    </td>
+                    <td className={`px-4 py-2.5 text-[13px] tabular-nums ${account.followers != null ? textPrimary : textMuted}`}>
+                      {account.followers != null
+                        ? account.followers >= 1000000
+                          ? `${(account.followers / 1000000).toFixed(1)}M`
+                          : account.followers >= 1000
+                            ? `${(account.followers / 1000).toFixed(1)}K`
+                            : account.followers.toLocaleString()
+                        : '—'
+                      }
                     </td>
                     <td className="px-4 py-2.5">
                       <button

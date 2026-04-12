@@ -29,18 +29,16 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-  // Get the latest snapshot per account
+  // Get the latest snapshot per account (scraped_at + followers)
   const accountIds = (accounts || []).map((a: any) => a.id)
   const lastScrapedMap: Record<string, string> = {}
+  const followersMap: Record<string, number | null> = {}
 
   if (accountIds.length > 0) {
-    // Batch: get the most recent scraped_at for each account
-    // We query all at once and pick the latest per account in JS
-    // We only need one row per account. Fetch recent snapshots limited to
-    // a reasonable ceiling (accounts * 2 covers gaps). JS dedupes by account.
+    // Fetch recent snapshots — one per account is enough
     const { data: snapshots } = await supabase
       .from('social_snapshots')
-      .select('social_account_id, scraped_at')
+      .select('social_account_id, scraped_at, followers')
       .in('social_account_id', accountIds)
       .order('scraped_at', { ascending: false })
       .limit(accountIds.length * 2)
@@ -50,6 +48,7 @@ export async function GET(req: NextRequest) {
         // First occurrence per account is the latest (ordered DESC)
         if (!lastScrapedMap[s.social_account_id]) {
           lastScrapedMap[s.social_account_id] = s.scraped_at
+          followersMap[s.social_account_id] = s.followers
         }
       }
     }
@@ -64,6 +63,7 @@ export async function GET(req: NextRequest) {
     is_active: a.is_active,
     created_at: a.created_at,
     last_scraped: lastScrapedMap[a.id] || null,
+    followers: followersMap[a.id] ?? null,
   }))
 
   return NextResponse.json(result)
