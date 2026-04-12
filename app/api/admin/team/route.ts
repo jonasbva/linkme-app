@@ -17,32 +17,28 @@ export async function GET() {
 
   if (usersError) return NextResponse.json({ error: usersError.message }, { status: 500 })
 
-  // For each user, fetch their roles
+  // For each user, fetch their roles and creator access
   const usersWithRoles = await Promise.all(
     (users || []).map(async user => {
-      const { data: userRoles, error: rolesError } = await supabase
-        .from('admin_user_roles')
-        .select('role_id')
-        .eq('user_id', user.id)
+      const [userRolesRes, creatorAccessRes] = await Promise.all([
+        supabase.from('admin_user_roles').select('role_id').eq('user_id', user.id),
+        supabase.from('admin_creator_access').select('creator_id').eq('user_id', user.id),
+      ])
 
-      if (rolesError) {
-        return { ...user, roles: [] }
-      }
-
-      // Fetch role details for each role_id
-      const roleIds = (userRoles || []).map(ur => ur.role_id)
+      // Fetch role details
+      const roleIds = (userRolesRes.data || []).map(ur => ur.role_id)
       let roles: any[] = []
-
       if (roleIds.length > 0) {
         const { data: roleDetails } = await supabase
           .from('admin_roles')
           .select('id, name')
           .in('id', roleIds)
-
         roles = roleDetails || []
       }
 
-      return { ...user, roles }
+      const creator_access = (creatorAccessRes.data || []).map(ca => ca.creator_id)
+
+      return { ...user, roles, creator_access }
     })
   )
 

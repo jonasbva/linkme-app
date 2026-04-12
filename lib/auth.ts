@@ -111,7 +111,7 @@ export async function getUserPermissions(userId: string): Promise<{
     }
   })
 
-  // Get creator visibility from roles only
+  // Get creator visibility from roles
   const creatorIds = new Set<string>()
 
   const { data: roleAccess } = await supabase
@@ -121,7 +121,16 @@ export async function getUserPermissions(userId: string): Promise<{
 
   ;(roleAccess || []).forEach(a => creatorIds.add(a.creator_id))
 
-  // Get permissions from roles only
+  // Also get user-level creator access (assigned in Teams tab)
+  const { data: userAccess } = await supabase
+    .from('admin_creator_access')
+    .select('creator_id')
+    .eq('user_id', userId)
+
+  const hasUserLevelAccess = (userAccess || []).length > 0
+  ;(userAccess || []).forEach(a => creatorIds.add(a.creator_id))
+
+  // Get permissions from roles
   const permissions: Record<string, Set<PermissionType>> = {}
 
   const { data: rolePerms } = await supabase
@@ -134,10 +143,14 @@ export async function getUserPermissions(userId: string): Promise<{
     permissions[p.creator_id].add(p.permission_type as PermissionType)
   })
 
+  // If user has grant_all_creators role but also has user-level creator assignments,
+  // restrict visibility to only those assigned creators
+  const effectiveGrantAll = grantAllCreators && !hasUserLevelAccess
+
   return {
     visibleCreatorIds: Array.from(creatorIds),
     permissions,
-    grantAllCreators,
+    grantAllCreators: effectiveGrantAll,
     allCreatorsPermissions,
   }
 }

@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from './ThemeProvider'
 
+interface Creator {
+  id: string
+  display_name: string
+  slug: string
+  avatar_url?: string
+}
+
 interface AdminUser {
   id: string
   email: string
@@ -10,6 +17,7 @@ interface AdminUser {
   is_active: boolean
   is_super_admin?: boolean
   roles?: Role[]
+  creator_access?: string[]
 }
 
 interface Role {
@@ -23,13 +31,14 @@ export default function TeamClient() {
 
   const [users, setUsers] = useState<AdminUser[]>([])
   const [roles, setRoles] = useState<Role[]>([])
+  const [creators, setCreators] = useState<Creator[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
-  const [editTab, setEditTab] = useState<'basic' | 'roles'>('basic')
+  const [editTab, setEditTab] = useState<'basic' | 'roles' | 'creators'>('basic')
 
   const [formData, setFormData] = useState({ email: '', display_name: '', password: '' })
   const [editFormData, setEditFormData] = useState({
@@ -37,7 +46,9 @@ export default function TeamClient() {
     display_name: '',
     is_active: true,
     roles: [] as string[],
+    creator_access: [] as string[],
   })
+  const [creatorSearch, setCreatorSearch] = useState('')
 
   const [submitting, setSubmitting] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
@@ -47,9 +58,10 @@ export default function TeamClient() {
   async function fetchData() {
     try {
       setLoading(true)
-      const [usersRes, rolesRes] = await Promise.all([
+      const [usersRes, rolesRes, creatorsRes] = await Promise.all([
         fetch('/api/admin/team'),
         fetch('/api/admin/roles'),
+        fetch('/api/admin/creators'),
       ])
       if (usersRes.ok) {
         const d = await usersRes.json()
@@ -58,6 +70,10 @@ export default function TeamClient() {
       if (rolesRes.ok) {
         const d = await rolesRes.json()
         setRoles(Array.isArray(d) ? d : [])
+      }
+      if (creatorsRes.ok) {
+        const d = await creatorsRes.json()
+        setCreators(Array.isArray(d) ? d : [])
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch data')
@@ -78,7 +94,9 @@ export default function TeamClient() {
       display_name: user.display_name,
       is_active: user.is_active,
       roles: user.roles?.map(r => r.id) || [],
+      creator_access: user.creator_access || [],
     })
+    setCreatorSearch('')
     setEditTab('basic')
     setShowEditModal(true)
   }
@@ -153,6 +171,21 @@ export default function TeamClient() {
         throw new Error(err.error || 'Failed to set roles')
       }
 
+      // Save creator access
+      const creatorsAccessRes = await fetch('/api/admin/team', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'set_creator_access',
+          user_id: editingUser.id,
+          creator_ids: editFormData.creator_access,
+        }),
+      })
+      if (!creatorsAccessRes.ok) {
+        const err = await creatorsAccessRes.json()
+        throw new Error(err.error || 'Failed to set creator access')
+      }
+
       await fetchData()
       closeModal()
       setError(null)
@@ -214,6 +247,15 @@ export default function TeamClient() {
       roles: prev.roles.includes(roleId)
         ? prev.roles.filter(r => r !== roleId)
         : [...prev.roles, roleId],
+    }))
+  }
+
+  function toggleCreator(creatorId: string) {
+    setEditFormData(prev => ({
+      ...prev,
+      creator_access: prev.creator_access.includes(creatorId)
+        ? prev.creator_access.filter(c => c !== creatorId)
+        : [...prev.creator_access, creatorId],
     }))
   }
 
@@ -290,6 +332,21 @@ export default function TeamClient() {
                         {role.name}
                       </span>
                     ))}
+                  </div>
+                )}
+                {user.creator_access && user.creator_access.length > 0 && (
+                  <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                    {user.creator_access.map(cid => {
+                      const c = creators.find(cr => cr.id === cid)
+                      return c ? (
+                        <span
+                          key={cid}
+                          className={`text-[10px] px-2 py-0.5 rounded-full ${isLight ? 'bg-emerald-500/15 text-emerald-600' : 'bg-emerald-500/15 text-emerald-400'}`}
+                        >
+                          {c.display_name}
+                        </span>
+                      ) : null
+                    })}
                   </div>
                 )}
               </div>
@@ -372,9 +429,9 @@ export default function TeamClient() {
           <div className={`${bgCard} rounded-2xl p-6 w-full max-w-xl max-h-[80vh] overflow-y-auto`} style={{ backgroundColor: modalBg }}>
             <h2 className={`text-lg font-semibold mb-4 ${textPrimary}`}>Edit user: {editingUser.display_name}</h2>
 
-            {/* Tabs — only Basic and Roles */}
+            {/* Tabs */}
             <div className={`flex gap-1 mb-4 border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.08]'}`}>
-              {(['basic', 'roles'] as const).map(tab => (
+              {(['basic', 'roles', 'creators'] as const).map(tab => (
                 <button
                   key={tab}
                   onClick={() => setEditTab(tab)}
@@ -384,7 +441,7 @@ export default function TeamClient() {
                       : isLight ? 'text-black/40 hover:text-black/60' : 'text-white/40 hover:text-white/60'
                   }`}
                 >
-                  {tab.charAt(0).toUpperCase() + tab.slice(1)}
+                  {tab === 'basic' ? 'Basic' : tab === 'roles' ? 'Roles' : 'Creators'}
                 </button>
               ))}
             </div>
@@ -436,10 +493,10 @@ export default function TeamClient() {
               {editTab === 'roles' && (
                 <div className="space-y-2">
                   <p className={`text-[12px] mb-3 ${textSecondary}`}>
-                    Roles determine which creators this user can see and what they can do. Configure role permissions in the Roles page.
+                    Roles determine what this user can do. Configure role permissions in the Roles tab.
                   </p>
                   {roles.length === 0 ? (
-                    <p className={`text-[12px] ${textTertiary}`}>No roles created yet. Create roles in the Roles page first.</p>
+                    <p className={`text-[12px] ${textTertiary}`}>No roles created yet. Create roles in the Roles tab first.</p>
                   ) : (
                     roles.map(role => (
                       <label
@@ -460,6 +517,61 @@ export default function TeamClient() {
                       </label>
                     ))
                   )}
+                </div>
+              )}
+
+              {/* Creators Tab */}
+              {editTab === 'creators' && (
+                <div className="space-y-3">
+                  <p className={`text-[12px] mb-2 ${textSecondary}`}>
+                    Select which creators this user can access.
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="Search creators..."
+                    value={creatorSearch}
+                    onChange={e => setCreatorSearch(e.target.value)}
+                    className={`w-full px-3 py-2 text-[13px] rounded-lg outline-none ${inputBg} ${inputFocus} ${textPrimary}`}
+                  />
+                  <div className="space-y-1.5 max-h-[45vh] overflow-y-auto">
+                    {creators
+                      .filter(c => !creatorSearch.trim() || c.display_name.toLowerCase().includes(creatorSearch.toLowerCase()) || c.slug.toLowerCase().includes(creatorSearch.toLowerCase()))
+                      .map(creator => (
+                      <label
+                        key={creator.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                          editFormData.creator_access.includes(creator.id)
+                            ? isLight ? 'bg-emerald-500/10 border border-emerald-500/20' : 'bg-emerald-500/10 border border-emerald-500/20'
+                            : `${bgCard} ${isLight ? 'hover:border-black/[0.1]' : 'hover:border-white/[0.08]'}`
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={editFormData.creator_access.includes(creator.id)}
+                          onChange={() => toggleCreator(creator.id)}
+                          className="w-4 h-4 rounded"
+                        />
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          {creator.avatar_url ? (
+                            <img src={creator.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover" />
+                          ) : (
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-medium ${
+                              isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.08] text-white/30'
+                            }`}>
+                              {creator.display_name.charAt(0)}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className={`text-[13px] font-medium truncate ${textPrimary}`}>{creator.display_name}</p>
+                            <p className={`text-[11px] ${textTertiary}`}>@{creator.slug}</p>
+                          </div>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                  <p className={`text-[11px] ${textTertiary}`}>
+                    {editFormData.creator_access.length} creator{editFormData.creator_access.length !== 1 ? 's' : ''} selected
+                  </p>
                 </div>
               )}
 
