@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { useTheme } from './ThemeProvider'
 
 interface SocialAccount {
@@ -27,6 +27,19 @@ interface SocialSnapshot {
 
 interface AccountWithSnapshot extends SocialAccount {
   snapshot: SocialSnapshot | null
+  startSnapshot?: SocialSnapshot | null
+  rangeSnapshots?: { scraped_at: string; followers: number; total_views: number; total_likes: number; total_comments: number }[]
+}
+
+interface Totals {
+  followers: number
+  views: number
+  likes: number
+  comments: number
+  followersDelta: number
+  viewsDelta: number
+  likesDelta: number
+  commentsDelta: number
 }
 
 function fmt(n: number | null | undefined): string {
@@ -36,15 +49,188 @@ function fmt(n: number | null | undefined): string {
   return n.toLocaleString()
 }
 
+function fmtDelta(n: number | null | undefined): string {
+  if (n == null || n === 0) return ''
+  const prefix = n > 0 ? '+' : ''
+  if (Math.abs(n) >= 1_000_000) return prefix + (n / 1_000_000).toFixed(1) + 'M'
+  if (Math.abs(n) >= 1_000) return prefix + (n / 1_000).toFixed(1) + 'K'
+  return prefix + n.toLocaleString()
+}
+
 function proxy(url: string | undefined) {
   if (!url) return undefined
   return `/api/admin/proxy-image?url=${encodeURIComponent(url)}`
 }
 
-function StatPill({ label, value, highlight, isLight }: { label: string; value: string; highlight?: boolean; isLight: boolean }) {
+// ─── Date Picker (matches Revenue page design) ──────────────────────
+function DatePicker({ dateStart, dateEnd, dateLabel, onApply, isLight }: {
+  dateStart: Date; dateEnd: Date; dateLabel: string
+  onApply: (label: string, start: Date, end: Date) => void
+  isLight: boolean
+}) {
+  const [show, setShow] = useState(false)
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setShow(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const applyPreset = (label: string, start: Date, end: Date) => {
+    onApply(label, start, end)
+    setShow(false)
+  }
+
+  const applyCustomRange = () => {
+    if (!customStart || !customEnd) return
+    const s = new Date(customStart + 'T00:00:00')
+    const e = new Date(customEnd + 'T23:59:59')
+    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return
+    applyPreset(`${customStart} — ${customEnd}`, s, e)
+  }
+
+  const selectMonth = (offset: number) => {
+    const now = new Date()
+    const mStart = new Date(now.getFullYear(), now.getMonth() - offset, 1)
+    const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
+    const shortMonth = mStart.toLocaleString('en-US', { month: 'short' })
+    applyPreset(`${shortMonth} ${mStart.getFullYear()}`, mStart, mEnd)
+  }
+
+  const monthOptions = useMemo(() => {
+    return Array.from({ length: 12 }, (_, i) => {
+      const d = new Date()
+      d.setMonth(d.getMonth() - i)
+      return { offset: i, label: d.toLocaleString('en-US', { month: 'short' }) }
+    })
+  }, [])
+
+  const popBg = isLight ? 'bg-white border-black/10 shadow-xl' : 'bg-[#0e0e0e] border-white/[0.08] shadow-2xl shadow-black/60'
+  const popLabel = isLight ? 'text-black/30' : 'text-white/25'
+  const popDivider = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
+  const btnActive = isLight ? 'bg-black text-white' : 'bg-white text-black'
+  const btnInactive = isLight
+    ? 'bg-black/[0.04] text-black/40 hover:bg-black/[0.08] hover:text-black/60'
+    : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
+  const popInput = isLight
+    ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20'
+    : 'bg-white/[0.04] border-white/[0.08] text-white/80 focus:border-white/20'
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        onClick={() => {
+          setCustomStart(dateStart.toISOString().split('T')[0])
+          setCustomEnd(dateEnd.toISOString().split('T')[0])
+          setShow(!show)
+        }}
+        className={`flex items-center gap-2.5 px-4 py-2 rounded-lg transition-all ${
+          isLight
+            ? 'bg-black/[0.03] border border-black/[0.06] hover:bg-black/[0.06]'
+            : 'bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.06]'
+        }`}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+          className={isLight ? 'text-black/30' : 'text-white/30'}>
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+          <line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+        <span className={`text-[13px] font-medium ${isLight ? 'text-black/70' : 'text-white/70'}`}>{dateLabel}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          className={isLight ? 'text-black/25' : 'text-white/25'}>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
+      </button>
+
+      {show && (
+        <div className={`absolute right-0 top-full mt-2 z-50 ${popBg} border rounded-2xl p-0`} style={{ width: 340 }}>
+          {/* Quick presets */}
+          <div className={`p-4 pb-3 border-b ${popDivider}`}>
+            <p className={`text-[11px] ${popLabel} uppercase tracking-widest font-medium mb-3`}>Quick select</p>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: 'Today', fn: () => { const s = new Date(); s.setHours(0,0,0,0); applyPreset('Today', s, new Date()) } },
+                { label: 'Yesterday', fn: () => { const s = new Date(); s.setDate(s.getDate() - 1); s.setHours(0,0,0,0); const e = new Date(s); e.setHours(23,59,59,999); applyPreset('Yesterday', s, e) } },
+                { label: 'Last 7 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 7); applyPreset('Last 7 days', s, new Date()) } },
+                { label: 'Last 30 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 30); applyPreset('Last 30 days', s, new Date()) } },
+              ].map(p => (
+                <button key={p.label} onClick={p.fn}
+                  className={`px-3 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
+                    dateLabel === p.label ? btnActive : btnInactive
+                  }`}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Month grid */}
+          <div className={`p-4 pb-3 border-b ${popDivider}`}>
+            <p className={`text-[11px] ${popLabel} uppercase tracking-widest font-medium mb-3`}>By month</p>
+            <div className="grid grid-cols-4 gap-1.5">
+              {monthOptions.map(m => {
+                const now = new Date()
+                const mStart = new Date(now.getFullYear(), now.getMonth() - m.offset, 1)
+                const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
+                const isActive = dateStart.getTime() === mStart.getTime() && dateEnd.getTime() === mEnd.getTime()
+                return (
+                  <button key={m.offset} onClick={() => selectMonth(m.offset)}
+                    className={`px-2 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
+                      isActive ? btnActive : btnInactive
+                    }`}>
+                    {m.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Custom range */}
+          <div className="p-4">
+            <p className={`text-[11px] ${popLabel} uppercase tracking-widest font-medium mb-3`}>Custom range</p>
+            <div className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className={`text-[10px] ${popLabel} mb-1 block`}>From</label>
+                <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
+                  className={`w-full px-2.5 py-1.5 ${popInput} border rounded-lg text-[12px] transition-colors outline-none`} />
+              </div>
+              <div className="flex-1">
+                <label className={`text-[10px] ${popLabel} mb-1 block`}>To</label>
+                <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
+                  className={`w-full px-2.5 py-1.5 ${popInput} border rounded-lg text-[12px] transition-colors outline-none`} />
+              </div>
+              <button onClick={applyCustomRange} disabled={!customStart || !customEnd}
+                className={`px-4 py-1.5 text-[12px] font-medium rounded-lg transition-colors disabled:opacity-30 shrink-0 ${
+                  isLight ? 'bg-black text-white hover:bg-black/90' : 'bg-white text-black hover:bg-white/90'
+                }`}>
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Stat Pill with optional delta ──────────────────────────────────
+function StatPill({ label, value, delta, highlight, isLight }: {
+  label: string; value: string; delta?: string; highlight?: boolean; isLight: boolean
+}) {
+  const deltaColor = delta
+    ? delta.startsWith('+') ? 'text-emerald-500' : delta.startsWith('-') ? 'text-red-400' : (isLight ? 'text-black/30' : 'text-white/30')
+    : ''
   return (
     <div className="flex flex-col gap-0.5">
-      <span className={`text-lg font-bold ${highlight ? 'text-emerald-500' : isLight ? 'text-black' : 'text-white'}`}>{value}</span>
+      <div className="flex items-baseline gap-1.5">
+        <span className={`text-lg font-bold ${highlight ? 'text-emerald-500' : isLight ? 'text-black' : 'text-white'}`}>{value}</span>
+        {delta && <span className={`text-[11px] font-medium ${deltaColor}`}>{delta}</span>}
+      </div>
       <span className={`text-[11px] uppercase tracking-wide ${isLight ? 'text-black/40' : 'text-white/40'}`}>{label}</span>
     </div>
   )
@@ -70,13 +256,11 @@ function PostCard({ post, isLight }: { post: any; isLight: boolean }) {
           <span className="text-black/20 text-xs">No image</span>
         </div>
       )}
-      {/* Caption overlay — text always white so it shows over the image */}
       {post.caption && (
         <div className="absolute bottom-8 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 pt-8 pb-2">
           <p style={{ color: 'white' }} className="text-[11px] leading-tight line-clamp-2">{post.caption}</p>
         </div>
       )}
-      {/* Stats bar — responds to theme */}
       <div className={`flex items-center justify-between px-3 py-2 text-[11px] gap-1 ${
         isLight ? 'bg-black/[0.06] text-black/60' : 'bg-black/70 text-white'
       }`}>
@@ -103,14 +287,17 @@ function AccountSection({
   onScrape,
   scraping,
   isLight,
+  showDeltas,
 }: {
   account: AccountWithSnapshot
   onDelete: (id: string) => void
   onScrape: (id: string) => void
   scraping: boolean
   isLight: boolean
+  showDeltas: boolean
 }) {
   const snap = account.snapshot
+  const startSnap = account.startSnapshot
   const posts: any[] = snap?.raw_data?.latestPosts ?? []
   const profilePic = snap?.raw_data?.profilePicUrl
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -121,12 +308,19 @@ function AccountSection({
     }
   }
 
+  // Compute per-account deltas
+  const deltas = showDeltas && startSnap && snap ? {
+    followers: (snap.followers ?? 0) - (startSnap.followers ?? 0),
+    views: (snap.total_views ?? 0) - (startSnap.total_views ?? 0),
+    likes: (snap.total_likes ?? 0) - (startSnap.total_likes ?? 0),
+    comments: (snap.total_comments ?? 0) - (startSnap.total_comments ?? 0),
+  } : null
+
   const card = isLight
     ? 'rounded-2xl border border-black/[0.08] bg-black/[0.02]'
     : 'rounded-2xl border border-white/[0.08] bg-white/[0.03]'
   const divider = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
   const textMuted = isLight ? 'text-black/40' : 'text-white/40'
-  const textMain = isLight ? 'text-black/80' : 'text-white/80'
 
   return (
     <div className={card}>
@@ -197,19 +391,18 @@ function AccountSection({
 
       {/* Stats row */}
       <div className={`grid grid-cols-3 md:grid-cols-6 gap-4 px-5 py-4 border-b ${divider}`}>
-        <StatPill label="Followers" value={fmt(snap?.followers)} isLight={isLight} />
+        <StatPill label="Followers" value={fmt(snap?.followers)} delta={deltas ? fmtDelta(deltas.followers) : undefined} isLight={isLight} />
         <StatPill label="Following" value={fmt(snap?.following)} isLight={isLight} />
         <StatPill label="Posts" value={fmt(snap?.post_count)} isLight={isLight} />
-        <StatPill label="Views" value={fmt(snap?.total_views)} highlight isLight={isLight} />
-        <StatPill label="Likes" value={fmt(snap?.total_likes)} isLight={isLight} />
-        <StatPill label="Comments" value={fmt(snap?.total_comments)} isLight={isLight} />
+        <StatPill label="Views" value={fmt(snap?.total_views)} delta={deltas ? fmtDelta(deltas.views) : undefined} highlight isLight={isLight} />
+        <StatPill label="Likes" value={fmt(snap?.total_likes)} delta={deltas ? fmtDelta(deltas.likes) : undefined} isLight={isLight} />
+        <StatPill label="Comments" value={fmt(snap?.total_comments)} delta={deltas ? fmtDelta(deltas.comments) : undefined} isLight={isLight} />
       </div>
 
       {/* Posts carousel */}
       {posts.length > 0 ? (
         <div className="px-5 py-4">
           <p className={`text-[11px] uppercase tracking-wide mb-3 ${textMuted}`}>Recent posts</p>
-          {/* Wrapper with side padding so arrows sit inside the card boundary */}
           <div className="relative px-8">
             <button
               onClick={() => scroll('left')}
@@ -248,6 +441,7 @@ export default function SocialTab({ creatorId }: { creatorId: string }) {
   const isLight = themeMode === 'light'
 
   const [accounts, setAccounts] = useState<AccountWithSnapshot[]>([])
+  const [totals, setTotals] = useState<Totals | null>(null)
   const [loading, setLoading] = useState(true)
   const [scrapingAll, setScrapingAll] = useState(false)
   const [scrapingId, setScrapingId] = useState<string | null>(null)
@@ -256,33 +450,44 @@ export default function SocialTab({ creatorId }: { creatorId: string }) {
   const [adding, setAdding] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
+  // Date range state — default to last 7 days
+  const [dateStart, setDateStart] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 7); d.setHours(0,0,0,0); return d })
+  const [dateEnd, setDateEnd] = useState(() => new Date())
+  const [dateLabel, setDateLabel] = useState('Last 7 days')
+
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
     setTimeout(() => setToast(null), 4000)
   }
 
+  function handleDateApply(label: string, start: Date, end: Date) {
+    setDateLabel(label)
+    setDateStart(start)
+    setDateEnd(end)
+  }
+
+  // Load accounts with date range snapshots
   async function loadAccounts() {
     setLoading(true)
     try {
-      const accountsRes = await fetch(`/api/admin/social-accounts?creator_id=${creatorId}`)
-      const accountsData: SocialAccount[] = await accountsRes.json()
-      const withSnapshots: AccountWithSnapshot[] = await Promise.all(
-        accountsData.map(async (acc) => {
-          const snapRes = await fetch(`/api/admin/scrape?social_account_id=${acc.id}&limit=1`)
-          const snapData: SocialSnapshot[] = await snapRes.json()
-          return { ...acc, snapshot: snapData[0] ?? null }
-        })
+      const startStr = dateStart.toISOString().split('T')[0]
+      const endStr = dateEnd.toISOString().split('T')[0]
+      const res = await fetch(
+        `/api/admin/social-snapshots?creator_id=${creatorId}&start=${startStr}&end=${endStr}`
       )
-      setAccounts(withSnapshots)
+      const data = await res.json()
+      setAccounts(data.accounts ?? [])
+      setTotals(data.totals ?? null)
     } catch (e) {
       showToast('Failed to load social accounts', 'error')
     }
     setLoading(false)
   }
 
+  // Reload when date range or creator changes
   useEffect(() => {
     loadAccounts()
-  }, [creatorId])
+  }, [creatorId, dateStart, dateEnd])
 
   async function addAccount() {
     if (!newUsername.trim()) return
@@ -358,15 +563,8 @@ export default function SocialTab({ creatorId }: { creatorId: string }) {
     setScrapingAll(false)
   }
 
-  const totals = accounts.reduce(
-    (acc, a) => ({
-      followers: acc.followers + (a.snapshot?.followers ?? 0),
-      views: acc.views + (a.snapshot?.total_views ?? 0),
-      likes: acc.likes + (a.snapshot?.total_likes ?? 0),
-      comments: acc.comments + (a.snapshot?.total_comments ?? 0),
-    }),
-    { followers: 0, views: 0, likes: 0, comments: 0 }
-  )
+  // Whether the date range spans more than 0 days (show deltas)
+  const showDeltas = dateStart.toISOString().split('T')[0] !== dateEnd.toISOString().split('T')[0]
 
   const textMuted = isLight ? 'text-black/40' : 'text-white/40'
   const inputClass = isLight
@@ -386,34 +584,43 @@ export default function SocialTab({ creatorId }: { creatorId: string }) {
         </div>
       )}
 
-      {/* Header actions */}
-      <div className="flex items-center justify-between">
+      {/* Header actions with date picker */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className={`text-[15px] font-semibold ${isLight ? 'text-black' : 'text-white'}`}>Social Media Stats</h2>
-        {accounts.length > 0 && (
-          <button
-            onClick={scrapeAll}
-            disabled={scrapingAll}
-            className="px-4 py-2 text-[12px] font-medium bg-white text-black rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40 flex items-center gap-2 border border-black/10"
-          >
-            {scrapingAll ? (
-              <>
-                <span className="animate-spin inline-block w-3 h-3 border border-black/40 border-t-black rounded-full" />
-                Scraping all…
-              </>
-            ) : (
-              '↻ Scrape all'
-            )}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          <DatePicker
+            dateStart={dateStart}
+            dateEnd={dateEnd}
+            dateLabel={dateLabel}
+            onApply={handleDateApply}
+            isLight={isLight}
+          />
+          {accounts.length > 0 && (
+            <button
+              onClick={scrapeAll}
+              disabled={scrapingAll}
+              className="px-4 py-2 text-[12px] font-medium bg-white text-black rounded-lg hover:bg-white/90 transition-colors disabled:opacity-40 flex items-center gap-2 border border-black/10"
+            >
+              {scrapingAll ? (
+                <>
+                  <span className="animate-spin inline-block w-3 h-3 border border-black/40 border-t-black rounded-full" />
+                  Scraping all…
+                </>
+              ) : (
+                '↻ Scrape all'
+              )}
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Summary stats */}
-      {accounts.some(a => a.snapshot) && (
+      {/* Summary stats with deltas */}
+      {totals && accounts.some(a => a.snapshot) && (
         <div className={`grid grid-cols-2 md:grid-cols-4 gap-4 rounded-2xl border px-6 py-5 ${isLight ? 'border-black/[0.08] bg-black/[0.02]' : 'border-white/[0.08] bg-white/[0.03]'}`}>
-          <StatPill label="Total Followers" value={fmt(totals.followers)} highlight isLight={isLight} />
-          <StatPill label="Total Views" value={fmt(totals.views)} highlight isLight={isLight} />
-          <StatPill label="Total Likes" value={fmt(totals.likes)} isLight={isLight} />
-          <StatPill label="Total Comments" value={fmt(totals.comments)} isLight={isLight} />
+          <StatPill label="Total Followers" value={fmt(totals.followers)} delta={showDeltas ? fmtDelta(totals.followersDelta) : undefined} highlight isLight={isLight} />
+          <StatPill label="Total Views" value={fmt(totals.views)} delta={showDeltas ? fmtDelta(totals.viewsDelta) : undefined} highlight isLight={isLight} />
+          <StatPill label="Total Likes" value={fmt(totals.likes)} delta={showDeltas ? fmtDelta(totals.likesDelta) : undefined} isLight={isLight} />
+          <StatPill label="Total Comments" value={fmt(totals.comments)} delta={showDeltas ? fmtDelta(totals.commentsDelta) : undefined} isLight={isLight} />
         </div>
       )}
 
@@ -460,6 +667,7 @@ export default function SocialTab({ creatorId }: { creatorId: string }) {
               onScrape={scrapeAccount}
               scraping={scrapingId === account.id}
               isLight={isLight}
+              showDeltas={showDeltas}
             />
           ))}
         </div>

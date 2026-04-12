@@ -3,39 +3,60 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN
 
-async function scrapeInstagram(username: string) {
+async function scrapeInstagram(username: string, retries = 2) {
   if (!APIFY_TOKEN) throw new Error('APIFY_API_TOKEN is not set')
-  const res = await fetch(
-    `https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usernames: [username] }),
-      cache: 'no-store',
+
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(
+        `https://api.apify.com/v2/acts/apify~instagram-profile-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ usernames: [username], resultsLimit: 1 }),
+          cache: 'no-store',
+        }
+      )
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        throw new Error(`Apify returned ${res.status} for @${username}: ${body.slice(0, 200)}`)
+      }
+      const items = await res.json()
+      const profile = items?.[0]
+      if (!profile) throw new Error(`No data returned for @${username} — account may be private or username incorrect`)
+
+      if (profile.followersCount === undefined && profile.postsCount === undefined) {
+        throw new Error(`Empty profile for @${username} — account may be private or restricted`)
+      }
+
+      const posts: any[] = profile.latestPosts ?? []
+      let totalViews = 0, totalLikes = 0, totalComments = 0
+      for (const post of posts) {
+        totalViews += post.videoViewCount ?? 0
+        totalLikes += post.likesCount ?? 0
+        totalComments += post.commentsCount ?? 0
+      }
+
+      return {
+        followers: profile.followersCount ?? null,
+        following: profile.followsCount ?? null,
+        post_count: profile.postsCount ?? null,
+        total_views: totalViews,
+        total_likes: totalLikes,
+        total_comments: totalComments,
+        raw_data: profile,
+      }
+    } catch (err: any) {
+      lastError = err
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, (attempt + 1) * 2000))
+      }
     }
-  )
-  if (!res.ok) throw new Error(`Apify returned ${res.status} for @${username}`)
-  const items = await res.json()
-  const profile = items?.[0]
-  if (!profile) throw new Error(`No data returned for @${username}`)
-
-  const posts: any[] = profile.latestPosts ?? []
-  let totalViews = 0, totalLikes = 0, totalComments = 0
-  for (const post of posts) {
-    totalViews += post.videoViewCount ?? 0
-    totalLikes += post.likesCount ?? 0
-    totalComments += post.commentsCount ?? 0
   }
 
-  return {
-    followers: profile.followersCount ?? null,
-    following: profile.followsCount ?? null,
-    post_count: profile.postsCount ?? null,
-    total_views: totalViews,
-    total_likes: totalLikes,
-    total_comments: totalComments,
-    raw_data: profile,
-  }
+  throw lastError ?? new Error(`Failed to scrape @${username} after ${retries + 1} attempts`)
 }
 
 // GET /api/cron/daily-scrape
