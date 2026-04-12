@@ -524,6 +524,7 @@ function ConversionTableTab({
     (initialCreatorId && creators.some(c => c.id === initialCreatorId) ? initialCreatorId : creators[0]?.id) || ''
   )
   const [editingCell, setEditingCell] = useState<string | null>(null)
+  const [editField, setEditField] = useState<string>('new_subs')
   const [editValue, setEditValue] = useState('')
   const [calculating, setCalculating] = useState(false)
   const [creatorSearch, setCreatorSearch] = useState('')
@@ -616,11 +617,11 @@ function ConversionTableTab({
       .sort((a, b) => b.date.localeCompare(a.date))
   }, [dailyData, selectedCreator, dateStart, dateEnd])
 
-  async function saveSubs(creatorId: string, date: string, newSubs: number) {
+  async function saveCell(creatorId: string, date: string, field: string, value: number) {
     const res = await fetch('/api/admin/conversions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'update_subs', creator_id: creatorId, date, new_subs: newSubs }),
+      body: JSON.stringify({ action: 'update_cell', creator_id: creatorId, date, field, value }),
     })
     if (res.ok) {
       const [updated] = await res.json()
@@ -886,8 +887,7 @@ function ConversionTableTab({
                 const lc = row.link_clicks
                 const subs = row.new_subs
                 const isBelowTarget = target > 0 && subs < target
-                const cellKey = `${row.creator_id}-${row.date}`
-                const isEditing = editingCell === cellKey
+                const rowKey = `${row.creator_id}-${row.date}`
 
                 // Ratios
                 const viewsToProfile = views > 0 ? pv / views : 0
@@ -896,50 +896,63 @@ function ConversionTableTab({
                 const clicksToSubs = lc > 0 ? subs / lc : 0
                 const subsToViews = views > 0 ? subs / views : 0
 
+                // Editable cell helper
+                const EditableCell = ({ field, value, highlight }: { field: string; value: number; highlight?: boolean }) => {
+                  const cellKey = `${rowKey}-${field}`
+                  const isEditingThis = editingCell === cellKey
+                  if (isEditingThis) {
+                    return (
+                      <input
+                        type="number"
+                        min="0"
+                        value={editValue}
+                        onChange={e => setEditValue(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') saveCell(row.creator_id, row.date, field, parseInt(editValue) || 0)
+                          if (e.key === 'Escape') setEditingCell(null)
+                        }}
+                        onBlur={() => saveCell(row.creator_id, row.date, field, parseInt(editValue) || 0)}
+                        autoFocus
+                        className={`w-16 border rounded px-2 py-0.5 text-[13px] text-right outline-none tabular-nums ${
+                          isLight
+                            ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20'
+                            : 'bg-white/[0.06] border-white/[0.15] text-white/80 focus:border-white/30'
+                        }`}
+                      />
+                    )
+                  }
+                  return (
+                    <button
+                      onClick={() => { setEditingCell(cellKey); setEditField(field); setEditValue(String(value)) }}
+                      className={`text-[13px] tabular-nums cursor-pointer transition-all duration-150 rounded px-1 -mx-1 ${
+                        highlight
+                          ? 'text-red-400 font-medium hover:bg-red-500/10'
+                          : isLight
+                            ? 'text-black/70 hover:text-black/90 hover:bg-black/[0.04]'
+                            : 'text-white/70 hover:text-white/90 hover:bg-white/[0.04]'
+                      }`}
+                      title="Click to edit"
+                    >
+                      {value > 0 ? fmtNum(value) : '—'}
+                    </button>
+                  )
+                }
+
                 return (
                   <tr
-                    key={cellKey}
+                    key={rowKey}
                     className={`border-b transition-colors ${isLight ? 'border-black/[0.03]' : 'border-white/[0.03]'} ${
                       isBelowTarget ? 'bg-red-500/[0.06] hover:bg-red-500/[0.1]' : isLight ? 'hover:bg-black/[0.02]' : 'hover:bg-white/[0.02]'
                     }`}
                   >
                     <td className={`px-4 py-2.5 text-[13px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>{fmtDate(row.date)}</td>
-                    <td className={`px-4 py-2.5 text-right text-[13px] tabular-nums ${isLight ? 'text-black/70' : 'text-white/70'}`}>{views > 0 ? fmtNum(views) : '—'}</td>
-                    <td className={`px-4 py-2.5 text-right text-[13px] tabular-nums ${isLight ? 'text-black/70' : 'text-white/70'}`}>{pv > 0 ? fmtNum(pv) : '—'}</td>
+                    <td className="px-4 py-2.5 text-right"><EditableCell field="views" value={views} /></td>
+                    <td className="px-4 py-2.5 text-right"><EditableCell field="profile_views" value={pv} /></td>
                     <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(viewsToProfile) : '—'}</td>
-                    <td className={`px-4 py-2.5 text-right text-[13px] tabular-nums ${isLight ? 'text-black/70' : 'text-white/70'}`}>{lc > 0 ? fmtNum(lc) : '—'}</td>
+                    <td className="px-4 py-2.5 text-right"><EditableCell field="link_clicks" value={lc} /></td>
                     <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(viewsToClicks) : '—'}</td>
                     <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{pv > 0 ? fmtPct(profileToClicks) : '—'}</td>
-                    <td className="px-4 py-2.5 text-right">
-                      {isEditing ? (
-                        <input
-                          type="number"
-                          min="0"
-                          value={editValue}
-                          onChange={e => setEditValue(e.target.value)}
-                          onKeyDown={e => {
-                            if (e.key === 'Enter') saveSubs(row.creator_id, row.date, parseInt(editValue) || 0)
-                            if (e.key === 'Escape') setEditingCell(null)
-                          }}
-                          onBlur={() => saveSubs(row.creator_id, row.date, parseInt(editValue) || 0)}
-                          autoFocus
-                          className={`w-16 border rounded px-2 py-0.5 text-[13px] text-right outline-none tabular-nums ${
-                            isLight
-                              ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20'
-                              : 'bg-white/[0.06] border-white/[0.15] text-white/80 focus:border-white/30'
-                          }`}
-                        />
-                      ) : (
-                        <button
-                          onClick={() => { setEditingCell(cellKey); setEditValue(String(subs)) }}
-                          className={`text-[13px] tabular-nums font-medium cursor-pointer hover:underline ${
-                            isBelowTarget ? 'text-red-400' : isLight ? 'text-black/80' : 'text-white/80'
-                          }`}
-                        >
-                          {subs}
-                        </button>
-                      )}
-                    </td>
+                    <td className="px-4 py-2.5 text-right"><EditableCell field="new_subs" value={subs} highlight={isBelowTarget} /></td>
                     <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{lc > 0 ? fmtPct(clicksToSubs) : '—'}</td>
                     <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(subsToViews) : '—'}</td>
                   </tr>

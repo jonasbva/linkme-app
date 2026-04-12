@@ -32,11 +32,22 @@ export async function GET(req: NextRequest) {
     const aAnswers: string[] = (aData.Answer || []).map((r: any) => r.data?.trim())
 
     const cnameMatch = cnameAnswers.some(a => a.includes('vercel'))
-    // Vercel IPs
-    const vercelIPs = ['76.76.21.21', '76.76.21.22']
+    // Vercel IPs (including expanded range)
+    const vercelIPs = ['76.76.21.21', '76.76.21.22', '76.76.21.9', '76.76.21.61', '76.76.21.93', '76.76.21.123', '76.76.21.164', '76.76.21.241']
     const aMatch = aAnswers.some(ip => vercelIPs.includes(ip))
 
-    const verified = cnameMatch || aMatch
+    // Fallback: try fetching the domain to see if it actually works
+    let reachable = false
+    if (!cnameMatch && !aMatch) {
+      try {
+        const probe = await fetch(`https://${domain}`, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(5000) })
+        const server = probe.headers.get('server') || ''
+        const via = probe.headers.get('x-vercel-id') || probe.headers.get('x-vercel-cache') || ''
+        reachable = server.toLowerCase().includes('vercel') || via.length > 0 || probe.ok
+      } catch {}
+    }
+
+    const verified = cnameMatch || aMatch || reachable
     const resolvedCname = cnameAnswers[0] || null
     const resolvedA = aAnswers[0] || null
 

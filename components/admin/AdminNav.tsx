@@ -24,6 +24,9 @@ export default function AdminNav({ isSuperAdmin, displayName }: AdminNavProps) {
     ] : []),
   ]
 
+  // Check if we're on a creator page (for nav highlighting)
+  const isCreatorPage = path.startsWith('/admin/creators/')
+
   function isActive(item: { href: string; exact?: boolean }) {
     if (item.exact) return path === item.href
     return path === item.href || path.startsWith(item.href)
@@ -55,14 +58,14 @@ export default function AdminNav({ isSuperAdmin, displayName }: AdminNavProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`relative px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-150 ${
+                  className={`relative px-3 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
                     active
                       ? isLight
-                        ? 'text-black/90 bg-black/[0.06]'
-                        : 'text-white/95 bg-white/[0.08]'
+                        ? 'text-black/90 bg-black/[0.06] shadow-sm'
+                        : 'text-white/95 bg-white/[0.08] shadow-sm'
                       : isLight
-                        ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.03]'
-                        : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
+                        ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04] hover:shadow-sm'
+                        : 'text-white/40 hover:text-white/70 hover:bg-white/[0.05] hover:shadow-sm'
                   }`}
                 >
                   {item.label}

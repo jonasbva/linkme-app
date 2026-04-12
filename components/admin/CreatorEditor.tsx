@@ -91,9 +91,10 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   const isLight = themeMode === 'light'
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
-  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'links' | 'social' | 'analytics'>(
+  const [activeSubTab, setActiveSubTab] = useState<'profile' | 'links' | 'social' | 'analytics' | 'links-combined'>(
     mode === 'analysis' ? 'social' : 'profile'
   )
+  const [linksSubView, setLinksSubView] = useState<'settings' | 'analytics'>('settings')
 
   function showToast(message: string, type: 'success' | 'error') {
     setToast({ message, type })
@@ -490,7 +491,7 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <a href="/admin" className="text-[12px] text-white/35 hover:text-white/60 transition-colors">
+          <a href="/admin" className={`text-[12px] transition-all duration-200 ${isLight ? 'text-black/35 hover:text-black/60' : 'text-white/35 hover:text-white/60'}`}>
             ← Dashboard
           </a>
           <h1 className="text-xl font-semibold tracking-tight mt-1">
@@ -501,16 +502,20 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           {!isNew && mode === 'analysis' && (
             <>
               <a
-                href={`/admin/creators/${creator.id}`}
-                className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
+                href={`/admin/creators/${creator.id}/edit`}
+                className={`px-4 py-1.5 text-[12px] border rounded-lg transition-all duration-200 ${
+                  isLight ? 'text-black/50 border-black/[0.08] hover:bg-black/[0.05]' : 'text-white/50 border-white/[0.08] hover:bg-white/[0.05]'
+                }`}
               >
                 Settings
               </a>
               <a
                 href={`/admin/conversions?creator=${creator.id}`}
-                className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
+                className={`px-4 py-1.5 text-[12px] border rounded-lg transition-all duration-200 ${
+                  isLight ? 'text-black/50 border-black/[0.08] hover:bg-black/[0.05]' : 'text-white/50 border-white/[0.08] hover:bg-white/[0.05]'
+                }`}
               >
-                View Conversions
+                Conversions
               </a>
             </>
           )}
@@ -518,15 +523,19 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
             <>
               <a
                 href={`/admin/creators/${creator.id}/analysis`}
-                className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
+                className={`px-4 py-1.5 text-[12px] border rounded-lg transition-all duration-200 ${
+                  isLight ? 'text-black/50 border-black/[0.08] hover:bg-black/[0.05]' : 'text-white/50 border-white/[0.08] hover:bg-white/[0.05]'
+                }`}
               >
-                View Analysis
+                Social & Analytics
               </a>
               <a
                 href={creator.custom_domain ? `https://${creator.custom_domain}` : `/${creator.slug}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-4 py-1.5 text-[12px] text-white/50 border border-white/[0.08] rounded-lg hover:bg-white/[0.05] transition-colors"
+                className={`px-4 py-1.5 text-[12px] border rounded-lg transition-all duration-200 ${
+                  isLight ? 'text-black/50 border-black/[0.08] hover:bg-black/[0.05]' : 'text-white/50 border-white/[0.08] hover:bg-white/[0.05]'
+                }`}
               >
                 Preview ↗
               </a>
@@ -536,31 +545,31 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex items-center gap-6 border-b border-white/[0.08] pb-px">
+      <div className={`flex items-center gap-6 border-b pb-px ${isLight ? 'border-black/[0.08]' : 'border-white/[0.08]'}`}>
         {mode === 'edit' && (['profile', 'links'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveSubTab(tab)}
-            className={`pb-2.5 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
+            className={`pb-2.5 text-[13px] font-medium transition-all duration-200 border-b-2 -mb-px ${
               activeSubTab === tab
-                ? 'text-white border-white'
-                : 'text-white/40 border-transparent hover:text-white/60'
+                ? isLight ? 'text-black/90 border-black' : 'text-white border-white'
+                : isLight ? 'text-black/40 border-transparent hover:text-black/60' : 'text-white/40 border-transparent hover:text-white/60'
             }`}
           >
             {tab === 'profile' ? 'Profile' : 'Links'}
           </button>
         ))}
-        {mode === 'analysis' && (['social', 'analytics'] as const).map(tab => (
+        {mode === 'analysis' && (['social', 'links-combined'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveSubTab(tab)}
-            className={`pb-2.5 text-[13px] font-medium transition-colors border-b-2 -mb-px ${
+            className={`pb-2.5 text-[13px] font-medium transition-all duration-200 border-b-2 -mb-px ${
               activeSubTab === tab
-                ? 'text-white border-white'
-                : 'text-white/40 border-transparent hover:text-white/60'
+                ? isLight ? 'text-black/90 border-black' : 'text-white border-white'
+                : isLight ? 'text-black/40 border-transparent hover:text-black/60' : 'text-white/40 border-transparent hover:text-white/60'
             }`}
           >
-            {tab === 'social' ? 'Social Media' : 'Link Analysis'}
+            {tab === 'social' ? 'Social Media' : 'Links'}
           </button>
         ))}
       </div>
@@ -1203,11 +1212,223 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
         </div>
       )}
 
+      {/* ─── COMBINED LINKS SUB-TAB (Settings + Analytics) ─── */}
+      {mode === 'analysis' && activeSubTab === 'links-combined' && !isNew && (
+        <div className="space-y-4">
+          {/* Sub-tab switcher for Links */}
+          <div className={`flex gap-1 p-1 rounded-lg border w-fit ${
+            isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.03] border-white/[0.06]'
+          }`}>
+            {(['settings', 'analytics'] as const).map(sv => (
+              <button
+                key={sv}
+                onClick={() => setLinksSubView(sv)}
+                className={`px-4 py-1.5 rounded-md text-[13px] transition-all duration-200 ${
+                  linksSubView === sv
+                    ? isLight ? 'bg-black/[0.08] text-black/90 font-medium' : 'bg-white/[0.08] text-white/90 font-medium'
+                    : isLight ? 'text-black/40 hover:text-black/60' : 'text-white/40 hover:text-white/60'
+                }`}
+              >
+                {sv === 'settings' ? 'Link Settings' : 'Link Analytics'}
+              </button>
+            ))}
+          </div>
+
+          {/* Link Settings sub-view — reuses the links editor */}
+          {linksSubView === 'settings' && (
+            <LinksEditorInline
+              creator={creator}
+              links={links}
+              setLinks={setLinks}
+              newLink={newLink}
+              setNewLink={setNewLink}
+              addLinkStatus={addLinkStatus}
+              linkSaveStatus={linkSaveStatus}
+              uploadingField={uploadingField}
+              saveAllLinks={saveAllLinks}
+              addLink={addLink}
+              deleteLink={deleteLink}
+              toggleLink={toggleLink}
+              updateLinkField={updateLinkField}
+              uploadLinkImage={uploadLinkImage}
+              uploadNewLinkImage={uploadNewLinkImage}
+              showToast={showToast}
+              isLight={isLight}
+            />
+          )}
+
+          {/* Link Analytics sub-view — reuses the analytics display */}
+          {linksSubView === 'analytics' && (
+            <div className="space-y-6">
+              {/* Date range trigger */}
+              <div className="relative inline-block">
+                <button
+                  onClick={() => {
+                    setCustomStart(dateStart.toISOString().split('T')[0])
+                    setCustomEnd(dateEnd.toISOString().split('T')[0])
+                    setShowDatePicker(!showDatePicker)
+                  }}
+                  className={`flex items-center gap-2.5 px-4 py-2 border rounded-lg transition-all duration-200 ${
+                    isLight
+                      ? 'bg-black/[0.03] border-black/[0.06] hover:bg-black/[0.06]'
+                      : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={isLight ? 'text-black/30' : 'text-white/30'}>
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+                  </svg>
+                  <span className={`text-[13px] font-medium ${isLight ? 'text-black/70' : 'text-white/70'}`}>{dateLabel}</span>
+                </button>
+              </div>
+
+              {/* Analytics cards */}
+              <div className="grid grid-cols-3 gap-4">
+                <div className={`rounded-xl p-4 border ${isLight ? 'bg-black/[0.03] border-black/[0.06]' : 'bg-white/[0.05] border-white/[0.08]'}`}>
+                  <p className={`text-[11px] mb-1 ${isLight ? 'text-black/30' : 'text-white/40'}`}>Page Views</p>
+                  <p className={`text-xl font-semibold ${isLight ? 'text-black/90' : 'text-white/95'}`}>{computedAnalytics.totalViews.toLocaleString()}</p>
+                </div>
+                <div className={`rounded-xl p-4 border ${isLight ? 'bg-black/[0.03] border-black/[0.06]' : 'bg-white/[0.05] border-white/[0.08]'}`}>
+                  <p className={`text-[11px] mb-1 ${isLight ? 'text-black/30' : 'text-white/40'}`}>Link Clicks</p>
+                  <p className={`text-xl font-semibold ${isLight ? 'text-black/90' : 'text-white/95'}`}>{computedAnalytics.totalClicks.toLocaleString()}</p>
+                </div>
+                <div className={`rounded-xl p-4 border ${isLight ? 'bg-black/[0.03] border-black/[0.06]' : 'bg-white/[0.05] border-white/[0.08]'}`}>
+                  <p className={`text-[11px] mb-1 ${isLight ? 'text-black/30' : 'text-white/40'}`}>CTR</p>
+                  <p className={`text-xl font-semibold ${isLight ? 'text-black/90' : 'text-white/95'}`}>{computedAnalytics.ctr.toFixed(1)}%</p>
+                </div>
+              </div>
+
+              {/* Chart */}
+              {computedAnalytics.dailyData.length > 0 && (
+                <div className={`rounded-xl border p-5 ${isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.02] border-white/[0.06]'}`}>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <LineChart data={computedAnalytics.dailyData}>
+                      <XAxis dataKey="date" tick={{ fill: isLight ? '#00000040' : '#ffffff40', fontSize: 10 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: isLight ? '#00000040' : '#ffffff40', fontSize: 10 }} axisLine={false} tickLine={false} width={35} />
+                      <Tooltip
+                        contentStyle={{ background: isLight ? '#fff' : '#111', border: isLight ? '1px solid rgba(0,0,0,0.1)' : '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 12 }}
+                        labelStyle={{ color: isLight ? '#000' : '#fff' }}
+                      />
+                      <Line type="monotone" dataKey="views" stroke={isLight ? '#000' : '#fff'} strokeWidth={1.5} dot={false} />
+                      <Line type="monotone" dataKey="clicks" stroke="#10b981" strokeWidth={1.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+
+              {/* Countries + Devices */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {computedAnalytics.countries.length > 0 && (
+                  <div className={`rounded-xl border p-5 ${isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.02] border-white/[0.06]'}`}>
+                    <p className={`text-[11px] uppercase tracking-wide mb-3 ${isLight ? 'text-black/30' : 'text-white/40'}`}>Top Countries</p>
+                    <div className="space-y-2">
+                      {computedAnalytics.countries.slice(0, 8).map(([country, code, count]) => (
+                        <div key={country} className="flex items-center justify-between">
+                          <span className={`text-[12px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>
+                            {code ? countryFlag(code as string) + ' ' : ''}{country}
+                          </span>
+                          <span className={`text-[12px] tabular-nums font-medium ${isLight ? 'text-black/80' : 'text-white/80'}`}>{(count as number).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Object.keys(computedAnalytics.devices).length > 0 && (
+                  <div className={`rounded-xl border p-5 ${isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.02] border-white/[0.06]'}`}>
+                    <p className={`text-[11px] uppercase tracking-wide mb-3 ${isLight ? 'text-black/30' : 'text-white/40'}`}>Devices</p>
+                    <div className="space-y-2">
+                      {Object.entries(computedAnalytics.devices).sort((a, b) => b[1] - a[1]).map(([device, count]) => (
+                        <div key={device} className="flex items-center justify-between">
+                          <span className={`text-[12px] capitalize ${isLight ? 'text-black/60' : 'text-white/60'}`}>{device}</span>
+                          <span className={`text-[12px] tabular-nums font-medium ${isLight ? 'text-black/80' : 'text-white/80'}`}>{count.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ─── SOCIAL MEDIA SUB-TAB ─── */}
       {mode === 'analysis' && activeSubTab === 'social' && !isNew && (
         <SocialTab creatorId={creator.id} />
       )}
 
+    </div>
+  )
+}
+
+/* ── Links Editor Inline ──────────────────────────── */
+// Used in the combined Links tab (analysis mode) to show link settings
+function LinksEditorInline({ creator, links, setLinks, newLink, setNewLink, addLinkStatus, linkSaveStatus, uploadingField, saveAllLinks, addLink, deleteLink, toggleLink, updateLinkField, uploadLinkImage, uploadNewLinkImage, showToast, isLight }: any) {
+  return (
+    <div className="space-y-5">
+      {/* Save bar */}
+      <div className="flex items-center justify-between">
+        <span className={`text-[12px] ${isLight ? 'text-black/40' : 'text-white/40'}`}>
+          {linkSaveStatus === 'saving' ? 'Saving…' : linkSaveStatus === 'saved' ? '✓ Saved' : `${links.length} link${links.length !== 1 ? 's' : ''}`}
+        </span>
+        <button
+          onClick={saveAllLinks}
+          disabled={linkSaveStatus === 'saving'}
+          className={`px-4 py-1.5 text-[12px] font-medium rounded-lg transition-all duration-200 disabled:opacity-40 ${
+            isLight ? 'bg-black text-white hover:bg-black/90' : 'bg-white text-black hover:bg-white/90'
+          }`}
+        >
+          Save links
+        </button>
+      </div>
+
+      {/* Existing links — compact list */}
+      <div className="space-y-3">
+        {links.map((link: any, i: number) => (
+          <div key={link.id} className={`rounded-xl border p-4 transition-all duration-200 ${
+            isLight
+              ? 'bg-black/[0.02] border-black/[0.06] hover:border-black/[0.12]'
+              : 'bg-white/[0.03] border-white/[0.07] hover:border-white/[0.12]'
+          }`}>
+            <div className="flex items-center gap-3">
+              <span className={`text-[12px] font-medium w-5 text-center shrink-0 ${isLight ? 'text-black/25' : 'text-white/25'}`}>{i + 1}</span>
+              <div className="flex-1 min-w-0">
+                <p className={`text-[13px] font-medium truncate ${isLight ? 'text-black/90' : 'text-white/90'}`}>{link.title}</p>
+                <p className={`text-[11px] truncate mt-0.5 ${isLight ? 'text-black/35' : 'text-white/35'}`}>{link.url}</p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => toggleLink(link.id, !link.is_active)}
+                  className={`w-8 h-[18px] rounded-full transition-colors relative ${
+                    link.is_active
+                      ? isLight ? 'bg-black/90' : 'bg-white/90'
+                      : isLight ? 'bg-black/10' : 'bg-white/10'
+                  }`}
+                >
+                  <div className={`w-3.5 h-3.5 rounded-full absolute top-[2px] transition-all ${
+                    link.is_active
+                      ? isLight ? 'left-[17px] bg-white' : 'left-[17px] bg-black'
+                      : isLight ? 'left-[2px] bg-black/30' : 'left-[2px] bg-white/30'
+                  }`} />
+                </button>
+                <button
+                  onClick={() => deleteLink(link.id)}
+                  className={`text-[11px] transition-all duration-200 ml-1 ${
+                    isLight ? 'text-black/25 hover:text-red-500' : 'text-white/25 hover:text-red-400/70'
+                  }`}
+                >
+                  Remove
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {links.length === 0 && (
+        <p className={`text-center py-8 text-[13px] ${isLight ? 'text-black/25' : 'text-white/25'}`}>
+          No links yet. Add one below or go to Settings to manage links with previews.
+        </p>
+      )}
     </div>
   )
 }

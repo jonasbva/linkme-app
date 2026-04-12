@@ -17,9 +17,14 @@ interface CreatorStat {
   avatar_url?: string
   is_active: boolean
   custom_domain?: string
+  followers: number
+  followerGrowth: number
   totalViews: number
-  totalClicks: number
-  last30Views: number
+  totalLikes: number
+  totalComments: number
+  engagement: number
+  lastScraped: string | null
+  accounts: number
   tagIds: string[]
 }
 
@@ -31,21 +36,41 @@ interface UnmappedCreator {
 
 interface Props {
   creatorStats: CreatorStat[]
-  totalPageViews: number
-  totalLinkClicks: number
-  weeklyPageViews: number
-  topCountries: [string, number][]
+  totalFollowers: number
+  followerGrowth7d: number
+  totalEngagement: number
+  engagementGrowth7d: number
   tags: Tag[]
   unmappedCreators: UnmappedCreator[]
   isSuperAdmin?: boolean
 }
 
+function fmt(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
+  return n.toLocaleString()
+}
+
+function GrowthBadge({ value, isLight }: { value: number; isLight: boolean }) {
+  if (value === 0) return null
+  const positive = value > 0
+  return (
+    <span className={`inline-flex items-center gap-0.5 text-[11px] font-medium px-1.5 py-0.5 rounded-full transition-colors ${
+      positive
+        ? 'text-emerald-500 bg-emerald-500/10'
+        : 'text-red-400 bg-red-400/10'
+    }`}>
+      {positive ? '↑' : '↓'} {fmt(Math.abs(value))}
+    </span>
+  )
+}
+
 export default function DashboardClient({
   creatorStats: initialStats,
-  totalPageViews,
-  totalLinkClicks,
-  weeklyPageViews,
-  topCountries,
+  totalFollowers,
+  followerGrowth7d,
+  totalEngagement,
+  engagementGrowth7d,
   tags,
   unmappedCreators,
   isSuperAdmin,
@@ -68,7 +93,7 @@ export default function DashboardClient({
   const [scrapeResult, setScrapeResult] = useState<{ success: number; errors: number; total: number } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
 
-  // Fetch revenue today from cache (instant, no Infloww API call)
+  // Fetch revenue today from cache
   useEffect(() => {
     async function fetchRevenue() {
       try {
@@ -78,7 +103,6 @@ export default function DashboardClient({
           setRevenueToday(data?.totals?.totalTurnover ?? null)
         }
       } catch {
-        // Revenue not available — that's fine, show N/A
       } finally {
         setRevenueLoading(false)
       }
@@ -170,7 +194,7 @@ export default function DashboardClient({
           {isSuperAdmin && <button
             onClick={scrapeAll}
             disabled={scraping}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-150 ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200 ${
               scraping
                 ? isLight ? 'bg-blue-500/10 text-blue-600 border border-blue-500/15' : 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
                 : scrapeResult
@@ -178,8 +202,8 @@ export default function DashboardClient({
                     ? isLight ? 'bg-amber-500/10 text-amber-600 border border-amber-500/15' : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
                     : isLight ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/15' : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
                   : isLight
-                    ? 'bg-black/[0.04] text-black/50 border border-black/[0.08] hover:text-black/80 hover:bg-black/[0.06] hover:border-black/[0.12]'
-                    : 'bg-white/[0.04] text-white/50 border border-white/[0.08] hover:text-white/80 hover:bg-white/[0.06] hover:border-white/[0.12]'
+                    ? 'bg-black/[0.04] text-black/50 border border-black/[0.08] hover:text-black/80 hover:bg-black/[0.06] hover:border-black/[0.12] hover:shadow-sm'
+                    : 'bg-white/[0.04] text-white/50 border border-white/[0.08] hover:text-white/80 hover:bg-white/[0.06] hover:border-white/[0.12] hover:shadow-sm'
             }`}
           >
             {scraping ? (
@@ -206,7 +230,7 @@ export default function DashboardClient({
           </button>}
           {isSuperAdmin && <Link
             href="/admin/creators/new"
-            className={`px-4 py-1.5 text-[12px] font-medium rounded-lg transition-colors ${
+            className={`px-4 py-1.5 text-[12px] font-medium rounded-lg transition-all duration-200 hover:shadow-md ${
               isLight ? 'bg-black text-white hover:bg-black/90' : 'bg-white text-black hover:bg-white/90'
             }`}
           >
@@ -215,24 +239,34 @@ export default function DashboardClient({
         </div>
       </div>
 
+      {/* Social Media Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={`${cardCls} rounded-xl p-4`}>
+        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
           <p className={`text-[11px] ${textTertiary} mb-1`}>Revenue today</p>
           <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>
             {revenueLoading ? '...' : revenueToday !== null ? `$${revenueToday.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : 'N/A'}
           </p>
         </div>
-        <div className={`${cardCls} rounded-xl p-4`}>
-          <p className={`text-[11px] ${textTertiary} mb-1`}>Page views</p>
-          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{totalPageViews.toLocaleString()}</p>
+        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
+          <div className="flex items-center justify-between mb-1">
+            <p className={`text-[11px] ${textTertiary}`}>Total Followers</p>
+            <GrowthBadge value={followerGrowth7d} isLight={isLight} />
+          </div>
+          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{fmt(totalFollowers)}</p>
+          <p className={`text-[10px] mt-0.5 ${textTertiary}`}>7d growth</p>
         </div>
-        <div className={`${cardCls} rounded-xl p-4`}>
-          <p className={`text-[11px] ${textTertiary} mb-1`}>Link clicks</p>
-          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{totalLinkClicks.toLocaleString()}</p>
+        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
+          <div className="flex items-center justify-between mb-1">
+            <p className={`text-[11px] ${textTertiary}`}>Total Engagement</p>
+            <GrowthBadge value={engagementGrowth7d} isLight={isLight} />
+          </div>
+          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{fmt(totalEngagement)}</p>
+          <p className={`text-[10px] mt-0.5 ${textTertiary}`}>likes + comments</p>
         </div>
-        <div className={`${cardCls} rounded-xl p-4`}>
-          <p className={`text-[11px] ${textTertiary} mb-1`}>Weekly views</p>
-          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{weeklyPageViews.toLocaleString()}</p>
+        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
+          <p className={`text-[11px] ${textTertiary} mb-1`}>Active Creators</p>
+          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{creators.filter(c => c.is_active).length}</p>
+          <p className={`text-[10px] mt-0.5 ${textTertiary}`}>{creators.filter(c => c.accounts > 0).length} with social tracking</p>
         </div>
       </div>
 
@@ -243,19 +277,19 @@ export default function DashboardClient({
           placeholder="Search creators..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className={`rounded-lg px-3 py-1.5 text-[13px] outline-none w-48 ${
+          className={`rounded-lg px-3 py-1.5 text-[13px] outline-none w-48 transition-all duration-200 ${
             isLight
-              ? 'bg-white border border-black/10 text-black/80 placeholder:text-black/25 focus:border-black/30'
-              : 'bg-white/[0.04] border border-white/[0.08] text-white/80 placeholder-white/25 focus:border-white/20'
+              ? 'bg-white border border-black/10 text-black/80 placeholder:text-black/25 focus:border-black/30 focus:shadow-sm'
+              : 'bg-white/[0.04] border border-white/[0.08] text-white/80 placeholder-white/25 focus:border-white/20 focus:shadow-sm'
           }`}
         />
         <div className="flex gap-1.5 flex-wrap">
           <button
             onClick={() => setFilterTag('all')}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 ${
               filterTag === 'all'
                 ? isLight ? 'bg-black/[0.08] text-black/70' : 'bg-white/[0.12] text-white/80'
-                : isLight ? 'bg-black/[0.03] text-black/30 hover:text-black/50' : 'bg-white/[0.04] text-white/30 hover:text-white/50'
+                : isLight ? 'bg-black/[0.03] text-black/30 hover:text-black/50 hover:bg-black/[0.05]' : 'bg-white/[0.04] text-white/30 hover:text-white/50 hover:bg-white/[0.06]'
             }`}
           >
             All
@@ -264,7 +298,7 @@ export default function DashboardClient({
             <button
               key={tag.id}
               onClick={() => setFilterTag(filterTag === tag.id ? 'all' : tag.id)}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border ${
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 border ${
                 filterTag === tag.id ? 'border-current' : 'border-transparent'
               }`}
               style={{
@@ -278,154 +312,161 @@ export default function DashboardClient({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2 space-y-2">
-          {filtered.map(c => {
-            const creatorTags = tags.filter(t => c.tagIds.includes(t.id))
-            return (
-              <div
-                key={c.id}
-                className={`flex items-center justify-between p-4 rounded-xl transition-all duration-150 group ${
-                  isLight
-                    ? 'bg-black/[0.02] border border-black/[0.06] hover:border-black/[0.10] hover:bg-black/[0.03]'
-                    : 'bg-white/[0.05] border border-white/[0.08] hover:border-white/[0.12] hover:bg-white/[0.07]'
-                }`}
-              >
-                <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 flex-1 min-w-0">
-                  {c.avatar_url ? (
-                    <img src={c.avatar_url} alt="" className="w-8 h-8 rounded-full object-cover" />
-                  ) : (
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-medium ${
-                      isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/40'
-                    }`}>
-                      {c.display_name.charAt(0)}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className={`text-[13px] font-medium truncate ${textPrimary}`}>{c.display_name}</p>
-                      {creatorTags.map(tag => (
-                        <span
-                          key={tag.id}
-                          className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0"
-                          style={{ color: tag.color, backgroundColor: tag.color + '18' }}
-                        >
-                          {tag.name}
-                        </span>
-                      ))}
-                      {!c.is_active && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                          isLight ? 'bg-amber-500/15 text-amber-600' : 'bg-amber-500/20 text-amber-400'
-                        }`}>
-                          Inactive
-                        </span>
-                      )}
-                    </div>
-                    <p className={`text-[11px] ${textTertiary}`}>/{c.slug}</p>
+      {/* Creator list with social stats */}
+      <div className="space-y-2">
+        {filtered.map(c => {
+          const creatorTags = tags.filter(t => c.tagIds.includes(t.id))
+          return (
+            <div
+              key={c.id}
+              className={`flex items-center justify-between p-4 rounded-xl transition-all duration-200 group ${
+                isLight
+                  ? 'bg-black/[0.02] border border-black/[0.06] hover:border-black/[0.12] hover:bg-black/[0.03] hover:shadow-sm'
+                  : 'bg-white/[0.05] border border-white/[0.08] hover:border-white/[0.14] hover:bg-white/[0.07] hover:shadow-sm hover:shadow-white/[0.02]'
+              }`}
+            >
+              <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 flex-1 min-w-0">
+                {c.avatar_url ? (
+                  <img src={c.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-transparent group-hover:ring-white/10 transition-all duration-200" />
+                ) : (
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-medium transition-all duration-200 ${
+                    isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/40'
+                  }`}>
+                    {c.display_name.charAt(0)}
                   </div>
-                </Link>
-                <div className="flex items-center gap-3">
-                  <div className="text-right mr-2">
-                    <p className={`text-[13px] tabular-nums ${textSecondary}`}>{c.totalViews.toLocaleString()}</p>
-                    <p className={`text-[11px] ${textTertiary}`}>views</p>
+                )}
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <p className={`text-[13px] font-medium truncate ${textPrimary}`}>{c.display_name}</p>
+                    {creatorTags.map(tag => (
+                      <span
+                        key={tag.id}
+                        className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0"
+                        style={{ color: tag.color, backgroundColor: tag.color + '18' }}
+                      >
+                        {tag.name}
+                      </span>
+                    ))}
+                    {!c.is_active && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                        isLight ? 'bg-amber-500/15 text-amber-600' : 'bg-amber-500/20 text-amber-400'
+                      }`}>
+                        Inactive
+                      </span>
+                    )}
                   </div>
-                  {/* Creator action buttons — visible on hover */}
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Link
-                      href={`/admin/creators/${c.id}/edit`}
-                      className={`px-2.5 py-1 text-[11px] rounded-lg transition-colors ${
-                        isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      Edit
-                    </Link>
-                    <Link
-                      href={c.custom_domain ? `https://${c.custom_domain}` : `/${c.slug}`}
-                      target="_blank"
-                      className={`px-2.5 py-1 text-[11px] rounded-lg transition-colors ${
-                        isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      Preview
-                    </Link>
-                    {isSuperAdmin && <button
-                      onClick={(e) => { e.preventDefault(); deleteCreator(c.id, c.display_name) }}
-                      disabled={deleting === c.id}
-                      className={`px-2.5 py-1 text-[11px] rounded-lg transition-colors ${
-                        isLight ? 'text-red-500/50 hover:text-red-600 hover:bg-red-500/10' : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
-                      }`}
-                    >
-                      {deleting === c.id ? '...' : 'Delete'}
-                    </button>}
+                  <p className={`text-[11px] ${textTertiary}`}>
+                    {c.accounts > 0
+                      ? `${c.accounts} account${c.accounts > 1 ? 's' : ''} tracked`
+                      : 'No social accounts'
+                    }
+                  </p>
+                </div>
+              </Link>
+
+              {/* Social stats columns */}
+              <div className="flex items-center gap-6 mr-4">
+                <div className="text-right">
+                  <div className="flex items-center gap-1.5 justify-end">
+                    <p className={`text-[13px] tabular-nums font-medium ${textPrimary}`}>{fmt(c.followers)}</p>
+                    {c.followerGrowth !== 0 && (
+                      <span className={`text-[10px] tabular-nums ${c.followerGrowth > 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                        {c.followerGrowth > 0 ? '+' : ''}{fmt(c.followerGrowth)}
+                      </span>
+                    )}
                   </div>
+                  <p className={`text-[10px] ${textTertiary}`}>followers</p>
+                </div>
+                <div className="text-right hidden md:block">
+                  <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.totalViews)}</p>
+                  <p className={`text-[10px] ${textTertiary}`}>views</p>
+                </div>
+                <div className="text-right hidden lg:block">
+                  <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.engagement)}</p>
+                  <p className={`text-[10px] ${textTertiary}`}>engagement</p>
                 </div>
               </div>
-            )
-          })}
-          {filtered.length === 0 && (
-            <p className={`text-[13px] text-center py-8 ${textTertiary}`}>
-              {search || filterTag !== 'all' ? 'No creators match your filter' : 'No creators yet'}
-            </p>
-          )}
 
-          {/* Unmapped Infloww creators */}
-          {unmappedCreators.length > 0 && !search && filterTag === 'all' && (
-            <>
-              <div className={`flex items-center gap-3 mt-6 mb-2`}>
-                <div className={`flex-1 h-px ${isLight ? 'bg-black/[0.10]' : 'bg-white/[0.12]'}`} />
-                <span className={`text-[11px] font-semibold uppercase tracking-widest ${isLight ? 'text-black/30' : 'text-white/30'}`}>
-                  Unmapped
-                </span>
-                <div className={`flex-1 h-px ${isLight ? 'bg-black/[0.10]' : 'bg-white/[0.12]'}`} />
-              </div>
-              <p className={`text-[11px] mb-2 ${textTertiary}`}>
-                These Infloww creators aren't linked to a LinkMe profile yet.
-              </p>
-              {unmappedCreators.map(uc => (
-                <div
-                  key={uc.infloww_id}
-                  className={`flex items-center justify-between p-4 rounded-xl transition-all duration-150 ${
-                    isLight
-                      ? 'bg-amber-500/[0.04] border border-amber-500/[0.10]'
-                      : 'bg-amber-500/[0.04] border border-amber-500/[0.08]'
+              {/* Creator action buttons — visible on hover */}
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+                <Link
+                  href={`/admin/creators/${c.id}/edit`}
+                  className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
+                    isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-medium ${
-                      isLight ? 'bg-amber-500/10 text-amber-600' : 'bg-amber-500/10 text-amber-400'
-                    }`}>
-                      {uc.name.charAt(0)}
-                    </div>
-                    <div>
-                      <p className={`text-[13px] font-medium ${textPrimary}`}>{uc.name}</p>
-                      <p className={`text-[11px] ${textTertiary}`}>@{uc.userName}</p>
-                    </div>
-                  </div>
-                  <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                  Settings
+                </Link>
+                <Link
+                  href={c.custom_domain ? `https://${c.custom_domain}` : `/${c.slug}`}
+                  target="_blank"
+                  className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
+                    isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
+                  }`}
+                >
+                  Preview
+                </Link>
+                {isSuperAdmin && <button
+                  onClick={(e) => { e.preventDefault(); deleteCreator(c.id, c.display_name) }}
+                  disabled={deleting === c.id}
+                  className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
+                    isLight ? 'text-red-500/50 hover:text-red-600 hover:bg-red-500/10' : 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
+                  }`}
+                >
+                  {deleting === c.id ? '...' : 'Delete'}
+                </button>}
+              </div>
+            </div>
+          )
+        })}
+        {filtered.length === 0 && (
+          <p className={`text-[13px] text-center py-8 ${textTertiary}`}>
+            {search || filterTag !== 'all' ? 'No creators match your filter' : 'No creators yet'}
+          </p>
+        )}
+
+        {/* Unmapped Infloww creators */}
+        {unmappedCreators.length > 0 && !search && filterTag === 'all' && (
+          <>
+            <div className={`flex items-center gap-3 mt-6 mb-2`}>
+              <div className={`flex-1 h-px ${isLight ? 'bg-black/[0.10]' : 'bg-white/[0.12]'}`} />
+              <span className={`text-[11px] font-semibold uppercase tracking-widest ${isLight ? 'text-black/30' : 'text-white/30'}`}>
+                Unmapped
+              </span>
+              <div className={`flex-1 h-px ${isLight ? 'bg-black/[0.10]' : 'bg-white/[0.12]'}`} />
+            </div>
+            <p className={`text-[11px] mb-2 ${textTertiary}`}>
+              These Infloww creators aren't linked to a profile yet.
+            </p>
+            {unmappedCreators.map(uc => (
+              <div
+                key={uc.infloww_id}
+                className={`flex items-center justify-between p-4 rounded-xl transition-all duration-200 ${
+                  isLight
+                    ? 'bg-amber-500/[0.04] border border-amber-500/[0.10] hover:border-amber-500/[0.18]'
+                    : 'bg-amber-500/[0.04] border border-amber-500/[0.08] hover:border-amber-500/[0.15]'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[12px] font-medium ${
                     isLight ? 'bg-amber-500/10 text-amber-600' : 'bg-amber-500/10 text-amber-400'
                   }`}>
-                    Not linked
-                  </span>
+                    {uc.name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className={`text-[13px] font-medium ${textPrimary}`}>{uc.name}</p>
+                    <p className={`text-[11px] ${textTertiary}`}>@{uc.userName}</p>
+                  </div>
                 </div>
-              ))}
-            </>
-          )}
-        </div>
-
-        <div className="space-y-5">
-          <div className={`${cardCls} rounded-xl p-5`}>
-            <p className={`text-[12px] ${textTertiary} mb-4`}>Top countries</p>
-            <div className="space-y-2.5">
-              {topCountries.map(([country, count]) => (
-                <div key={country} className="flex items-center justify-between">
-                  <span className={`text-[13px] ${textSecondary}`}>{country}</span>
-                  <span className={`text-[13px] font-medium tabular-nums ${textPrimary}`}>{count.toLocaleString()}</span>
-                </div>
-              ))}
-              {topCountries.length === 0 && <p className={`text-[12px] ${textTertiary}`}>No data yet</p>}
-            </div>
-          </div>
-        </div>
+                <span className={`text-[11px] px-2 py-0.5 rounded-full ${
+                  isLight ? 'bg-amber-500/10 text-amber-600' : 'bg-amber-500/10 text-amber-400'
+                }`}>
+                  Not linked
+                </span>
+              </div>
+            ))}
+          </>
+        )}
       </div>
     </div>
   )

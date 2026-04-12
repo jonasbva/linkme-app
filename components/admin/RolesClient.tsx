@@ -25,13 +25,14 @@ interface Role {
 }
 
 const PERMISSION_TYPES = [
-  { key: 'view_links', label: 'View Link Analysis' },
   { key: 'view_social', label: 'View Social Media' },
   { key: 'view_conversions', label: 'View Conversions' },
+  { key: 'view_links', label: 'View Link Settings' },
+  { key: 'view_link_analytics', label: 'View Link Analytics' },
   { key: 'edit_settings', label: 'Edit Settings' },
   { key: 'edit_links', label: 'Edit Links' },
-  { key: 'input_conversions', label: 'Input Conversions' },
   { key: 'edit_social', label: 'Edit Social Media' },
+  { key: 'input_conversions', label: 'Input Conversions' },
 ]
 
 export default function RolesClient() {

@@ -41,9 +41,10 @@ async function fetchAllClicks(supabase: any, creatorId: string) {
 export default async function CreatorAnalysisPage({ params }: Props) {
   const supabase = createServerSupabaseClient()
 
-  const [creatorRes, clicks] = await Promise.all([
+  const [creatorRes, clicks, linksRes] = await Promise.all([
     supabase.from('creators').select('*').eq('id', params.id).single(),
     fetchAllClicks(supabase, params.id),
+    supabase.from('links').select('*').eq('creator_id', params.id).order('sort_order'),
   ])
 
   if (!creatorRes.data) notFound()
@@ -118,7 +119,7 @@ export default async function CreatorAnalysisPage({ params }: Props) {
   return (
     <CreatorEditor
       creator={creator}
-      links={[]}
+      links={linksRes.data || []}
       analytics={analytics}
       rawClicks={rawClicks}
       isNew={false}

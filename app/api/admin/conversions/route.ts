@@ -123,6 +123,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(data)
   }
 
+  if (body.action === 'update_cell') {
+    // Update any field in a conversion_daily row (views, profile_views, link_clicks, new_subs)
+    const { creator_id, date, field, value } = body
+    const allowedFields = ['views', 'profile_views', 'link_clicks', 'new_subs']
+    if (!allowedFields.includes(field)) {
+      return NextResponse.json({ error: 'Invalid field' }, { status: 400 })
+    }
+
+    // Check if row exists to preserve other fields
+    const { data: existing } = await supabase
+      .from('conversion_daily')
+      .select('views, profile_views, link_clicks, new_subs')
+      .eq('creator_id', creator_id)
+      .eq('date', date)
+      .single()
+
+    const upsertData = {
+      creator_id,
+      date,
+      views: existing?.views ?? 0,
+      profile_views: existing?.profile_views ?? 0,
+      link_clicks: existing?.link_clicks ?? 0,
+      new_subs: existing?.new_subs ?? 0,
+      [field]: value,
+      updated_at: new Date().toISOString(),
+    }
+
+    const { data, error } = await supabase
+      .from('conversion_daily')
+      .upsert(upsertData, { onConflict: 'creator_id,date' })
+      .select()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
+  }
+
   if (body.action === 'calculate_daily') {
     // Calculate views, profile_views, link_clicks for all creators for a given date
     const targetDate = body.date || (() => {
