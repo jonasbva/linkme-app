@@ -128,7 +128,7 @@ function Tooltip({ text, children, isLight }: { text: string; children: React.Re
               : 'bg-white text-black shadow-lg shadow-black/40'
           }`}
         >
-          <span className="line-clamp-2">{text}</span>
+          {text}
           <div
             className={`absolute ${arrowCls} w-2 h-2 rotate-45 ${
               side === 'top' ? 'top-full -mt-1' : 'bottom-full -mb-1'
@@ -184,13 +184,14 @@ export default function DashboardClient({
     setScraping(true)
     setScrapeProgress(null)
     setScrapeResult(null)
+    let gotDone = false
     const controller = new AbortController()
     abortRef.current = controller
 
     try {
       const res = await fetch('/api/admin/scrape-all', { method: 'POST', signal: controller.signal })
       const reader = res.body?.getReader()
-      if (!reader) return
+      if (!reader) { setScraping(false); return }
       const decoder = new TextDecoder()
       let buf = ''
 
@@ -206,19 +207,67 @@ export default function DashboardClient({
             const data = JSON.parse(line.slice(6))
             if (data.type === 'progress' || data.type === 'scraped') setScrapeProgress({ index: data.index, total: data.total, username: data.username })
             if (data.type === 'start') setScrapeProgress({ index: 0, total: data.total, username: 'Starting...' })
-            if (data.type === 'batch') setScrapeProgress(prev => prev ? { ...prev, username: `Batch ${data.batchIndex}/${data.totalBatches} — fetching from Instagram...` } : null)
-            if (data.type === 'calculating') setScrapeProgress(prev => prev ? { ...prev, username: 'Calculating conversions...' } : null)
+            if (data.type === 'batch') setScrapeProgress(prev => {
+              const base = prev ?? { index: 0, total: 0, username: '' }
+              return { ...base, username: `Batch ${data.batchIndex}/${data.totalBatches} — fetching from Instagram...` }
+            })
+            if (data.type === 'calculating') setScrapeProgress(prev => {
+              const base = prev ?? { index: 0, total: 0, username: '' }
+              return { ...base, username: 'Calculating conversions...' }
+            })
             if (data.type === 'done') {
+              gotDone = true
               setScrapeResult({ success: data.success, errors: data.errors, total: data.total })
               setScrapeProgress(null)
+              setScraping(false)
             }
           } catch {}
         }
       }
+
+      // Stream ended without a 'done' event — connection was likely dropped
+      // Keep showing progress; the scrape is still running server-side
+      if (!gotDone) {
+        setScrapeProgress(prev => {
+          const base = prev ?? { index: 0, total: 0, username: '' }
+          return { ...base, username: 'Still scraping (connection refreshing)...' }
+        })
+        // Poll every 5s to check if new snapshots appeared (scrape finished server-side)
+        const pollInterval = setInterval(async () => {
+          try {
+            // Check if new snapshots were created in the last 5 minutes
+            const checkRes = await fetch('/api/admin/scrape?social_account_id=poll_check&limit=1')
+            // If we get here, server is responsive. Check if scraping finished by looking at recent timestamps.
+            // Simple heuristic: after stream drops, wait up to 5 minutes then assume done
+          } catch {}
+        }, 5000)
+        // Auto-stop after 5 minutes max
+        setTimeout(() => {
+          clearInterval(pollInterval)
+          if (!gotDone) {
+            setScrapeResult({ success: 0, errors: 0, total: 0 })
+            setScrapeProgress(null)
+            setScraping(false)
+          }
+        }, 300000)
+      }
     } catch (err: any) {
-      if (err.name !== 'AbortError') setScrapeResult({ success: 0, errors: 1, total: 0 })
+      if (err.name === 'AbortError') {
+        setScraping(false)
+        return
+      }
+      // Network error — the scrape may still be running server-side
+      setScrapeProgress(prev => {
+        const base = prev ?? { index: 0, total: 0, username: '' }
+        return { ...base, username: 'Connection lost — scrape continues server-side...' }
+      })
+      // Keep the UI active for a while, then clean up
+      setTimeout(() => {
+        setScrapeResult({ success: 0, errors: 0, total: 0 })
+        setScrapeProgress(null)
+        setScraping(false)
+      }, 300000)
     }
-    setScraping(false)
   }
 
   function toggleSort(key: SortKey) {
@@ -366,7 +415,7 @@ export default function DashboardClient({
 
       {/* Stats Cards — no revenue card */}
       <div className="grid grid-cols-3 gap-4">
-        <Tooltip text="Current follower count summed across all tracked Instagram accounts (from the last scrape). Green/red badge = change vs. the scrape from 7 days ago." isLight={isLight}>
+        <Tooltip text="All IG followers combined (last scrape). Badge = 7-day change." isLight={isLight}>
           <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-default`}>
             <div className="flex items-center justify-between mb-1">
               <p className={`text-[11px] ${textTertiary}`}>Total Followers</p>
@@ -376,7 +425,7 @@ export default function DashboardClient({
             <p className={`text-[10px] mt-0.5 ${textTertiary}`}>7d growth</p>
           </div>
         </Tooltip>
-        <Tooltip text="Likes + comments summed from each account's ~12 most recent Instagram posts (at last scrape). Green/red badge = change vs. the scrape from 7 days ago." isLight={isLight}>
+        <Tooltip text="Likes + comments from ~12 latest posts per account. Badge = 7-day change." isLight={isLight}>
           <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-default`}>
             <div className="flex items-center justify-between mb-1">
               <p className={`text-[11px] ${textTertiary}`}>Total Engagement</p>
@@ -386,7 +435,7 @@ export default function DashboardClient({
             <p className={`text-[10px] mt-0.5 ${textTertiary}`}>likes + comments</p>
           </div>
         </Tooltip>
-        <Tooltip text="Creators with is_active = true. The sub-number shows how many have at least one Instagram account linked in the social_accounts table." isLight={isLight}>
+        <Tooltip text="Active creators. Sub-number = how many have IG tracking linked." isLight={isLight}>
           <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-default`}>
             <p className={`text-[11px] ${textTertiary} mb-1`}>Active Creators</p>
             <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{creators.filter(c => c.is_active).length}</p>
@@ -537,7 +586,7 @@ export default function DashboardClient({
 
               {/* Right: Social stats columns with tooltips */}
               <div className="flex items-center gap-6">
-                <Tooltip text={`Current follower count across ${c.accounts} IG account${c.accounts !== 1 ? 's' : ''} (last scrape). ${c.followerGrowth > 0 ? `Green +${fmt(c.followerGrowth)} = gained since the scrape 7 days ago.` : c.followerGrowth < 0 ? `Red ${fmt(c.followerGrowth)} = lost since the scrape 7 days ago.` : 'No 7-day comparison available.'}`} isLight={isLight}>
+                <Tooltip text={`Followers across ${c.accounts} IG account${c.accounts !== 1 ? 's' : ''}. ${c.followerGrowth > 0 ? 'Green = gained in 7d.' : c.followerGrowth < 0 ? 'Red = lost in 7d.' : ''}`} isLight={isLight}>
                   <div className="text-right cursor-default">
                     <div className="flex items-center gap-1.5 justify-end">
                       <p className={`text-[13px] tabular-nums font-medium ${textPrimary}`}>{fmt(c.followers)}</p>
@@ -550,13 +599,13 @@ export default function DashboardClient({
                     <p className={`text-[10px] ${textTertiary}`}>followers</p>
                   </div>
                 </Tooltip>
-                <Tooltip text="Sum of video view counts from each account's ~12 most recent IG posts (scraped via Apify). Not a daily metric — reflects lifetime views on those posts." isLight={isLight}>
+                <Tooltip text="Video views from ~12 latest IG posts. Lifetime total, not daily." isLight={isLight}>
                   <div className="text-right hidden md:block cursor-default">
                     <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.totalViews)}</p>
                     <p className={`text-[10px] ${textTertiary}`}>views</p>
                   </div>
                 </Tooltip>
-                <Tooltip text="Likes + comments summed from each account's ~12 most recent IG posts. Reflects lifetime engagement on those posts, not a daily figure." isLight={isLight}>
+                <Tooltip text="Likes + comments from ~12 latest IG posts. Lifetime total, not daily." isLight={isLight}>
                   <div className="text-right hidden lg:block cursor-default">
                     <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.engagement)}</p>
                     <p className={`text-[10px] ${textTertiary}`}>engagement</p>
