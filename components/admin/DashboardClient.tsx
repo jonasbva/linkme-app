@@ -66,22 +66,60 @@ function GrowthBadge({ value, isLight }: { value: number; isLight: boolean }) {
   )
 }
 
-// ─── Tooltip ────────────────────────────────────────────────────────
+// ─── Tooltip (2s delay, auto-repositions to stay in viewport) ───────
 function Tooltip({ text, children, isLight }: { text: string; children: React.ReactNode; isLight: boolean }) {
-  const [show, setShow] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+  const wrapperRef = useRef<HTMLDivElement>(null)
+  const tipRef = useRef<HTMLDivElement>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [pos, setPos] = useState<{ x: number; side: 'top' | 'bottom' }>({ x: 0, side: 'top' })
+
+  function handleEnter() {
+    timerRef.current = setTimeout(() => {
+      setVisible(true)
+      // After rendering, check bounds and reposition
+      requestAnimationFrame(() => {
+        const tip = tipRef.current
+        const wrapper = wrapperRef.current
+        if (!tip || !wrapper) return
+        const tipRect = tip.getBoundingClientRect()
+        const wrapRect = wrapper.getBoundingClientRect()
+
+        // Horizontal: clamp so it doesn't go off-screen
+        let xOffset = 0
+        if (tipRect.left < 8) xOffset = 8 - tipRect.left
+        else if (tipRect.right > window.innerWidth - 8) xOffset = window.innerWidth - 8 - tipRect.right
+
+        // Vertical: if tooltip goes above viewport, flip to bottom
+        const side = tipRect.top < 8 ? 'bottom' : 'top'
+
+        setPos({ x: xOffset, side })
+      })
+    }, 2000)
+  }
+
+  function handleLeave() {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = null
+    setVisible(false)
+    setPos({ x: 0, side: 'top' })
+  }
 
   return (
     <div
       className="relative inline-block"
-      ref={ref}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
+      ref={wrapperRef}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
     >
       {children}
-      {show && (
+      {visible && (
         <div
-          className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-[11px] leading-snug whitespace-nowrap z-50 pointer-events-none ${
+          ref={tipRef}
+          style={{ transform: `translateX(calc(-50% + ${pos.x}px))`, maxWidth: 320 }}
+          className={`absolute left-1/2 z-50 px-3 py-2 rounded-lg text-[11px] leading-snug pointer-events-none whitespace-normal ${
+            pos.side === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+          } ${
             isLight
               ? 'bg-black text-white shadow-lg'
               : 'bg-white text-black shadow-lg shadow-black/40'
@@ -89,9 +127,9 @@ function Tooltip({ text, children, isLight }: { text: string; children: React.Re
         >
           {text}
           <div
-            className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 -mt-1 ${
-              isLight ? 'bg-black' : 'bg-white'
-            }`}
+            className={`absolute left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
+              pos.side === 'top' ? 'top-full -mt-1' : 'bottom-full -mb-1'
+            } ${isLight ? 'bg-black' : 'bg-white'}`}
           />
         </div>
       )}
@@ -163,7 +201,8 @@ export default function DashboardClient({
           if (!line.startsWith('data: ')) continue
           try {
             const data = JSON.parse(line.slice(6))
-            if (data.type === 'progress') setScrapeProgress({ index: data.index, total: data.total, username: data.username })
+            if (data.type === 'progress' || data.type === 'scraped') setScrapeProgress({ index: data.index, total: data.total, username: data.username })
+            if (data.type === 'start') setScrapeProgress({ index: 0, total: data.total, username: 'Starting...' })
             if (data.type === 'calculating') setScrapeProgress(prev => prev ? { ...prev, username: 'Calculating conversions...' } : null)
             if (data.type === 'done') {
               setScrapeResult({ success: data.success, errors: data.errors, total: data.total })
@@ -254,44 +293,62 @@ export default function DashboardClient({
       <div className="flex items-center justify-between">
         <h1 className={`text-xl font-semibold tracking-tight ${textPrimary}`}>Dashboard</h1>
         <div className="flex items-center gap-3">
-          {/* Scrape all button — super admin only */}
-          {isSuperAdmin && <button
-            onClick={scrapeAll}
-            disabled={scraping}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200 ${
-              scraping
-                ? isLight ? 'bg-blue-500/10 text-blue-600 border border-blue-500/15' : 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
-                : scrapeResult
-                  ? scrapeResult.errors > 0
-                    ? isLight ? 'bg-amber-500/10 text-amber-600 border border-amber-500/15' : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
-                    : isLight ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/15' : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                  : isLight
-                    ? 'bg-black/[0.04] text-black/50 border border-black/[0.08] hover:text-black/80 hover:bg-black/[0.06] hover:border-black/[0.12] hover:shadow-sm'
-                    : 'bg-white/[0.04] text-white/50 border border-white/[0.08] hover:text-white/80 hover:bg-white/[0.06] hover:border-white/[0.12] hover:shadow-sm'
-            }`}
-          >
-            {scraping ? (
-              <>
-                <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83" opacity="0.3" />
-                  <path d="M12 2v4" />
-                </svg>
-                {scrapeProgress
-                  ? `Scraping ${scrapeProgress.index}/${scrapeProgress.total} — @${scrapeProgress.username}`
-                  : 'Starting...'
-                }
-              </>
-            ) : scrapeResult ? (
-              `${scrapeResult.success}/${scrapeResult.total} scraped${scrapeResult.errors > 0 ? ` (${scrapeResult.errors} failed)` : ''}`
-            ) : (
-              <>
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                Scrape all accounts
-              </>
-            )}
-          </button>}
+          {/* Scrape all button with progress bar — super admin only */}
+          {isSuperAdmin && (
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                onClick={scrapeAll}
+                disabled={scraping}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-all duration-200 ${
+                  scraping
+                    ? isLight ? 'bg-blue-500/10 text-blue-600 border border-blue-500/15' : 'bg-blue-500/15 text-blue-400 border border-blue-500/20'
+                    : scrapeResult
+                      ? scrapeResult.errors > 0
+                        ? isLight ? 'bg-amber-500/10 text-amber-600 border border-amber-500/15' : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
+                        : isLight ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-500/15' : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
+                      : isLight
+                        ? 'bg-black/[0.04] text-black/50 border border-black/[0.08] hover:text-black/80 hover:bg-black/[0.06] hover:border-black/[0.12] hover:shadow-sm'
+                        : 'bg-white/[0.04] text-white/50 border border-white/[0.08] hover:text-white/80 hover:bg-white/[0.06] hover:border-white/[0.12] hover:shadow-sm'
+                }`}
+              >
+                {scraping ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.48-8.48l2.83-2.83M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.48 8.48l2.83 2.83" opacity="0.3" />
+                      <path d="M12 2v4" />
+                    </svg>
+                    {scrapeProgress
+                      ? `Scraping ${scrapeProgress.index}/${scrapeProgress.total} — @${scrapeProgress.username}`
+                      : 'Starting...'
+                    }
+                  </>
+                ) : scrapeResult ? (
+                  `${scrapeResult.success}/${scrapeResult.total} scraped${scrapeResult.errors > 0 ? ` (${scrapeResult.errors} failed)` : ''}`
+                ) : (
+                  <>
+                    <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Scrape all accounts
+                  </>
+                )}
+              </button>
+              {/* Progress bar — visible during scraping */}
+              {scraping && scrapeProgress && (
+                <div className="flex items-center gap-2 w-full">
+                  <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-black/[0.06]' : 'bg-white/[0.06]'}`}>
+                    <div
+                      className="h-full rounded-full bg-blue-500 transition-all duration-500 ease-out"
+                      style={{ width: `${Math.round((scrapeProgress.index / scrapeProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <span className={`text-[10px] tabular-nums ${isLight ? 'text-black/30' : 'text-white/30'}`}>
+                    {Math.round((scrapeProgress.index / scrapeProgress.total) * 100)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           {isSuperAdmin && <Link
             href="/admin/creators/new"
             className={`px-4 py-1.5 text-[12px] font-medium rounded-lg transition-all duration-200 hover:shadow-md ${
