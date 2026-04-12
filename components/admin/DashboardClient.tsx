@@ -176,71 +176,71 @@ export default function DashboardClient({
 
   // Scrape all state
   const [scraping, setScraping] = useState(false)
-  const [scrapeProgress, setScrapeProgress] = useState<{ index: number; total: number; username: string } | null>(null)
+  const [scrapeProgress, setScrapeProgress] = useState<{ completed: number; total: number; message: string } | null>(null)
   const [scrapeResult, setScrapeResult] = useState<{ success: number; errors: number; total: number } | null>(null)
-  const abortRef = useRef<AbortController | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   async function scrapeAll() {
     setScraping(true)
     setScrapeProgress(null)
     setScrapeResult(null)
-    let gotDone = false
-    const controller = new AbortController()
-    abortRef.current = controller
 
     try {
-      const res = await fetch('/api/admin/scrape-all', { method: 'POST', signal: controller.signal })
+      // POST starts the job, returns job ID immediately
+      const res = await fetch('/api/admin/scrape-all', { method: 'POST' })
       const reader = res.body?.getReader()
       if (!reader) { setScraping(false); return }
+
+      // Read just the first line (the JSON with jobId)
       const decoder = new TextDecoder()
       let buf = ''
-
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         buf += decoder.decode(value, { stream: true })
-        const lines = buf.split('\n')
-        buf = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const data = JSON.parse(line.slice(6))
-            // Ignore heartbeat pings — they just keep the connection alive
-            if (data.type === 'heartbeat') continue
-            if (data.type === 'progress' || data.type === 'scraped') setScrapeProgress({ index: data.index, total: data.total, username: data.username })
-            if (data.type === 'start') setScrapeProgress({ index: 0, total: data.total, username: 'Starting...' })
-            if (data.type === 'batch') setScrapeProgress(prev => {
-              const base = prev ?? { index: 0, total: 0, username: '' }
-              return { ...base, username: `Batch ${data.batchIndex}/${data.totalBatches} — fetching from Instagram...` }
-            })
-            if (data.type === 'calculating') setScrapeProgress(prev => {
-              const base = prev ?? { index: 0, total: 0, username: '' }
-              return { ...base, username: 'Calculating conversions...' }
-            })
-            if (data.type === 'done') {
-              gotDone = true
-              setScrapeResult({ success: data.success, errors: data.errors, total: data.total })
-              setScrapeProgress(null)
-              setScraping(false)
-            }
-          } catch {}
-        }
+        if (buf.includes('\n')) break
+      }
+      const firstLine = buf.split('\n')[0]
+      const { jobId, total } = JSON.parse(firstLine)
+
+      if (!jobId) {
+        setScraping(false)
+        setScrapeResult({ success: 0, errors: 0, total: 0 })
+        return
       }
 
-      // Stream closed cleanly without 'done' — shouldn't happen with heartbeats but handle gracefully
-      if (!gotDone) {
-        setScrapeResult({ success: 0, errors: 0, total: 0 })
-        setScrapeProgress(null)
-        setScraping(false)
-      }
+      setScrapeProgress({ completed: 0, total, message: 'Starting...' })
+
+      // Poll every 3 seconds for progress
+      pollRef.current = setInterval(async () => {
+        try {
+          const poll = await fetch(`/api/admin/scrape-all?jobId=${jobId}`)
+          const job = await poll.json()
+
+          setScrapeProgress({ completed: job.completed, total: job.total, message: job.message || '' })
+
+          if (job.status === 'done' || job.status === 'error') {
+            if (pollRef.current) clearInterval(pollRef.current)
+            pollRef.current = null
+            setScrapeResult({ success: job.success, errors: job.errors, total: job.total })
+            setScrapeProgress(null)
+            setScraping(false)
+          }
+        } catch {
+          // Poll failed — keep trying, don't kill the progress bar
+        }
+      }, 3000)
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        setScrapeResult({ success: 0, errors: 1, total: 0 })
-      }
+      setScrapeResult({ success: 0, errors: 1, total: 0 })
       setScrapeProgress(null)
       setScraping(false)
     }
   }
+
+  // Cleanup poll interval on unmount
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current) }
+  }, [])
 
   function toggleSort(key: SortKey) {
     if (sortKey === key) {
@@ -343,7 +343,7 @@ export default function DashboardClient({
                       <path d="M12 2v4" />
                     </svg>
                     {scrapeProgress
-                      ? `Scraping ${scrapeProgress.index}/${scrapeProgress.total} — @${scrapeProgress.username}`
+                      ? `Scraping ${scrapeProgress.completed}/${scrapeProgress.total} — ${scrapeProgress.message}`
                       : 'Starting...'
                     }
                   </>
@@ -364,11 +364,11 @@ export default function DashboardClient({
                   <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${isLight ? 'bg-black/[0.06]' : 'bg-white/[0.06]'}`}>
                     <div
                       className="h-full rounded-full bg-blue-500 transition-all duration-500 ease-out"
-                      style={{ width: `${Math.round((scrapeProgress.index / scrapeProgress.total) * 100)}%` }}
+                      style={{ width: `${scrapeProgress.total > 0 ? Math.round((scrapeProgress.completed / scrapeProgress.total) * 100) : 0}%` }}
                     />
                   </div>
                   <span className={`text-[10px] tabular-nums ${isLight ? 'text-black/30' : 'text-white/30'}`}>
-                    {Math.round((scrapeProgress.index / scrapeProgress.total) * 100)}%
+                    {scrapeProgress.total > 0 ? Math.round((scrapeProgress.completed / scrapeProgress.total) * 100) : 0}%
                   </span>
                 </div>
               )}
