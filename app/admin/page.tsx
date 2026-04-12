@@ -44,14 +44,15 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
       }
     }
 
-    // Get snapshots from ~7 days ago for growth calculation
+    // Get snapshots from ~7 days ago for growth calculation (use scrape_date index)
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+    const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0]
     const { data: oldSnaps } = await supabase
       .from('social_snapshots')
       .select('social_account_id, followers, total_views, total_likes, total_comments, scraped_at')
       .in('social_account_id', accountIds)
-      .lte('scraped_at', sevenDaysAgo.toISOString())
+      .lte('scrape_date', sevenDaysAgoStr)
       .order('scraped_at', { ascending: false })
       .limit(accountIds.length * 2)
 

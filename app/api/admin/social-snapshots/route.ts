@@ -2,9 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { getSessionUser } from '@/lib/auth'
 
+// Lightweight columns — everything except raw_data (which can be 50-100KB per row)
+const LIGHT_COLS = 'id, social_account_id, scraped_at, scrape_date, followers, following, post_count, total_views, total_likes, total_comments'
+
 // GET /api/admin/social-snapshots?creator_id=xxx&start=YYYY-MM-DD&end=YYYY-MM-DD
 // Returns for each social account: the snapshot closest to start and closest to end,
 // plus all snapshots in range for charting.
+// Only the end snapshot includes raw_data (for the post carousel).
 export async function GET(req: NextRequest) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -31,37 +35,35 @@ export async function GET(req: NextRequest) {
 
   const startDate = start || new Date().toISOString().split('T')[0]
   const endDate = end || new Date().toISOString().split('T')[0]
-  const startTs = startDate + 'T00:00:00.000Z'
-  const endTs = endDate + 'T23:59:59.999Z'
 
   const result = []
 
   for (const account of accounts) {
-    // Get the latest snapshot at or before the end date (the "current" value)
+    // End snapshot: full data (includes raw_data for post carousel)
     const { data: endSnaps } = await supabase
       .from('social_snapshots')
       .select('*')
       .eq('social_account_id', account.id)
-      .lte('scraped_at', endTs)
+      .lte('scrape_date', endDate)
       .order('scraped_at', { ascending: false })
       .limit(1)
 
-    // Get the latest snapshot at or before the start date (the "baseline" value)
+    // Start snapshot: lightweight (no raw_data needed, just numbers for delta calculation)
     const { data: startSnaps } = await supabase
       .from('social_snapshots')
-      .select('*')
+      .select(LIGHT_COLS)
       .eq('social_account_id', account.id)
-      .lte('scraped_at', startTs)
+      .lte('scrape_date', startDate)
       .order('scraped_at', { ascending: false })
       .limit(1)
 
-    // Get all snapshots in range for timeline/charting
+    // Range snapshots: lightweight (for charting)
     const { data: rangeSnaps } = await supabase
       .from('social_snapshots')
-      .select('id, scraped_at, followers, following, post_count, total_views, total_likes, total_comments')
+      .select(LIGHT_COLS)
       .eq('social_account_id', account.id)
-      .gte('scraped_at', startTs)
-      .lte('scraped_at', endTs)
+      .gte('scrape_date', startDate)
+      .lte('scrape_date', endDate)
       .order('scraped_at', { ascending: true })
 
     const endSnapshot = endSnaps?.[0] ?? null
@@ -88,18 +90,18 @@ export async function GET(req: NextRequest) {
   }
 
   for (const acc of result) {
-    const end = acc.snapshot
-    const start = acc.startSnapshot
-    totals.followers += end?.followers ?? 0
-    totals.views += end?.total_views ?? 0
-    totals.likes += end?.total_likes ?? 0
-    totals.comments += end?.total_comments ?? 0
+    const endSnap = acc.snapshot
+    const startSnap = acc.startSnapshot
+    totals.followers += endSnap?.followers ?? 0
+    totals.views += endSnap?.total_views ?? 0
+    totals.likes += endSnap?.total_likes ?? 0
+    totals.comments += endSnap?.total_comments ?? 0
 
-    if (start && end) {
-      totals.followersDelta += (end.followers ?? 0) - (start.followers ?? 0)
-      totals.viewsDelta += (end.total_views ?? 0) - (start.total_views ?? 0)
-      totals.likesDelta += (end.total_likes ?? 0) - (start.total_likes ?? 0)
-      totals.commentsDelta += (end.total_comments ?? 0) - (start.total_comments ?? 0)
+    if (startSnap && endSnap) {
+      totals.followersDelta += (endSnap.followers ?? 0) - (startSnap.followers ?? 0)
+      totals.viewsDelta += (endSnap.total_views ?? 0) - (startSnap.total_views ?? 0)
+      totals.likesDelta += (endSnap.total_likes ?? 0) - (startSnap.total_likes ?? 0)
+      totals.commentsDelta += (endSnap.total_comments ?? 0) - (startSnap.total_comments ?? 0)
     }
   }
 
