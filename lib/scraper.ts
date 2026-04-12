@@ -152,11 +152,13 @@ export async function scrapeSingleInstagram(username: string, retries = 2): Prom
  * Returns results for each account.
  *
  * @param accounts - Array of { id, username, creator_id, platform }
- * @param onProgress - Optional callback for progress updates
+ * @param onProgress - Fires after each individual account is processed
+ * @param onBatchStart - Fires when a new batch begins (for keepalive/UI updates)
  */
 export async function scrapeAndSaveAll(
   accounts: { id: string; username: string; creator_id: string; platform: string }[],
   onProgress?: (done: number, total: number, username: string, status: 'ok' | 'error', error?: string) => void,
+  onBatchStart?: (batchIndex: number, totalBatches: number, usernames: string[]) => void,
 ): Promise<ScrapeResult[]> {
   const supabase = createServerSupabaseClient()
   const igAccounts = accounts.filter(a => a.platform === 'instagram')
@@ -179,8 +181,12 @@ export async function scrapeAndSaveAll(
 
   let done = 0
 
-  for (const batch of batches) {
+  for (let bi = 0; bi < batches.length; bi++) {
+    const batch = batches[bi]
     const usernames = batch.map(a => a.username)
+
+    // Notify that a new batch is starting (keeps SSE alive during long Apify calls)
+    onBatchStart?.(bi + 1, batches.length, usernames)
 
     let batchResults: Map<string, ScrapeMetrics | { error: string }>
     try {

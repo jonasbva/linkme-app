@@ -66,44 +66,48 @@ function GrowthBadge({ value, isLight }: { value: number; isLight: boolean }) {
   )
 }
 
-// ─── Tooltip (2s delay, auto-repositions to stay in viewport) ───────
+// ─── Tooltip (2s delay, anchors left/right based on screen position) ─
 function Tooltip({ text, children, isLight }: { text: string; children: React.ReactNode; isLight: boolean }) {
   const [visible, setVisible] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
-  const tipRef = useRef<HTMLDivElement>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [pos, setPos] = useState<{ x: number; side: 'top' | 'bottom' }>({ x: 0, side: 'top' })
+  // 'center' default, switches to 'left' or 'right' based on screen position
+  const [anchor, setAnchor] = useState<'left' | 'center' | 'right'>('center')
+  const [side, setSide] = useState<'top' | 'bottom'>('top')
 
   function handleEnter() {
     timerRef.current = setTimeout(() => {
+      const wrapper = wrapperRef.current
+      if (wrapper) {
+        const rect = wrapper.getBoundingClientRect()
+        const midpoint = rect.left + rect.width / 2
+        // If element is in the right third of the screen, anchor tooltip to the right
+        if (midpoint > window.innerWidth * 0.65) setAnchor('right')
+        // If in the left third, anchor left
+        else if (midpoint < window.innerWidth * 0.35) setAnchor('left')
+        else setAnchor('center')
+        // Vertical: flip below if too close to top
+        setSide(rect.top < 60 ? 'bottom' : 'top')
+      }
       setVisible(true)
-      // After rendering, check bounds and reposition
-      requestAnimationFrame(() => {
-        const tip = tipRef.current
-        const wrapper = wrapperRef.current
-        if (!tip || !wrapper) return
-        const tipRect = tip.getBoundingClientRect()
-        const wrapRect = wrapper.getBoundingClientRect()
-
-        // Horizontal: clamp so it doesn't go off-screen
-        let xOffset = 0
-        if (tipRect.left < 8) xOffset = 8 - tipRect.left
-        else if (tipRect.right > window.innerWidth - 8) xOffset = window.innerWidth - 8 - tipRect.right
-
-        // Vertical: if tooltip goes above viewport, flip to bottom
-        const side = tipRect.top < 8 ? 'bottom' : 'top'
-
-        setPos({ x: xOffset, side })
-      })
-    }, 2000)
+    }, 1000)
   }
 
   function handleLeave() {
     if (timerRef.current) clearTimeout(timerRef.current)
     timerRef.current = null
     setVisible(false)
-    setPos({ x: 0, side: 'top' })
   }
+
+  const anchorCls =
+    anchor === 'right' ? 'right-0' :
+    anchor === 'left' ? 'left-0' :
+    'left-1/2 -translate-x-1/2'
+
+  const arrowCls =
+    anchor === 'right' ? 'right-4' :
+    anchor === 'left' ? 'left-4' :
+    'left-1/2 -translate-x-1/2'
 
   return (
     <div
@@ -115,20 +119,19 @@ function Tooltip({ text, children, isLight }: { text: string; children: React.Re
       {children}
       {visible && (
         <div
-          ref={tipRef}
-          style={{ transform: `translateX(calc(-50% + ${pos.x}px))`, maxWidth: 320 }}
-          className={`absolute left-1/2 z-50 px-3 py-2 rounded-lg text-[11px] leading-snug pointer-events-none whitespace-normal ${
-            pos.side === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
+          style={{ width: 280 }}
+          className={`absolute z-50 px-3 py-2 rounded-lg text-[11px] leading-relaxed pointer-events-none ${anchorCls} ${
+            side === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
           } ${
             isLight
               ? 'bg-black text-white shadow-lg'
               : 'bg-white text-black shadow-lg shadow-black/40'
           }`}
         >
-          {text}
+          <span className="line-clamp-2">{text}</span>
           <div
-            className={`absolute left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 ${
-              pos.side === 'top' ? 'top-full -mt-1' : 'bottom-full -mb-1'
+            className={`absolute ${arrowCls} w-2 h-2 rotate-45 ${
+              side === 'top' ? 'top-full -mt-1' : 'bottom-full -mb-1'
             } ${isLight ? 'bg-black' : 'bg-white'}`}
           />
         </div>
@@ -203,6 +206,7 @@ export default function DashboardClient({
             const data = JSON.parse(line.slice(6))
             if (data.type === 'progress' || data.type === 'scraped') setScrapeProgress({ index: data.index, total: data.total, username: data.username })
             if (data.type === 'start') setScrapeProgress({ index: 0, total: data.total, username: 'Starting...' })
+            if (data.type === 'batch') setScrapeProgress(prev => prev ? { ...prev, username: `Batch ${data.batchIndex}/${data.totalBatches} — fetching from Instagram...` } : null)
             if (data.type === 'calculating') setScrapeProgress(prev => prev ? { ...prev, username: 'Calculating conversions...' } : null)
             if (data.type === 'done') {
               setScrapeResult({ success: data.success, errors: data.errors, total: data.total })
