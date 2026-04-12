@@ -66,6 +66,42 @@ function GrowthBadge({ value, isLight }: { value: number; isLight: boolean }) {
   )
 }
 
+// ─── Tooltip ────────────────────────────────────────────────────────
+function Tooltip({ text, children, isLight }: { text: string; children: React.ReactNode; isLight: boolean }) {
+  const [show, setShow] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  return (
+    <div
+      className="relative inline-block"
+      ref={ref}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {show && (
+        <div
+          className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-[11px] leading-snug whitespace-nowrap z-50 pointer-events-none ${
+            isLight
+              ? 'bg-black text-white shadow-lg'
+              : 'bg-white text-black shadow-lg shadow-black/40'
+          }`}
+        >
+          {text}
+          <div
+            className={`absolute top-full left-1/2 -translate-x-1/2 w-2 h-2 rotate-45 -mt-1 ${
+              isLight ? 'bg-black' : 'bg-white'
+            }`}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+type SortKey = 'name' | 'followers' | 'views' | 'engagement'
+type SortDir = 'asc' | 'desc'
+
 export default function DashboardClient({
   creatorStats: initialStats,
   totalFollowers,
@@ -84,7 +120,6 @@ export default function DashboardClient({
   function hasPermission(creatorId: string, permission: string): boolean {
     if (isSuperAdmin) return true
     if (!userPermissions) return false
-    // Check creator-specific permissions or global all-creators permissions
     return (userPermissions[creatorId]?.includes(permission) ?? false)
       || (userPermissions['__all__']?.includes(permission) ?? false)
   }
@@ -94,32 +129,15 @@ export default function DashboardClient({
   const [filterTag, setFilterTag] = useState<string>('all')
   const [search, setSearch] = useState('')
 
-  // Revenue today
-  const [revenueToday, setRevenueToday] = useState<number | null>(null)
-  const [revenueLoading, setRevenueLoading] = useState(true)
+  // Sort state
+  const [sortKey, setSortKey] = useState<SortKey>('followers')
+  const [sortDir, setSortDir] = useState<SortDir>('desc')
 
   // Scrape all state
   const [scraping, setScraping] = useState(false)
   const [scrapeProgress, setScrapeProgress] = useState<{ index: number; total: number; username: string } | null>(null)
   const [scrapeResult, setScrapeResult] = useState<{ success: number; errors: number; total: number } | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-
-  // Fetch revenue today from cache
-  useEffect(() => {
-    async function fetchRevenue() {
-      try {
-        const res = await fetch('/api/admin/revenue/cache?key=today')
-        if (res.ok) {
-          const data = await res.json()
-          setRevenueToday(data?.totals?.totalTurnover ?? null)
-        }
-      } catch {
-      } finally {
-        setRevenueLoading(false)
-      }
-    }
-    fetchRevenue()
-  }, [])
 
   async function scrapeAll() {
     setScraping(true)
@@ -160,8 +178,17 @@ export default function DashboardClient({
     setScraping(false)
   }
 
+  function toggleSort(key: SortKey) {
+    if (sortKey === key) {
+      setSortDir(prev => prev === 'desc' ? 'asc' : 'desc')
+    } else {
+      setSortKey(key)
+      setSortDir(key === 'name' ? 'asc' : 'desc')
+    }
+  }
+
   const filtered = useMemo(() => {
-    let list = creators
+    let list = [...creators]
     if (filterTag !== 'all') {
       list = list.filter(c => c.tagIds.includes(filterTag))
     }
@@ -172,8 +199,19 @@ export default function DashboardClient({
         c.slug.toLowerCase().includes(q)
       )
     }
+    // Sort
+    list.sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'name': cmp = a.display_name.localeCompare(b.display_name); break
+        case 'followers': cmp = a.followers - b.followers; break
+        case 'views': cmp = a.totalViews - b.totalViews; break
+        case 'engagement': cmp = a.engagement - b.engagement; break
+      }
+      return sortDir === 'desc' ? -cmp : cmp
+    })
     return list
-  }, [creators, filterTag, search])
+  }, [creators, filterTag, search, sortKey, sortDir])
 
   async function deleteCreator(id: string, name: string) {
     if (!confirm(`Delete "${name}"? This removes all their links, clicks, and data permanently.`)) return
@@ -195,6 +233,21 @@ export default function DashboardClient({
   const textPrimary = isLight ? 'text-black/90' : 'text-white/95'
   const textSecondary = isLight ? 'text-black/50' : 'text-white/60'
   const textTertiary = isLight ? 'text-black/30' : 'text-white/40'
+
+  // Sort button style helper
+  function sortBtnCls(key: SortKey) {
+    const active = sortKey === key
+    return `px-2 py-0.5 text-[10px] font-medium rounded transition-all duration-150 cursor-pointer select-none ${
+      active
+        ? isLight ? 'text-black/70 bg-black/[0.06]' : 'text-white/70 bg-white/[0.08]'
+        : isLight ? 'text-black/25 hover:text-black/50' : 'text-white/25 hover:text-white/50'
+    }`
+  }
+
+  function sortArrow(key: SortKey) {
+    if (sortKey !== key) return ''
+    return sortDir === 'desc' ? ' ↓' : ' ↑'
+  }
 
   return (
     <div className="space-y-8">
@@ -250,76 +303,87 @@ export default function DashboardClient({
         </div>
       </div>
 
-      {/* Social Media Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
-          <p className={`text-[11px] ${textTertiary} mb-1`}>Revenue today</p>
-          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>
-            {revenueLoading ? '...' : revenueToday !== null ? `$${revenueToday.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}` : 'N/A'}
-          </p>
-        </div>
-        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
-          <div className="flex items-center justify-between mb-1">
-            <p className={`text-[11px] ${textTertiary}`}>Total Followers</p>
-            <GrowthBadge value={followerGrowth7d} isLight={isLight} />
+      {/* Stats Cards — no revenue card */}
+      <div className="grid grid-cols-3 gap-4">
+        <Tooltip text="Sum of all Instagram followers across every tracked account. Growth badge shows 7-day change." isLight={isLight}>
+          <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-default`}>
+            <div className="flex items-center justify-between mb-1">
+              <p className={`text-[11px] ${textTertiary}`}>Total Followers</p>
+              <GrowthBadge value={followerGrowth7d} isLight={isLight} />
+            </div>
+            <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{fmt(totalFollowers)}</p>
+            <p className={`text-[10px] mt-0.5 ${textTertiary}`}>7d growth</p>
           </div>
-          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{fmt(totalFollowers)}</p>
-          <p className={`text-[10px] mt-0.5 ${textTertiary}`}>7d growth</p>
-        </div>
-        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
-          <div className="flex items-center justify-between mb-1">
-            <p className={`text-[11px] ${textTertiary}`}>Total Engagement</p>
-            <GrowthBadge value={engagementGrowth7d} isLight={isLight} />
+        </Tooltip>
+        <Tooltip text="Total likes + comments from the latest scrape of every tracked Instagram account. Growth badge shows 7-day change." isLight={isLight}>
+          <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-default`}>
+            <div className="flex items-center justify-between mb-1">
+              <p className={`text-[11px] ${textTertiary}`}>Total Engagement</p>
+              <GrowthBadge value={engagementGrowth7d} isLight={isLight} />
+            </div>
+            <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{fmt(totalEngagement)}</p>
+            <p className={`text-[10px] mt-0.5 ${textTertiary}`}>likes + comments</p>
           </div>
-          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{fmt(totalEngagement)}</p>
-          <p className={`text-[10px] mt-0.5 ${textTertiary}`}>likes + comments</p>
-        </div>
-        <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg`}>
-          <p className={`text-[11px] ${textTertiary} mb-1`}>Active Creators</p>
-          <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{creators.filter(c => c.is_active).length}</p>
-          <p className={`text-[10px] mt-0.5 ${textTertiary}`}>{creators.filter(c => c.accounts > 0).length} with social tracking</p>
-        </div>
+        </Tooltip>
+        <Tooltip text="Number of active creator profiles. Shows how many have at least one social account linked for tracking." isLight={isLight}>
+          <div className={`${cardCls} rounded-xl p-4 transition-all duration-200 hover:scale-[1.02] hover:shadow-lg cursor-default`}>
+            <p className={`text-[11px] ${textTertiary} mb-1`}>Active Creators</p>
+            <p className={`text-xl font-semibold tracking-tight ${textPrimary}`}>{creators.filter(c => c.is_active).length}</p>
+            <p className={`text-[10px] mt-0.5 ${textTertiary}`}>{creators.filter(c => c.accounts > 0).length} with social tracking</p>
+          </div>
+        </Tooltip>
       </div>
 
-      {/* Filter bar */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <input
-          type="text"
-          placeholder="Search creators..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className={`rounded-lg px-3 py-1.5 text-[13px] outline-none w-48 transition-all duration-200 ${
-            isLight
-              ? 'bg-white border border-black/10 text-black/80 placeholder:text-black/25 focus:border-black/30 focus:shadow-sm'
-              : 'bg-white/[0.04] border border-white/[0.08] text-white/80 placeholder-white/25 focus:border-white/20 focus:shadow-sm'
-          }`}
-        />
-        <div className="flex gap-1.5 flex-wrap">
-          <button
-            onClick={() => setFilterTag('all')}
-            className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 ${
-              filterTag === 'all'
-                ? isLight ? 'bg-black/[0.08] text-black/70' : 'bg-white/[0.12] text-white/80'
-                : isLight ? 'bg-black/[0.03] text-black/30 hover:text-black/50 hover:bg-black/[0.05]' : 'bg-white/[0.04] text-white/30 hover:text-white/50 hover:bg-white/[0.06]'
+      {/* Filter bar + Sort controls */}
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <input
+            type="text"
+            placeholder="Search creators..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className={`rounded-lg px-3 py-1.5 text-[13px] outline-none w-48 transition-all duration-200 ${
+              isLight
+                ? 'bg-white border border-black/10 text-black/80 placeholder:text-black/25 focus:border-black/30 focus:shadow-sm'
+                : 'bg-white/[0.04] border border-white/[0.08] text-white/80 placeholder-white/25 focus:border-white/20 focus:shadow-sm'
             }`}
-          >
-            All
-          </button>
-          {tags.map(tag => (
+          />
+          <div className="flex gap-1.5 flex-wrap">
             <button
-              key={tag.id}
-              onClick={() => setFilterTag(filterTag === tag.id ? 'all' : tag.id)}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 border ${
-                filterTag === tag.id ? 'border-current' : 'border-transparent'
+              onClick={() => setFilterTag('all')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 ${
+                filterTag === 'all'
+                  ? isLight ? 'bg-black/[0.08] text-black/70' : 'bg-white/[0.12] text-white/80'
+                  : isLight ? 'bg-black/[0.03] text-black/30 hover:text-black/50 hover:bg-black/[0.05]' : 'bg-white/[0.04] text-white/30 hover:text-white/50 hover:bg-white/[0.06]'
               }`}
-              style={{
-                color: tag.color,
-                backgroundColor: filterTag === tag.id ? tag.color + '20' : tag.color + '10',
-              }}
             >
-              {tag.name}
+              All
             </button>
-          ))}
+            {tags.map(tag => (
+              <button
+                key={tag.id}
+                onClick={() => setFilterTag(filterTag === tag.id ? 'all' : tag.id)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-200 border ${
+                  filterTag === tag.id ? 'border-current' : 'border-transparent'
+                }`}
+                style={{
+                  color: tag.color,
+                  backgroundColor: filterTag === tag.id ? tag.color + '20' : tag.color + '10',
+                }}
+              >
+                {tag.name}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Sort buttons */}
+        <div className="flex items-center gap-1">
+          <span className={`text-[10px] mr-1 ${textTertiary}`}>Sort:</span>
+          <button onClick={() => toggleSort('name')} className={sortBtnCls('name')}>Name{sortArrow('name')}</button>
+          <button onClick={() => toggleSort('followers')} className={sortBtnCls('followers')}>Followers{sortArrow('followers')}</button>
+          <button onClick={() => toggleSort('views')} className={sortBtnCls('views')}>Views{sortArrow('views')}</button>
+          <button onClick={() => toggleSort('engagement')} className={sortBtnCls('engagement')}>Engagement{sortArrow('engagement')}</button>
         </div>
       </div>
 
@@ -336,7 +400,8 @@ export default function DashboardClient({
                   : 'bg-white/[0.05] border border-white/[0.08] hover:border-white/[0.14] hover:bg-white/[0.07] hover:shadow-sm hover:shadow-white/[0.02]'
               }`}
             >
-              <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 flex-1 min-w-0">
+              {/* Left: Avatar + name */}
+              <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 min-w-0 flex-shrink-0" style={{ width: '220px' }}>
                 {c.avatar_url ? (
                   <img src={c.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-transparent group-hover:ring-white/10 transition-all duration-200" />
                 ) : (
@@ -375,31 +440,8 @@ export default function DashboardClient({
                 </div>
               </Link>
 
-              {/* Social stats columns */}
-              <div className="flex items-center gap-6 mr-4">
-                <div className="text-right">
-                  <div className="flex items-center gap-1.5 justify-end">
-                    <p className={`text-[13px] tabular-nums font-medium ${textPrimary}`}>{fmt(c.followers)}</p>
-                    {c.followerGrowth !== 0 && (
-                      <span className={`text-[10px] tabular-nums ${c.followerGrowth > 0 ? 'text-emerald-500' : 'text-red-400'}`}>
-                        {c.followerGrowth > 0 ? '+' : ''}{fmt(c.followerGrowth)}
-                      </span>
-                    )}
-                  </div>
-                  <p className={`text-[10px] ${textTertiary}`}>followers</p>
-                </div>
-                <div className="text-right hidden md:block">
-                  <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.totalViews)}</p>
-                  <p className={`text-[10px] ${textTertiary}`}>views</p>
-                </div>
-                <div className="text-right hidden lg:block">
-                  <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.engagement)}</p>
-                  <p className={`text-[10px] ${textTertiary}`}>engagement</p>
-                </div>
-              </div>
-
-              {/* Creator action buttons — visible on hover */}
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all duration-200">
+              {/* Middle: Action buttons — always visible, left of stats */}
+              <div className="flex items-center gap-1 flex-shrink-0">
                 {hasPermission(c.id, 'view_social') && (
                   <Link
                     href={`/admin/creators/${c.id}/analysis`}
@@ -430,6 +472,35 @@ export default function DashboardClient({
                     Conversions
                   </Link>
                 )}
+              </div>
+
+              {/* Right: Social stats columns with tooltips */}
+              <div className="flex items-center gap-6">
+                <Tooltip text={`Total Instagram followers across ${c.accounts} account${c.accounts !== 1 ? 's' : ''}. ${c.followerGrowth > 0 ? 'Green = gained followers in last 7 days.' : c.followerGrowth < 0 ? 'Red = lost followers in last 7 days.' : ''}`} isLight={isLight}>
+                  <div className="text-right cursor-default">
+                    <div className="flex items-center gap-1.5 justify-end">
+                      <p className={`text-[13px] tabular-nums font-medium ${textPrimary}`}>{fmt(c.followers)}</p>
+                      {c.followerGrowth !== 0 && (
+                        <span className={`text-[10px] tabular-nums ${c.followerGrowth > 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                          {c.followerGrowth > 0 ? '+' : ''}{fmt(c.followerGrowth)}
+                        </span>
+                      )}
+                    </div>
+                    <p className={`text-[10px] ${textTertiary}`}>followers</p>
+                  </div>
+                </Tooltip>
+                <Tooltip text="Total video views from latest posts across all tracked Instagram accounts." isLight={isLight}>
+                  <div className="text-right hidden md:block cursor-default">
+                    <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.totalViews)}</p>
+                    <p className={`text-[10px] ${textTertiary}`}>views</p>
+                  </div>
+                </Tooltip>
+                <Tooltip text="Likes + comments from latest posts. Higher engagement = better content performance." isLight={isLight}>
+                  <div className="text-right hidden lg:block cursor-default">
+                    <p className={`text-[13px] tabular-nums ${textSecondary}`}>{fmt(c.engagement)}</p>
+                    <p className={`text-[10px] ${textTertiary}`}>engagement</p>
+                  </div>
+                </Tooltip>
               </div>
             </div>
           )
