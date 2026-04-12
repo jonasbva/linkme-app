@@ -361,7 +361,7 @@ function AccountSection({
           </div>
           {snap?.scraped_at && (
             <p className={`text-[11px] mt-0.5 ${textMuted}`}>
-              Last scraped {new Date(snap.scraped_at).toLocaleString()}
+              Last scraped {(() => { try { const d = new Date(snap.scraped_at); return isNaN(d.getTime()) ? 'N/A' : d.toLocaleString() } catch { return 'N/A' } })()}
             </p>
           )}
         </div>

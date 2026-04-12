@@ -13,6 +13,18 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 const APIFY_TOKEN = process.env.APIFY_API_TOKEN
 const BATCH_SIZE = 15 // Max usernames per Apify call to avoid timeout
 
+/** Safely convert a unix timestamp (seconds) to ISO string, returns null if invalid */
+function safeTimestamp(ts: any): string | null {
+  if (!ts || typeof ts !== 'number') return null
+  try {
+    const d = new Date(ts * 1000)
+    if (isNaN(d.getTime())) return null
+    return d.toISOString()
+  } catch {
+    return null
+  }
+}
+
 export interface ScrapeMetrics {
   username: string
   followers: number | null
@@ -157,8 +169,8 @@ export async function scrapeSingleInstagram(username: string, retries = 2): Prom
  */
 export async function scrapeAndSaveAll(
   accounts: { id: string; username: string; creator_id: string; platform: string }[],
-  onProgress?: (done: number, total: number, username: string, status: 'ok' | 'error', error?: string) => void,
-  onBatchStart?: (batchIndex: number, totalBatches: number, usernames: string[]) => void,
+  onProgress?: (done: number, total: number, username: string, status: 'ok' | 'error', error?: string) => void | Promise<void>,
+  onBatchStart?: (batchIndex: number, totalBatches: number, usernames: string[]) => void | Promise<void>,
 ): Promise<ScrapeResult[]> {
   const supabase = createServerSupabaseClient()
   const igAccounts = accounts.filter(a => a.platform === 'instagram')
@@ -185,8 +197,8 @@ export async function scrapeAndSaveAll(
     const batch = batches[bi]
     const usernames = batch.map(a => a.username)
 
-    // Notify that a new batch is starting (keeps SSE alive during long Apify calls)
-    onBatchStart?.(bi + 1, batches.length, usernames)
+    // Notify that a new batch is starting
+    await onBatchStart?.(bi + 1, batches.length, usernames)
 
     let batchResults: Map<string, ScrapeMetrics | { error: string }>
     try {
@@ -202,7 +214,7 @@ export async function scrapeAndSaveAll(
           hint: 'Batch request failed — try again later',
         }
         results.push(result)
-        onProgress?.(done, igAccounts.length, account.username, 'error', err.message)
+        await onProgress?.(done, igAccounts.length, account.username, 'error', err.message)
       }
       continue
     }
@@ -222,7 +234,7 @@ export async function scrapeAndSaveAll(
               : errorMsg.includes('No data') ? 'No data returned — check if the Instagram handle exists'
               : 'Scraping failed — try again or verify the username',
         })
-        onProgress?.(done, igAccounts.length, account.username, 'error', errorMsg)
+        await onProgress?.(done, igAccounts.length, account.username, 'error', errorMsg)
         continue
       }
 
@@ -244,7 +256,7 @@ export async function scrapeAndSaveAll(
 
       if (snapErr) {
         results.push({ username: account.username, status: 'error', error: snapErr.message })
-        onProgress?.(done, igAccounts.length, account.username, 'error', snapErr.message)
+        await onProgress?.(done, igAccounts.length, account.username, 'error', snapErr.message)
         continue
       }
 
@@ -260,7 +272,7 @@ export async function scrapeAndSaveAll(
             post_type: post.type ?? null,
             caption: (post.caption ?? '').slice(0, 2000),
             display_url: post.displayUrl ?? null,
-            post_timestamp: post.timestamp ? new Date(post.timestamp * 1000).toISOString() : null,
+            post_timestamp: safeTimestamp(post.timestamp),
             video_view_count: post.videoViewCount ?? 0,
             likes_count: post.likesCount ?? 0,
             comments_count: post.commentsCount ?? 0,
@@ -274,7 +286,7 @@ export async function scrapeAndSaveAll(
       }
 
       results.push({ username: account.username, status: 'ok', metrics: scraped })
-      onProgress?.(done, igAccounts.length, account.username, 'ok')
+      await onProgress?.(done, igAccounts.length, account.username, 'ok')
     }
   }
 

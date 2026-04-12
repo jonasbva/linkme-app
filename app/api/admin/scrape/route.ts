@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
           post_type: post.type ?? null,
           caption: (post.caption ?? '').slice(0, 2000),
           display_url: post.displayUrl ?? null,
-          post_timestamp: post.timestamp ? new Date(post.timestamp * 1000).toISOString() : null,
+          post_timestamp: post.timestamp && typeof post.timestamp === 'number' && !isNaN(new Date(post.timestamp * 1000).getTime()) ? new Date(post.timestamp * 1000).toISOString() : null,
           video_view_count: post.videoViewCount ?? 0,
           likes_count: post.likesCount ?? 0,
           comments_count: post.commentsCount ?? 0,

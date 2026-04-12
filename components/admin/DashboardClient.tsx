@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
 
@@ -154,6 +155,7 @@ export default function DashboardClient({
   isSuperAdmin,
   userPermissions,
 }: Props) {
+  const router = useRouter()
   const { resolved } = useTheme()
   const isLight = resolved === 'light'
 
@@ -182,59 +184,48 @@ export default function DashboardClient({
 
   async function scrapeAll() {
     setScraping(true)
-    setScrapeProgress(null)
+    setScrapeProgress({ completed: 0, total: 0, message: 'Starting...' })
     setScrapeResult(null)
 
-    try {
-      // POST starts the job, returns job ID immediately
-      const res = await fetch('/api/admin/scrape-all', { method: 'POST' })
-      const reader = res.body?.getReader()
-      if (!reader) { setScraping(false); return }
+    // Generate job ID client-side so we can start polling immediately
+    const jobId = crypto.randomUUID()
 
-      // Read just the first line (the JSON with jobId)
-      const decoder = new TextDecoder()
-      let buf = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += decoder.decode(value, { stream: true })
-        if (buf.includes('\n')) break
-      }
-      const firstLine = buf.split('\n')[0]
-      const { jobId, total } = JSON.parse(firstLine)
+    // Fire-and-forget: POST runs the full scrape (stays alive on Vercel up to 5 min)
+    // We don't await or read the response — just let it run
+    fetch('/api/admin/scrape-all', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jobId }),
+    }).catch(() => {})
 
-      if (!jobId) {
-        setScraping(false)
-        setScrapeResult({ success: 0, errors: 0, total: 0 })
-        return
-      }
+    // Poll every 3 seconds for progress
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/admin/scrape-all?jobId=${jobId}`)
+        const job = await res.json()
 
-      setScrapeProgress({ completed: 0, total, message: 'Starting...' })
+        // 'pending' means job row doesn't exist yet — keep waiting
+        if (job.status === 'pending') return
 
-      // Poll every 3 seconds for progress
-      pollRef.current = setInterval(async () => {
-        try {
-          const poll = await fetch(`/api/admin/scrape-all?jobId=${jobId}`)
-          const job = await poll.json()
+        setScrapeProgress({
+          completed: job.completed ?? 0,
+          total: job.total ?? 0,
+          message: job.message || 'Working...',
+        })
 
-          setScrapeProgress({ completed: job.completed, total: job.total, message: job.message || '' })
-
-          if (job.status === 'done' || job.status === 'error') {
-            if (pollRef.current) clearInterval(pollRef.current)
-            pollRef.current = null
-            setScrapeResult({ success: job.success, errors: job.errors, total: job.total })
-            setScrapeProgress(null)
-            setScraping(false)
-          }
-        } catch {
-          // Poll failed — keep trying, don't kill the progress bar
+        if (job.status === 'done' || job.status === 'error') {
+          if (pollRef.current) clearInterval(pollRef.current)
+          pollRef.current = null
+          setScrapeResult({ success: job.success ?? 0, errors: job.errors ?? 0, total: job.total ?? 0 })
+          setScrapeProgress(null)
+          setScraping(false)
+          // Refresh server data so dashboard stats update
+          router.refresh()
         }
-      }, 3000)
-    } catch (err: any) {
-      setScrapeResult({ success: 0, errors: 1, total: 0 })
-      setScrapeProgress(null)
-      setScraping(false)
-    }
+      } catch {
+        // Poll failed (network blip) — keep trying
+      }
+    }, 3000)
   }
 
   // Cleanup poll interval on unmount
