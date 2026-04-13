@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect, Dispatch, SetStateAction } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useTheme } from './ThemeProvider'
+import DateRangePicker from './DateRangePicker'
 
 interface Creator {
   id: string
@@ -555,54 +556,9 @@ function ConversionTableTab({
   })
   const [dateEnd, setDateEnd] = useState<Date>(new Date())
   const [dateLabel, setDateLabel] = useState('Last 30 days')
-  const [showDatePicker, setShowDatePicker] = useState(false)
-  const [customStart, setCustomStart] = useState('')
-  const [customEnd, setCustomEnd] = useState('')
-  const datePickerRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (datePickerRef.current && !datePickerRef.current.contains(e.target as Node)) {
-        setShowDatePicker(false)
-      }
-    }
-    if (showDatePicker) document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showDatePicker])
-
-  function applyPreset(label: string, start: Date, end: Date) {
-    setDateStart(start); setDateEnd(end); setDateLabel(label); setShowDatePicker(false)
+  function handleDateApply(label: string, start: Date, end: Date) {
+    setDateStart(start); setDateEnd(end); setDateLabel(label)
   }
-
-  function applyCustomRange() {
-    if (!customStart || !customEnd) return
-    const s = new Date(customStart + 'T00:00:00')
-    const e = new Date(customEnd + 'T23:59:59')
-    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return
-    setDateStart(s); setDateEnd(e)
-    setDateLabel(`${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`)
-    setShowDatePicker(false)
-  }
-
-  function selectMonth(offset: number) {
-    const now = new Date()
-    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1)
-    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
-    const label = d.toLocaleDateString('en-US', { month: 'long', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
-    applyPreset(label, d, end)
-  }
-
-  const monthOptions = useMemo(() => {
-    const now = new Date()
-    return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      return {
-        offset: i,
-        label: d.toLocaleDateString('en-US', { month: 'short' }),
-        fullLabel: d.toLocaleDateString('en-US', { month: 'long', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined }),
-      }
-    })
-  }, [])
 
   const target = useMemo(() => {
     return expectations.find(e => e.creator_id === selectedCreator)?.daily_sub_target || 0
@@ -752,91 +708,13 @@ function ConversionTableTab({
         </div>
 
         {/* Date range picker */}
-        <div className="relative" ref={datePickerRef}>
-          <button
-            onClick={() => setShowDatePicker(!showDatePicker)}
-            className={`flex items-center gap-2 border rounded-lg px-3 py-1.5 text-[13px] transition-colors ${
-              isLight
-                ? 'bg-black/[0.03] border-black/[0.1] text-black/60 hover:text-black/80 hover:border-black/[0.2]'
-                : 'bg-white/[0.04] border-white/[0.08] text-white/60 hover:text-white/80 hover:border-white/[0.12]'
-            }`}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-            </svg>
-            {dateLabel}
-          </button>
-
-          {showDatePicker && (
-            <div className={`absolute top-full mt-2 left-0 z-50 border rounded-xl p-4 shadow-2xl min-w-[300px] ${
-              isLight ? 'bg-white border-black/[0.1]' : 'bg-[#111] border-white/[0.1]'
-            }`}>
-              {/* Presets */}
-              <div className="grid grid-cols-2 gap-1.5 mb-3">
-                {[
-                  { label: 'Today', start: new Date(new Date().setHours(0,0,0,0)), end: new Date() },
-                  { label: 'Yesterday', start: (() => { const d = new Date(); d.setDate(d.getDate()-1); d.setHours(0,0,0,0); return d })(), end: (() => { const d = new Date(); d.setDate(d.getDate()-1); d.setHours(23,59,59); return d })() },
-                  { label: 'Last 7 days', start: (() => { const d = new Date(); d.setDate(d.getDate()-7); return d })(), end: new Date() },
-                  { label: 'Last 30 days', start: (() => { const d = new Date(); d.setDate(d.getDate()-30); return d })(), end: new Date() },
-                ].map(p => (
-                  <button
-                    key={p.label}
-                    onClick={() => applyPreset(p.label, p.start, p.end)}
-                    className={`px-3 py-1.5 text-[12px] rounded-md transition-colors text-left ${
-                      isLight
-                        ? 'text-black/50 hover:text-black/80 hover:bg-black/[0.04]'
-                        : 'text-white/50 hover:text-white/80 hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Month grid */}
-              <div className={`border-t pt-3 mb-3 ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-                <p className={`text-[11px] mb-2 ${isLight ? 'text-black/25' : 'text-white/25'}`}>Months</p>
-                <div className="grid grid-cols-4 gap-1">
-                  {monthOptions.map(m => (
-                    <button
-                      key={m.offset}
-                      onClick={() => selectMonth(m.offset)}
-                      className={`px-2 py-1.5 text-[11px] rounded transition-colors ${
-                        isLight
-                          ? 'text-black/40 hover:text-black/80 hover:bg-black/[0.04]'
-                          : 'text-white/40 hover:text-white/80 hover:bg-white/[0.06]'
-                      }`}
-                    >
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Custom range */}
-              <div className={`border-t pt-3 ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-                <p className={`text-[11px] mb-2 ${isLight ? 'text-black/25' : 'text-white/25'}`}>Custom range</p>
-                <div className="flex gap-2 items-center">
-                  <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)}
-                    className={`flex-1 border rounded px-2 py-1 text-[11px] outline-none ${
-                      isLight ? 'bg-black/[0.03] border-black/[0.08] text-black/60' : 'bg-white/[0.04] border-white/[0.08] text-white/60'
-                    }`} />
-                  <span className={`text-[11px] ${isLight ? 'text-black/20' : 'text-white/20'}`}>to</span>
-                  <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)}
-                    className={`flex-1 border rounded px-2 py-1 text-[11px] outline-none ${
-                      isLight ? 'bg-black/[0.03] border-black/[0.08] text-black/60' : 'bg-white/[0.04] border-white/[0.08] text-white/60'
-                    }`} />
-                  <button onClick={applyCustomRange}
-                    className={`px-2 py-1 text-[11px] rounded ${
-                      isLight ? 'bg-black/[0.06] hover:bg-black/[0.1] text-black/60' : 'bg-white/[0.08] rounded hover:bg-white/[0.12] text-white/60'
-                    }`}>
-                    Apply
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
+        <DateRangePicker
+          dateStart={dateStart}
+          dateEnd={dateEnd}
+          dateLabel={dateLabel}
+          onApply={handleDateApply}
+          isLight={isLight}
+        />
 
         {/* Calculate button */}
         <button

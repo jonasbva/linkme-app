@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, ReferenceLine } from 'recharts'
 import { useTheme } from './ThemeProvider'
+import DatePicker from './DateRangePicker'
 import SocialTab from './SocialTab'
 
 const ICON_OPTIONS = ['onlyfans', 'fansly', 'instagram', 'twitter', 'tiktok', 'snapchat', 'youtube', 'reddit', 'twitch', 'telegram', 'discord', 'spotify', 'link', 'custom']
@@ -225,60 +226,10 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
   })
   const [dateEnd, setDateEnd] = useState<Date>(new Date())
   const [dateLabel, setDateLabel] = useState('Last 30 days')
-  const [showDatePicker, setShowDatePicker] = useState(false)
-  const [customStart, setCustomStart] = useState('')
-  const [customEnd, setCustomEnd] = useState('')
-  const datePickerRef = useRef<HTMLDivElement>(null)
 
-  // Close popup on outside click
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (datePickerRef.current && !datePickerRef.current.contains(e.target as Node)) {
-        setShowDatePicker(false)
-      }
-    }
-    if (showDatePicker) document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showDatePicker])
-
-  function applyPreset(label: string, start: Date, end: Date) {
-    setDateStart(start)
-    setDateEnd(end)
-    setDateLabel(label)
-    setShowDatePicker(false)
+  function handleDateApply(label: string, start: Date, end: Date) {
+    setDateStart(start); setDateEnd(end); setDateLabel(label)
   }
-
-  function applyCustomRange() {
-    if (!customStart || !customEnd) return
-    const s = new Date(customStart + 'T00:00:00')
-    const e = new Date(customEnd + 'T23:59:59')
-    if (isNaN(s.getTime()) || isNaN(e.getTime()) || s > e) return
-    setDateStart(s)
-    setDateEnd(e)
-    setDateLabel(`${s.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${e.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`)
-    setShowDatePicker(false)
-  }
-
-  function selectMonth(monthOffset: number) {
-    const now = new Date()
-    const d = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1)
-    const end = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59)
-    const label = d.toLocaleDateString('en-US', { month: 'long', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined })
-    applyPreset(label, d, end)
-  }
-
-  // Generate last 12 months for the slider
-  const monthOptions = useMemo(() => {
-    const now = new Date()
-    return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      return {
-        offset: i,
-        label: d.toLocaleDateString('en-US', { month: 'short' }),
-        fullLabel: d.toLocaleDateString('en-US', { month: 'long', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined }),
-      }
-    })
-  }, [])
 
   function updateCreator(field: string, value: any) {
     setCreator((prev: any) => ({ ...prev, [field]: value }))
@@ -1009,116 +960,14 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
       {/* ─── LINK ANALYSIS SUB-TAB (in edit mode) ─── */}
       {((mode === 'edit' && activeSubTab === 'analytics') || (mode === 'analysis' && activeSubTab === 'analytics')) && (
         <div className="space-y-6">
-          {/* Date range trigger — popup only */}
-          <div className="relative inline-block">
-            <button
-              onClick={() => {
-                setCustomStart(dateStart.toISOString().split('T')[0])
-                setCustomEnd(dateEnd.toISOString().split('T')[0])
-                setShowDatePicker(!showDatePicker)
-              }}
-              className="flex items-center gap-2.5 px-4 py-2 bg-white/[0.03] border border-white/[0.06] rounded-lg hover:bg-white/[0.06] transition-all"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/30">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              <span className="text-[13px] text-white/70 font-medium">{dateLabel}</span>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-white/25">
-                <polyline points="6 9 12 15 18 9" />
-              </svg>
-            </button>
-
-            {showDatePicker && (
-              <div
-                ref={datePickerRef}
-                className="absolute left-0 top-full mt-2 z-50 bg-[#0e0e0e] border border-white/[0.08] rounded-2xl p-0 shadow-2xl shadow-black/60"
-                style={{ width: 340 }}
-              >
-                {/* Quick presets */}
-                <div className="p-4 pb-3 border-b border-white/[0.06]">
-                  <p className="text-[11px] text-white/25 uppercase tracking-widest font-medium mb-3">Quick select</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {[
-                      { label: 'Today', fn: () => { const s = new Date(); s.setHours(0,0,0,0); applyPreset('Today', s, new Date()) } },
-                      { label: 'Yesterday', fn: () => { const s = new Date(); s.setDate(s.getDate() - 1); s.setHours(0,0,0,0); const e = new Date(s); e.setHours(23,59,59,999); applyPreset('Yesterday', s, e) } },
-                      { label: 'Last 7 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 7); applyPreset('Last 7 days', s, new Date()) } },
-                      { label: 'Last 30 days', fn: () => { const s = new Date(); s.setDate(s.getDate() - 30); applyPreset('Last 30 days', s, new Date()) } },
-                    ].map(p => (
-                      <button
-                        key={p.label}
-                        onClick={p.fn}
-                        className={`px-3 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
-                          dateLabel === p.label
-                            ? 'bg-white text-black'
-                            : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
-                        }`}
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Month grid */}
-                <div className="p-4 pb-3 border-b border-white/[0.06]">
-                  <p className="text-[11px] text-white/25 uppercase tracking-widest font-medium mb-3">By month</p>
-                  <div className="grid grid-cols-4 gap-1.5">
-                    {monthOptions.map(m => {
-                      const now = new Date()
-                      const mStart = new Date(now.getFullYear(), now.getMonth() - m.offset, 1)
-                      const mEnd = new Date(mStart.getFullYear(), mStart.getMonth() + 1, 0, 23, 59, 59)
-                      const isActive = dateStart.getTime() === mStart.getTime() && dateEnd.getTime() === mEnd.getTime()
-                      return (
-                        <button
-                          key={m.offset}
-                          onClick={() => selectMonth(m.offset)}
-                          className={`px-2 py-1.5 text-[11px] font-medium rounded-lg transition-all ${
-                            isActive
-                              ? 'bg-white text-black'
-                              : 'bg-white/[0.04] text-white/40 hover:bg-white/[0.08] hover:text-white/60'
-                          }`}
-                        >
-                          {m.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-
-                {/* Custom dates */}
-                <div className="p-4">
-                  <p className="text-[11px] text-white/25 uppercase tracking-widest font-medium mb-3">Custom range</p>
-                  <div className="flex gap-2 items-end">
-                    <div className="flex-1">
-                      <label className="text-[10px] text-white/20 mb-1 block">From</label>
-                      <input
-                        type="date"
-                        value={customStart}
-                        onChange={e => setCustomStart(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 focus:border-white/20 transition-colors"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <label className="text-[10px] text-white/20 mb-1 block">To</label>
-                      <input
-                        type="date"
-                        value={customEnd}
-                        onChange={e => setCustomEnd(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-[12px] text-white/80 focus:border-white/20 transition-colors"
-                      />
-                    </div>
-                    <button
-                      onClick={applyCustomRange}
-                      disabled={!customStart || !customEnd}
-                      className="px-4 py-1.5 bg-white text-black text-[12px] font-medium rounded-lg hover:bg-white/90 transition-colors disabled:opacity-30 shrink-0"
-                    >
-                      Apply
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+          {/* Date range picker */}
+          <DatePicker
+            dateStart={dateStart}
+            dateEnd={dateEnd}
+            dateLabel={dateLabel}
+            onApply={handleDateApply}
+            isLight={isLight}
+          />
 
           {/* Stats */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1259,26 +1108,14 @@ export default function CreatorEditor({ creator: initialCreator, links: initialL
           {/* Link Analytics sub-view — reuses the analytics display */}
           {linksSubView === 'analytics' && (
             <div className="space-y-6">
-              {/* Date range trigger */}
-              <div className="relative inline-block">
-                <button
-                  onClick={() => {
-                    setCustomStart(dateStart.toISOString().split('T')[0])
-                    setCustomEnd(dateEnd.toISOString().split('T')[0])
-                    setShowDatePicker(!showDatePicker)
-                  }}
-                  className={`flex items-center gap-2.5 px-4 py-2 border rounded-lg transition-all duration-200 ${
-                    isLight
-                      ? 'bg-black/[0.03] border-black/[0.06] hover:bg-black/[0.06]'
-                      : 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.06]'
-                  }`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={isLight ? 'text-black/30' : 'text-white/30'}>
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
-                  <span className={`text-[13px] font-medium ${isLight ? 'text-black/70' : 'text-white/70'}`}>{dateLabel}</span>
-                </button>
-              </div>
+              {/* Date range picker */}
+              <DatePicker
+                dateStart={dateStart}
+                dateEnd={dateEnd}
+                dateLabel={dateLabel}
+                onApply={handleDateApply}
+                isLight={isLight}
+              />
 
               {/* Analytics cards */}
               <div className="grid grid-cols-3 gap-4">
