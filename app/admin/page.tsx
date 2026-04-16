@@ -4,13 +4,14 @@ import { getSessionUser, getUserPermissions } from '@/lib/auth'
 
 async function getDashboardStats(visibleCreatorIds?: string[]) {
   const supabase = createServerSupabaseClient()
-  const [creatorsRes, tagsRes, creatorTagsRes, inflowwCacheRes, inflowwMapRes, socialAccountsRes] = await Promise.all([
-    supabase.from('creators').select('id, slug, display_name, avatar_url, is_active, custom_domain'),
+  const [creatorsRes, tagsRes, creatorTagsRes, inflowwCacheRes, inflowwMapRes, socialAccountsRes, ofAccountsRes] = await Promise.all([
+    supabase.from('creators').select('id, slug, display_name, avatar_url, is_active, custom_domain, linkme_enabled'),
     supabase.from('tags').select('*').order('name'),
     supabase.from('creator_tags').select('creator_id, tag_id'),
     supabase.from('infloww_creators_cache').select('infloww_id, name, user_name'),
     supabase.from('infloww_creator_map').select('creator_id, infloww_creator_id'),
     supabase.from('social_accounts').select('id, creator_id, platform, username, is_active').eq('is_active', true),
+    supabase.from('of_accounts').select('id, creator_id, handle, display_label, is_active'),
   ])
   let creators = creatorsRes.data || []
   if (visibleCreatorIds) {
@@ -125,8 +126,26 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
   const followerGrowth7d = totalFollowers - totalFollowers7dAgo
   const engagementGrowth7d = totalEngagement - totalEngagement7dAgo
 
+  // Group OF accounts by creator, with main account first
+  const ofAccountsByCreator: Record<string, { id: string; handle: string; display_label: string | null; is_active: boolean }[]> = {}
+  for (const oa of (ofAccountsRes.data || [])) {
+    if (!ofAccountsByCreator[oa.creator_id]) ofAccountsByCreator[oa.creator_id] = []
+    ofAccountsByCreator[oa.creator_id].push(oa as any)
+  }
+  for (const cid of Object.keys(ofAccountsByCreator)) {
+    ofAccountsByCreator[cid].sort((a, b) => {
+      // nulls (main) first, then by handle
+      const aMain = a.display_label == null ? 0 : 1
+      const bMain = b.display_label == null ? 0 : 1
+      if (aMain !== bMain) return aMain - bMain
+      return a.handle.localeCompare(b.handle)
+    })
+  }
+
   const creatorStats = creators.map(creator => {
     const social = creatorSocialMap[creator.id]
+    const of = ofAccountsByCreator[creator.id] || []
+    const mainOf = of[0]
     return {
       ...creator,
       followers: social?.followers || 0,
@@ -138,15 +157,27 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
       lastScraped: social?.lastScraped || null,
       accounts: social?.accounts || 0,
       tagIds: creatorTags.filter(ct => ct.creator_id === creator.id).map(ct => ct.tag_id),
+      ofHandle: mainOf?.handle || null,
+      ofAccountCount: of.length,
     }
   }).sort((a, b) => b.followers - a.followers)
 
-  // Find unmapped Infloww creators
+  // Find unmapped Infloww creators — a creator is "mapped" if:
+  //   (a) it has an explicit infloww_creator_map row, OR
+  //   (b) its handle matches one of our of_accounts handles
   const inflowwCreators = inflowwCacheRes.data || []
   const mappedInflowwIds = new Set((inflowwMapRes.data || []).map((m: any) => m.infloww_creator_id))
+  const allOfHandles = new Set((ofAccountsRes.data || []).map((oa: any) => oa.handle?.toLowerCase()).filter(Boolean))
   const creatorSlugs = new Set(creators.map(c => c.slug?.toLowerCase()))
   const unmappedCreators = inflowwCreators
-    .filter(ic => !mappedInflowwIds.has(ic.infloww_id) && !creatorSlugs.has(ic.user_name?.toLowerCase()))
+    .filter(ic => {
+      if (mappedInflowwIds.has(ic.infloww_id)) return false
+      const userName = ic.user_name?.toLowerCase()
+      if (!userName) return true
+      if (allOfHandles.has(userName)) return false
+      if (creatorSlugs.has(userName)) return false
+      return true
+    })
     .map(ic => ({ infloww_id: ic.infloww_id, name: ic.name, userName: ic.user_name }))
 
   return {

@@ -18,6 +18,7 @@ interface CreatorStat {
   avatar_url?: string
   is_active: boolean
   custom_domain?: string
+  linkme_enabled?: boolean
   followers: number
   followerGrowth: number
   totalViews: number
@@ -27,6 +28,8 @@ interface CreatorStat {
   lastScraped: string | null
   accounts: number
   tagIds: string[]
+  ofHandle: string | null
+  ofAccountCount: number
 }
 
 interface UnmappedCreator {
@@ -478,7 +481,7 @@ export default function DashboardClient({
               }`}
             >
               {/* Left: Avatar + name */}
-              <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 min-w-0 flex-shrink-0" style={{ width: '220px' }}>
+              <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 min-w-0 flex-shrink-0" style={{ width: '240px' }}>
                 {c.avatar_url ? (
                   <img src={c.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-transparent group-hover:ring-white/10 transition-all duration-200" />
                 ) : (
@@ -507,13 +510,38 @@ export default function DashboardClient({
                         Inactive
                       </span>
                     )}
+                    {c.linkme_enabled && (
+                      <span
+                        title="LinkMe app enabled"
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                          isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-blue-500/15 text-blue-400'
+                        }`}
+                      >
+                        LinkMe
+                      </span>
+                    )}
                   </div>
-                  <p className={`text-[11px] ${textTertiary}`}>
-                    {c.accounts > 0
-                      ? `${c.accounts} account${c.accounts > 1 ? 's' : ''} tracked`
-                      : 'No social accounts'
-                    }
-                  </p>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    {c.ofHandle ? (
+                      <>
+                        <span className={`text-[11px] font-mono truncate ${textSecondary}`}>@{c.ofHandle}</span>
+                        {c.ofAccountCount > 1 && (
+                          <span className={`text-[10px] px-1 py-px rounded ${
+                            isLight ? 'bg-black/[0.05] text-black/40' : 'bg-white/[0.08] text-white/40'
+                          }`}>
+                            +{c.ofAccountCount - 1}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className={`text-[11px] ${textTertiary}`}>
+                        {c.accounts > 0
+                          ? `${c.accounts} social account${c.accounts > 1 ? 's' : ''}`
+                          : 'No OF account'
+                        }
+                      </span>
+                    )}
+                  </div>
                 </div>
               </Link>
 
@@ -547,6 +575,16 @@ export default function DashboardClient({
                     }`}
                   >
                     Conversions
+                  </Link>
+                )}
+                {isSuperAdmin && (
+                  <Link
+                    href={`/admin/creators/${c.id}/settings`}
+                    className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
+                      isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    Settings
                   </Link>
                 )}
                 {/* Delete — super admin only */}
