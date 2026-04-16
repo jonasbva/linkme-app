@@ -138,7 +138,40 @@ function calculateBreakdown(transactions: InflowwTransaction[]) {
   }
 }
 
-// ─── GET Handler (called by Vercel Cron) ────────────────────────────
+// ─── Cache key resolution (must match cache route) ──────────────────
+// Live (end within 2 minutes of now): `live:${fromMs}-${toBucketedMs}`
+// Historical: `rng:${fromMs}-${toMs}`
+const LIVE_WINDOW_MS = 2 * 60 * 1000 // 2 minutes
+const LIVE_BUCKET_MS = 60 * 1000     // 1 minute
+
+function floorToMinute(ms: number): number {
+  return Math.floor(ms / LIVE_BUCKET_MS) * LIVE_BUCKET_MS
+}
+
+function isLiveRange(toMs: number, nowMs: number): boolean {
+  return Math.abs(nowMs - toMs) <= LIVE_WINDOW_MS
+}
+
+function buildCacheKey(fromMs: number, toMs: number, nowMs: number): string {
+  if (isLiveRange(toMs, nowMs)) {
+    return `live:${fromMs}-${floorToMinute(toMs)}`
+  }
+  return `rng:${fromMs}-${toMs}`
+}
+
+function parseMaybeMs(v: string | null): number | null {
+  if (!v) return null
+  // Unix ms (all digits)
+  if (/^\d+$/.test(v)) return parseInt(v, 10)
+  // ISO
+  const t = Date.parse(v)
+  return Number.isFinite(t) ? t : null
+}
+
+function pad(n: number) { return String(n).padStart(2, '0') }
+function localYmd(d: Date) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` }
+
+// ─── GET Handler (called by Vercel Cron or admin refresh) ───────────
 export async function GET(req: NextRequest) {
   // Verify cron secret (Vercel sets this header for cron jobs)
   const authHeader = req.headers.get('authorization')
@@ -171,40 +204,47 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    // Accept optional date parameter (YYYY-MM-DD), defaults to today
     const { searchParams } = new URL(req.url)
-    const dateParam = searchParams.get('date')
+    const fromParam = parseMaybeMs(searchParams.get('from'))
+    const toParam = parseMaybeMs(searchParams.get('to'))
+    const dateParam = searchParams.get('date') // legacy YYYY-MM-DD
 
     const now = new Date()
-    let startOfDay: Date
-    let endOfDay: Date
+    const nowMs = now.getTime()
 
-    if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
-      // Fetch for a specific date
-      startOfDay = new Date(dateParam + 'T00:00:00')
-      endOfDay = new Date(dateParam + 'T23:59:59.999')
-      // If the date is today, use current time as end
-      const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-      if (dateParam === todayStr) {
-        endOfDay = now
-      }
+    // Resolve [fromMs, toMs] from whichever inputs were given.
+    let fromMs: number
+    let toMs: number
+
+    if (fromParam !== null && toParam !== null) {
+      fromMs = fromParam
+      toMs = toParam
+    } else if (dateParam && /^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+      const startOfDay = new Date(dateParam + 'T00:00:00')
+      const endOfDay = new Date(dateParam + 'T23:59:59.999')
+      const todayStr = localYmd(now)
+      fromMs = startOfDay.getTime()
+      toMs = dateParam === todayStr ? nowMs : endOfDay.getTime()
     } else {
-      // Default: today
-      startOfDay = new Date(now)
+      // Default: today 00:00 → now
+      const startOfDay = new Date(now)
       startOfDay.setHours(0, 0, 0, 0)
-      endOfDay = now
+      fromMs = startOfDay.getTime()
+      toMs = nowMs
     }
 
-    const startTime = String(startOfDay.getTime())
-    const endTime = String(endOfDay.getTime())
+    const startDate = new Date(fromMs)
+    const endDate = new Date(toMs)
+    const startTime = String(fromMs)
+    const endTime = String(toMs)
 
-    // 14d lookback for sub averages
-    const start14d = new Date(startOfDay)
+    // 14d lookback anchored at the range start (for sub averages)
+    const start14d = new Date(startDate)
     start14d.setDate(start14d.getDate() - 14)
     start14d.setHours(0, 0, 0, 0)
     const startTime14d = String(start14d.getTime())
 
-    console.log('[cron] Fetching creator list...')
+    console.log(`[cron] Fetching creator list for range ${startDate.toISOString()} → ${endDate.toISOString()}`)
     const creators = (await fetchAllPages(
       '/v1/creators',
       { platformCode: 'OnlyFans', limit: '100' },
@@ -246,14 +286,14 @@ export async function GET(req: NextRequest) {
     console.log(`[cron] Fetching transactions for ${creators.length} creators...`)
     const creatorData = []
     for (const creator of creators) {
-      // Period transactions (today)
+      // Period transactions (selected range)
       const periodTransactions = (await fetchAllPages(
         '/v1/transactions',
         { creatorId: creator.id, platformCode: 'OnlyFans', startTime, endTime, limit: '100' },
         apiHeaders
       )) as InflowwTransaction[]
 
-      // 14d transactions for sub average
+      // 14d transactions for sub average (anchored at range start)
       const transactions14d = (await fetchAllPages(
         '/v1/transactions',
         { creatorId: creator.id, platformCode: 'OnlyFans', startTime: startTime14d, endTime, limit: '100' },
@@ -319,26 +359,44 @@ export async function GET(req: NextRequest) {
       tipRevenue: creatorData.reduce((s, c) => s + c.tipRevenue, 0),
     }
 
+    const durationMs = toMs - fromMs
+    const days = Math.max(1, Math.round(durationMs / 86400000))
     const cachePayload = {
       creators: creatorData,
       totals,
-      period: { days: 1, startDate: startOfDay.toISOString(), endDate: now.toISOString() },
+      period: { days, startDate: startDate.toISOString(), endDate: endDate.toISOString(), fromMs, toMs },
     }
 
-    // Upsert into cache — save with date key, and also 'today' if it's today
-    const dateKey = `${startOfDay.getFullYear()}-${String(startOfDay.getMonth() + 1).padStart(2, '0')}-${String(startOfDay.getDate()).padStart(2, '0')}`
-    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
-    const isToday = dateKey === todayKey
+    // Build the canonical cache key for this range.
+    const rangeKey = buildCacheKey(fromMs, toMs, nowMs)
     const fetchedAt = new Date().toISOString()
 
-    const upserts = [
+    // Always write the range key. Additionally write backward-compat aliases:
+    //  - 'today' when range is today 00:00 → (live/now)
+    //  - 'YYYY-MM-DD' when range covers exactly one local day
+    const startOfStartDay = new Date(startDate); startOfStartDay.setHours(0, 0, 0, 0)
+    const endOfStartDay = new Date(startDate); endOfStartDay.setHours(23, 59, 59, 999)
+    const startIsMidnight = fromMs === startOfStartDay.getTime()
+    const isSingleLocalDay =
+      startIsMidnight && (toMs === endOfStartDay.getTime() || (isLiveRange(toMs, nowMs) && localYmd(startDate) === localYmd(now)))
+    const legacyDateKey = isSingleLocalDay ? localYmd(startDate) : null
+    const isTodayLive = isSingleLocalDay && localYmd(startDate) === localYmd(now) && isLiveRange(toMs, nowMs)
+
+    const upserts: Promise<any>[] = [
       supabase.from('revenue_cache').upsert(
-        { cache_key: dateKey, data: cachePayload, fetched_at: fetchedAt },
+        { cache_key: rangeKey, data: cachePayload, fetched_at: fetchedAt },
         { onConflict: 'cache_key' }
       ),
     ]
-    // Also update 'today' key if we're fetching today's data
-    if (isToday) {
+    if (legacyDateKey) {
+      upserts.push(
+        supabase.from('revenue_cache').upsert(
+          { cache_key: legacyDateKey, data: cachePayload, fetched_at: fetchedAt },
+          { onConflict: 'cache_key' }
+        )
+      )
+    }
+    if (isTodayLive) {
       upserts.push(
         supabase.from('revenue_cache').upsert(
           { cache_key: 'today', data: cachePayload, fetched_at: fetchedAt },
@@ -348,12 +406,15 @@ export async function GET(req: NextRequest) {
     }
     await Promise.all(upserts)
 
-    console.log(`[cron] Revenue cache updated. Total revenue today: $${totals.totalTurnover}`)
+    console.log(`[cron] Revenue cache updated (${rangeKey}). Total revenue: $${totals.totalTurnover}`)
     return NextResponse.json({
       ok: true,
+      cacheKey: rangeKey,
       totalRevenue: totals.totalTurnover,
       creators: creators.length,
-      fetchedAt: new Date().toISOString(),
+      fromMs,
+      toMs,
+      fetchedAt,
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Unknown error'

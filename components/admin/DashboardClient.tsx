@@ -121,19 +121,23 @@ function Tooltip({ text, children, isLight }: { text: string; children: React.Re
       {visible && (
         <div
           style={{ width: 280 }}
-          className={`absolute z-50 px-3 py-2 rounded-lg text-[11px] leading-relaxed pointer-events-none ${anchorCls} ${
+          className={`absolute z-50 px-3 py-2 rounded-lg border text-[11px] leading-relaxed pointer-events-none ${anchorCls} ${
             side === 'top' ? 'bottom-full mb-2' : 'top-full mt-2'
           } ${
             isLight
-              ? 'bg-black text-white shadow-lg'
-              : 'bg-white text-black shadow-lg shadow-black/40'
+              ? 'bg-white text-black/80 border-black/10 shadow-lg shadow-black/5'
+              : 'bg-[#111] text-white/90 border-white/[0.08] shadow-2xl shadow-black/60'
           }`}
         >
           {text}
           <div
-            className={`absolute ${arrowCls} w-2 h-2 rotate-45 ${
-              side === 'top' ? 'top-full -mt-1' : 'bottom-full -mb-1'
-            } ${isLight ? 'bg-black' : 'bg-white'}`}
+            className={`absolute ${arrowCls} w-2 h-2 rotate-45 border ${
+              side === 'top' ? 'top-full -mt-1 border-t-0 border-l-0' : 'bottom-full -mb-1 border-b-0 border-r-0'
+            } ${
+              isLight
+                ? 'bg-white border-black/10'
+                : 'bg-[#111] border-white/[0.08]'
+            }`}
           />
         </div>
       )}

@@ -91,6 +91,11 @@ type SubTab = 'overview' | 'tracking' | 'expectations' | 'settings'
 type SortDir = 'asc' | 'desc'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
+// A range is "live" if its end is within 2 minutes of "now" — must match
+// the cache route's LIVE_WINDOW_MS so the key family we ask for matches
+// the one the backend computes.
+const LIVE_WINDOW_MS = 2 * 60 * 1000
+
 const fmt = (n: number) =>
   '$' + n.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
@@ -340,9 +345,12 @@ function LineChart({ data, dataKey, label, isLight, formatY, color = '#3b82f6' }
               fill={color} stroke={isLight ? '#fff' : '#111'} strokeWidth="2" />
             {/* Tooltip */}
             <rect x={pointCoords[hoveredIdx].x - 35} y={pointCoords[hoveredIdx].y - 28} width="70" height="20"
-              rx="4" fill={isLight ? '#000' : '#fff'} opacity="0.9" />
+              rx="4"
+              fill={isLight ? '#ffffff' : '#111111'}
+              stroke={isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.08)'}
+              strokeWidth="1" />
             <text x={pointCoords[hoveredIdx].x} y={pointCoords[hoveredIdx].y - 14}
-              fill={isLight ? '#fff' : '#000'} fontSize="11" fontWeight="600" textAnchor="middle">
+              fill={isLight ? '#111111' : '#ffffff'} fontSize="11" fontWeight="600" textAnchor="middle">
               {formatY ? formatY(pointCoords[hoveredIdx].value) : String(Math.round(pointCoords[hoveredIdx].value))}
             </text>
           </g>
@@ -408,10 +416,27 @@ export default function RevenueClient() {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<RevenueData | null>(null)
 
-  // Date picker state
+  // Date picker state — minute-precise range. "Today" defaults to
+  // today 00:00 local → now minus 1 minute (floored to the minute).
   const [dateStart, setDateStart] = useState<Date>(() => { const d = new Date(); d.setHours(0,0,0,0); return d })
-  const [dateEnd, setDateEnd] = useState<Date>(new Date())
+  const [dateEnd, setDateEnd] = useState<Date>(() => {
+    const d = new Date(Date.now() - 60 * 1000); d.setSeconds(0, 0); return d
+  })
   const [dateLabel, setDateLabel] = useState('Today')
+
+  // A range is "live" if its end is within 2 minutes of now — used to
+  // decide whether to poll for auto-refresh and which cache-key family
+  // to talk to. Kept as a ref so polling can read it without re-subscribing.
+  const isLive = useMemo(
+    () => Math.abs(Date.now() - dateEnd.getTime()) <= LIVE_WINDOW_MS,
+    [dateEnd]
+  )
+  const liveRef = useRef(isLive)
+  useEffect(() => { liveRef.current = isLive }, [isLive])
+  const rangeRef = useRef({ fromMs: dateStart.getTime(), toMs: dateEnd.getTime() })
+  useEffect(() => {
+    rangeRef.current = { fromMs: dateStart.getTime(), toMs: dateEnd.getTime() }
+  }, [dateStart, dateEnd])
 
   // Progress state (SSE)
   const [progressMsg, setProgressMsg] = useState('')
@@ -470,26 +495,20 @@ export default function RevenueClient() {
     setProgressCurrent(0)
     setProgressTotal(0)
 
+    const fromMs = dateStart.getTime()
+    const toMs = dateEnd.getTime()
+    const qs = `?from=${fromMs}&to=${toMs}`
+
     try {
-      // Trigger the cron endpoint to rebuild the Supabase cache
-      const res = await fetch('/api/admin/revenue/cache', { method: 'POST' })
+      // Trigger a rebuild of the cache entry for this exact range.
+      const res = await fetch(`/api/admin/revenue/cache${qs}`, { method: 'POST' })
       if (!res.ok) {
         const json = await res.json().catch(() => ({ error: 'Unknown error' }))
         throw new Error(json.error || `HTTP ${res.status}`)
       }
 
-      // Now read the freshly updated cache (use date key for today)
-      // Use local date formatting to avoid timezone issues
-      const pad = (n: number) => String(n).padStart(2, '0')
-      const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-      const now = new Date()
-      const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
-      const startStr = localDate(dateStart)
-      const diffMs = dateEnd.getTime() - dateStart.getTime()
-      const days = Math.max(1, Math.ceil(diffMs / 86400000))
-      const isToday = days === 1 && startStr === todayStr
-      const dateKey = isToday ? 'today' : (days === 1 ? startStr : 'today')
-      const cacheRes = await fetch(`/api/admin/revenue/cache?key=${dateKey}`)
+      // Read the freshly updated cache.
+      const cacheRes = await fetch(`/api/admin/revenue/cache${qs}`)
       const cached = await cacheRes.json()
       if (cached?.totals && cached?.creators) {
         setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
@@ -506,28 +525,41 @@ export default function RevenueClient() {
     }
   }, [addToast, dateStart, dateEnd])
 
-  // ─── Auto-refresh every 30 minutes ─────────────────────────────
+  // ─── Auto-refresh (live ranges only, every 30 min) ─────────────
+  // Only poll when the selected range's end is within 2 min of "now".
+  // Historical ranges are immutable, so polling them would be wasted calls.
   useEffect(() => {
+    if (!isLive) return
     const THIRTY_MINUTES = 30 * 60 * 1000
     const interval = setInterval(() => {
-      // Silent background refresh — rebuild cache & update UI
-      fetch('/api/admin/revenue/cache', { method: 'POST' })
+      // Guard: the range might have changed to historical mid-interval.
+      if (!liveRef.current) return
+
+      // Roll the end forward to "now minus 1 min" so the cache key
+      // reflects the new live bucket.
+      const newEnd = new Date(Date.now() - 60 * 1000); newEnd.setSeconds(0, 0)
+      const fromMs = rangeRef.current.fromMs
+      const toMs = newEnd.getTime()
+      const qs = `?from=${fromMs}&to=${toMs}`
+
+      fetch(`/api/admin/revenue/cache${qs}`, { method: 'POST' })
         .then(res => { if (!res.ok) throw new Error('refresh failed'); return res })
-        .then(() => fetch('/api/admin/revenue/cache?key=today'))
+        .then(() => fetch(`/api/admin/revenue/cache${qs}`))
         .then(r => r.json())
         .then(cached => {
           if (cached?.totals && cached?.creators) {
             setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
+            setDateEnd(newEnd)
             addToast('info', 'Revenue data auto-refreshed')
           }
         })
         .catch(() => {
-          // Silent failure on auto-refresh
+          // Silent failure — user can click refresh manually
         })
     }, THIRTY_MINUTES)
 
     return () => clearInterval(interval)
-  }, [addToast])
+  }, [isLive, addToast])
 
   const fetchExpectations = useCallback(async () => {
     setExpLoading(true)
@@ -558,14 +590,22 @@ export default function RevenueClient() {
   useEffect(() => {
     if ((activeTab === 'overview' || activeTab === 'tracking') && !cacheLoadedRef.current && !data) {
       cacheLoadedRef.current = true
-      fetch('/api/admin/revenue/cache?key=today')
+      const fromMs = dateStart.getTime()
+      const toMs = dateEnd.getTime()
+      fetch(`/api/admin/revenue/cache?from=${fromMs}&to=${toMs}`)
         .then(r => r.json())
         .then(cached => {
           if (cached?.totals && cached?.creators) {
             setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
             const ago = cached.fetchedAt ? new Date(cached.fetchedAt) : null
             const mins = ago ? Math.round((Date.now() - ago.getTime()) / 60000) : null
-            addToast('info', mins !== null ? `Cached data (${mins}m ago). Auto-refreshes every 30 min.` : 'Showing cached data.')
+            const isLiveNow = Math.abs(Date.now() - toMs) <= LIVE_WINDOW_MS
+            addToast(
+              'info',
+              mins !== null
+                ? `Cached data (${mins}m ago).${isLiveNow ? ' Auto-refreshes every 30 min.' : ''}`
+                : 'Showing cached data.'
+            )
           }
           // No cache? Show empty state — user can click refresh
         })
@@ -573,30 +613,17 @@ export default function RevenueClient() {
           // Cache fetch failed silently — user can click refresh
         })
     }
-  }, [activeTab, data, addToast])
+  }, [activeTab, data, addToast, dateStart, dateEnd])
   useEffect(() => { if (activeTab === 'expectations') fetchExpectations() }, [activeTab, fetchExpectations])
   useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
 
-  // ─── Load cached data for a specific date key ──────────────────
+  // ─── Load cached data for the selected [start, end] range ──────
   const loadCacheForDate = useCallback(async (start: Date, end: Date) => {
-    // Format date as local YYYY-MM-DD (avoid timezone shift from toISOString)
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const localDate = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-
-    const diffMs = end.getTime() - start.getTime()
-    const days = Math.max(1, Math.ceil(diffMs / 86400000))
-
-    // Check if the selected date is today
-    const now = new Date()
-    const todayStr = localDate(now)
-    const startStr = localDate(start)
-    const isToday = days === 1 && startStr === todayStr
-
-    // Use 'today' key for today (always exists), date key for other days
-    const dateKey = isToday ? 'today' : (days === 1 ? startStr : 'today')
-
+    const fromMs = start.getTime()
+    const toMs = end.getTime()
+    setLoading(true)
     try {
-      const res = await fetch(`/api/admin/revenue/cache?key=${dateKey}`)
+      const res = await fetch(`/api/admin/revenue/cache?from=${fromMs}&to=${toMs}`)
       const cached = await res.json()
       if (cached?.totals && cached?.creators) {
         setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
@@ -605,10 +632,12 @@ export default function RevenueClient() {
         addToast('info', mins !== null ? `Cached data (${mins}m ago)` : 'Showing cached data.')
       } else {
         setData(null as unknown as RevenueData)
-        addToast('info', `No cached data for ${startStr}. Click refresh to fetch.`)
+        addToast('info', 'No cached data for this range. Click refresh to fetch.')
       }
     } catch {
       addToast('error', 'Failed to load cached data')
+    } finally {
+      setLoading(false)
     }
   }, [addToast])
 
@@ -724,6 +753,21 @@ export default function RevenueClient() {
       })
   }
 
+  // Unlinked Infloww creators (no LinkMe mapping). Surfaced in Revenue
+  // Tracking so nothing the API returns gets swallowed — per requirement
+  // that any stat-producing creator shows up even if it's not wired into
+  // the dashboard yet.
+  const trackingUnlinked = useMemo(() => {
+    if (!data?.creators) return []
+    return [...data.creators]
+      .filter(c => c.supabase_creator_id === null)
+      .sort((a, b) => {
+        const aVal = (a as Record<string, unknown>)[trackSortField] as number || 0
+        const bVal = (b as Record<string, unknown>)[trackSortField] as number || 0
+        return trackSortDir === 'asc' ? aVal - bVal : bVal - aVal
+      })
+  }, [data, trackSortField, trackSortDir])
+
   // ═══════════════════════════════════════════════════════════════════
   // RENDER
   // ═══════════════════════════════════════════════════════════════════
@@ -733,8 +777,6 @@ export default function RevenueClient() {
         ? isLight ? 'text-black/90 bg-black/[0.06]' : 'text-white/95 bg-white/[0.08]'
         : isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.03]' : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
     }`
-
-  const days = Math.max(1, Math.ceil((dateEnd.getTime() - dateStart.getTime()) / 86400000))
 
   return (
     <div className="max-w-7xl mx-auto px-6 py-8">
@@ -1005,13 +1047,59 @@ export default function RevenueClient() {
             )
           })}
 
-          {mappedCreators.filter(c => !c.expectation).length > 0 && (
+          {linkedCreators.filter(c => !c.expectation).length > 0 && (
             <div className={`mt-6 rounded-lg p-4 ${isLight ? 'bg-amber-50 border border-amber-200' : 'bg-yellow-900/15 border border-yellow-700/30'}`}>
               <p className={`text-sm font-medium mb-1 ${isLight ? 'text-amber-800' : 'text-yellow-300'}`}>Creators without expectations:</p>
               <p className={`text-sm ${isLight ? 'text-amber-700' : 'text-yellow-200/70'}`}>
-                {mappedCreators.filter(c => !c.expectation).map(c => c.display_name).join(', ')}
+                {linkedCreators.filter(c => !c.expectation).map(c => c.display_name).join(', ')}
               </p>
               <p className={`text-xs mt-2 ${isLight ? 'text-amber-600' : 'text-yellow-200/40'}`}>Set targets in the Expectations tab.</p>
+            </div>
+          )}
+
+          {/* ── Unlinked Infloww accounts ── */}
+          {trackingUnlinked.length > 0 && (
+            <div className="mb-10">
+              <div className="flex items-center gap-3 mb-4 mt-10">
+                <h2 className={`text-lg font-bold ${text1}`}>Unlinked Infloww Accounts</h2>
+                <span className={`text-sm ${text3}`}>{trackingUnlinked.length} creators</span>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-900/30 text-amber-400'}`}>
+                  Not mapped to a LinkMe profile
+                </span>
+              </div>
+              <div className={`${card} rounded-xl overflow-x-auto`}>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className={`border-b ${tableBorder}`}>
+                      <th className={`px-3 py-3 text-left text-xs font-medium uppercase ${text3}`}>OnlyFans Name</th>
+                      <SortHeader label="Revenue" field="totalRevenue" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
+                      <SortHeader label="New Subs" field="newSubs" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
+                      <SortHeader label="14d Sub Avg" field="subAvg14d" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
+                      <SortHeader label="Msg Rev" field="messageRevenue" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
+                      <SortHeader label="Tips Rev" field="tipRevenue" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trackingUnlinked.map(c => (
+                      <tr key={c.infloww_id} className={`border-b ${tableBorder} ${tableRowHover} ${isLight ? 'bg-black/[0.015]' : 'bg-white/[0.015]'}`}>
+                        <td className="px-3 py-3">
+                          <div className="flex items-center gap-2">
+                            {c.avatar_url
+                              ? <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover opacity-60" />
+                              : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
+                            <span className={`font-medium ${text2}`}>{c.display_name || c.name}</span>
+                          </div>
+                        </td>
+                        <td className={`px-3 py-3 font-semibold ${text2}`}>{fmt(c.totalRevenue)}</td>
+                        <td className={`px-3 py-3 ${text2}`}>{c.newSubs}</td>
+                        <td className={`px-3 py-3 ${text2}`}>{c.subAvg14d}</td>
+                        <td className={`px-3 py-3 ${text2}`}>{fmt(c.messageRevenue)}</td>
+                        <td className={`px-3 py-3 ${text2}`}>{fmt(c.tipRevenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>
