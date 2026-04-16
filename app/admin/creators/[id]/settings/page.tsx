@@ -11,11 +11,11 @@ export default async function CreatorSettingsPage({ params }: Props) {
   const supabase = createServerSupabaseClient()
   const user = await getSessionUser()
 
-  const [creatorRes, ofAccountsRes, inflowwCacheRes, inflowwMapRes] = await Promise.all([
+  const [creatorRes, conversionAccountsRes, inflowwCacheRes, inflowwMapRes] = await Promise.all([
     supabase.from('creators').select('*').eq('id', params.id).single(),
     supabase
-      .from('of_accounts')
-      .select('id, handle, display_label, is_active, created_at')
+      .from('conversion_accounts')
+      .select('id, handle, display_label, sheet_tab_name, is_active, created_at')
       .eq('creator_id', params.id)
       .order('display_label', { ascending: true, nullsFirst: true })
       .order('handle', { ascending: true }),
@@ -28,14 +28,14 @@ export default async function CreatorSettingsPage({ params }: Props) {
 
   if (!creatorRes.data) notFound()
   const creator = creatorRes.data
-  const ofAccounts = ofAccountsRes.data || []
+  const conversionAccounts = conversionAccountsRes.data || []
   const inflowwCreators = inflowwCacheRes.data || []
   const currentMapping = (inflowwMapRes.data || [])[0] || null
 
   return (
     <SettingsClient
       creator={creator}
-      ofAccounts={ofAccounts}
+      conversionAccounts={conversionAccounts}
       inflowwCreators={inflowwCreators}
       currentMapping={currentMapping}
       isSuperAdmin={user?.is_super_admin || false}

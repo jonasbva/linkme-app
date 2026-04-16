@@ -29,7 +29,7 @@ interface CreatorStat {
   accounts: number
   tagIds: string[]
   ofHandle: string | null
-  ofAccountCount: number
+  conversionAccountCount: number
 }
 
 interface UnmappedCreator {
@@ -525,11 +525,14 @@ export default function DashboardClient({
                     {c.ofHandle ? (
                       <>
                         <span className={`text-[11px] font-mono truncate ${textSecondary}`}>@{c.ofHandle}</span>
-                        {c.ofAccountCount > 1 && (
-                          <span className={`text-[10px] px-1 py-px rounded ${
-                            isLight ? 'bg-black/[0.05] text-black/40' : 'bg-white/[0.08] text-white/40'
-                          }`}>
-                            +{c.ofAccountCount - 1}
+                        {c.conversionAccountCount > 1 && (
+                          <span
+                            title={`${c.conversionAccountCount} conversion accounts (main + alts/ESP)`}
+                            className={`text-[10px] px-1 py-px rounded ${
+                              isLight ? 'bg-black/[0.05] text-black/40' : 'bg-white/[0.08] text-white/40'
+                            }`}
+                          >
+                            +{c.conversionAccountCount - 1}
                           </span>
                         )}
                       </>

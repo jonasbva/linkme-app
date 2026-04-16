@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useTheme } from './ThemeProvider'
 
-interface OFAccount {
+interface ConversionAccount {
   id: string
   handle: string
   display_label: string | null
+  sheet_tab_name: string | null
   is_active: boolean
   created_at: string
 }
@@ -31,12 +32,13 @@ interface Creator {
   avatar_url?: string
   custom_domain?: string
   linkme_enabled?: boolean
+  of_handle?: string | null
   is_active: boolean
 }
 
 interface Props {
   creator: Creator
-  ofAccounts: OFAccount[]
+  conversionAccounts: ConversionAccount[]
   inflowwCreators: InflowwCreator[]
   currentMapping: Mapping | null
   isSuperAdmin: boolean
@@ -67,22 +69,35 @@ function ToastNotification({ toast, onDismiss }: { toast: Toast | null; onDismis
   )
 }
 
-export default function SettingsClient({ creator, ofAccounts: initialOfAccounts, inflowwCreators, currentMapping, isSuperAdmin }: Props) {
+export default function SettingsClient({
+  creator,
+  conversionAccounts: initialConversionAccounts,
+  inflowwCreators,
+  currentMapping,
+  isSuperAdmin,
+}: Props) {
   const router = useRouter()
   const { resolved } = useTheme()
   const isLight = resolved === 'light'
   const [toast, setToast] = useState<Toast | null>(null)
 
-  const [ofAccounts, setOfAccounts] = useState<OFAccount[]>(initialOfAccounts)
+  // ─── OF Handle (single, on creator row) ───────────────────────
+  const [ofHandle, setOfHandle] = useState<string>(creator.of_handle || '')
+  const [ofHandleDraft, setOfHandleDraft] = useState<string>(creator.of_handle || '')
+  const [ofHandleSaving, setOfHandleSaving] = useState(false)
+
+  // ─── LinkMe toggle ────────────────────────────────────────────
   const [linkmeEnabled, setLinkmeEnabled] = useState(!!creator.linkme_enabled)
   const [linkmeSaving, setLinkmeSaving] = useState(false)
 
-  // New OF account form
-  const [newHandle, setNewHandle] = useState('')
-  const [newLabel, setNewLabel] = useState('')
-  const [addingAccount, setAddingAccount] = useState(false)
+  // ─── Conversion Accounts (N per creator) ──────────────────────
+  const [conversionAccounts, setConversionAccounts] = useState<ConversionAccount[]>(initialConversionAccounts)
+  const [newConvHandle, setNewConvHandle] = useState('')
+  const [newConvLabel, setNewConvLabel] = useState('')
+  const [newConvSheet, setNewConvSheet] = useState('')
+  const [addingConv, setAddingConv] = useState(false)
 
-  // Infloww mapping
+  // ─── Infloww mapping ──────────────────────────────────────────
   const [inflowwMapping, setInflowwMapping] = useState<string>(currentMapping?.infloww_creator_id || '')
   const [inflowwMappingSaving, setInflowwMappingSaving] = useState(false)
 
@@ -90,7 +105,37 @@ export default function SettingsClient({ creator, ofAccounts: initialOfAccounts,
     setToast({ message, type })
   }
 
-  // ─── LinkMe toggle ─────────────────────────────────────────────
+  // ─── Save OF handle (single) ──────────────────────────────────
+  async function saveOfHandle() {
+    const next = ofHandleDraft.trim().replace(/^@/, '').toLowerCase()
+    if (next === (ofHandle || '')) return
+    if (next && !/^[a-z0-9_.-]+$/.test(next)) {
+      showToast('Invalid handle format', 'error')
+      setOfHandleDraft(ofHandle)
+      return
+    }
+    setOfHandleSaving(true)
+    try {
+      const res = await fetch(`/api/admin/creators/${creator.id}/of-handle`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ of_handle: next || null }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'failed')
+      setOfHandle(next)
+      setOfHandleDraft(next)
+      showToast(next ? 'OF handle saved' : 'OF handle cleared', 'success')
+      router.refresh()
+    } catch (e: any) {
+      setOfHandleDraft(ofHandle)
+      showToast(e.message || 'Failed to save handle', 'error')
+    } finally {
+      setOfHandleSaving(false)
+    }
+  }
+
+  // ─── LinkMe toggle ────────────────────────────────────────────
   async function toggleLinkMe() {
     const next = !linkmeEnabled
     setLinkmeSaving(true)
@@ -112,40 +157,45 @@ export default function SettingsClient({ creator, ofAccounts: initialOfAccounts,
     }
   }
 
-  // ─── Add OF account ────────────────────────────────────────────
-  async function addAccount() {
-    const handle = newHandle.trim().replace(/^@/, '')
+  // ─── Add conversion account ───────────────────────────────────
+  async function addConversionAccount() {
+    const handle = newConvHandle.trim().replace(/^@/, '').toLowerCase()
     if (!handle) {
       showToast('Handle is required', 'error')
       return
     }
-    setAddingAccount(true)
+    setAddingConv(true)
     try {
-      const res = await fetch(`/api/admin/creators/${creator.id}/of-accounts`, {
+      const res = await fetch(`/api/admin/creators/${creator.id}/conversion-accounts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle, display_label: newLabel.trim() || null }),
+        body: JSON.stringify({
+          handle,
+          display_label: newConvLabel.trim() || null,
+          sheet_tab_name: newConvSheet.trim() || null,
+        }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'failed')
-      setOfAccounts(prev => [...prev, json.account])
-      setNewHandle('')
-      setNewLabel('')
-      showToast('OF account added', 'success')
+      setConversionAccounts(prev => [...prev, json.account])
+      setNewConvHandle('')
+      setNewConvLabel('')
+      setNewConvSheet('')
+      showToast('Conversion account added', 'success')
       router.refresh()
     } catch (e: any) {
       showToast(e.message || 'Failed to add account', 'error')
     } finally {
-      setAddingAccount(false)
+      setAddingConv(false)
     }
   }
 
-  // ─── Update OF account (handle / label / active) ──────────────
-  async function updateAccount(id: string, patch: Partial<OFAccount>) {
-    const prev = ofAccounts
-    setOfAccounts(prev.map(a => a.id === id ? { ...a, ...patch } : a))
+  // ─── Update conversion account ────────────────────────────────
+  async function updateConversionAccount(id: string, patch: Partial<ConversionAccount>) {
+    const prev = conversionAccounts
+    setConversionAccounts(prev.map(a => a.id === id ? { ...a, ...patch } : a))
     try {
-      const res = await fetch(`/api/admin/creators/${creator.id}/of-accounts/${id}`, {
+      const res = await fetch(`/api/admin/creators/${creator.id}/conversion-accounts/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
@@ -156,40 +206,27 @@ export default function SettingsClient({ creator, ofAccounts: initialOfAccounts,
       }
       showToast('Saved', 'success')
     } catch (e: any) {
-      setOfAccounts(prev) // revert
+      setConversionAccounts(prev)
       showToast(e.message || 'Failed to save', 'error')
     }
   }
 
-  // ─── Delete OF account ────────────────────────────────────────
-  async function deleteAccount(id: string, handle: string) {
+  // ─── Delete conversion account ────────────────────────────────
+  async function deleteConversionAccount(id: string, handle: string) {
     if (!confirm(`Delete @${handle}? This will unlink any conversion data tied to it.`)) return
     try {
-      const res = await fetch(`/api/admin/creators/${creator.id}/of-accounts/${id}`, {
+      const res = await fetch(`/api/admin/creators/${creator.id}/conversion-accounts/${id}`, {
         method: 'DELETE',
       })
       if (!res.ok) {
         const json = await res.json()
         throw new Error(json.error || 'failed')
       }
-      setOfAccounts(prev => prev.filter(a => a.id !== id))
-      showToast('OF account deleted', 'success')
+      setConversionAccounts(prev => prev.filter(a => a.id !== id))
+      showToast('Conversion account deleted', 'success')
       router.refresh()
     } catch (e: any) {
       showToast(e.message || 'Failed to delete', 'error')
-    }
-  }
-
-  // ─── Make account the main (set display_label=null, push others to "alt") ──
-  async function makeMain(id: string) {
-    const target = ofAccounts.find(a => a.id === id)
-    if (!target) return
-    await updateAccount(id, { display_label: null })
-    // optimistic: ensure no two mains
-    for (const a of ofAccounts) {
-      if (a.id !== id && !a.display_label) {
-        await updateAccount(a.id, { display_label: 'alt' })
-      }
     }
   }
 
@@ -221,15 +258,11 @@ export default function SettingsClient({ creator, ofAccounts: initialOfAccounts,
     }
   }
 
-  // Try to auto-match Infloww creator by @handle across this creator's OF accounts
+  // Auto-match Infloww by the OF handle
   const autoMatchableInfloww = (() => {
-    if (inflowwMapping || inflowwCreators.length === 0) return null
-    const handles = new Set(ofAccounts.map(a => a.handle.toLowerCase()))
-    const match = inflowwCreators.find(ic => handles.has(ic.user_name?.toLowerCase()))
-    return match || null
+    if (inflowwMapping || inflowwCreators.length === 0 || !ofHandle) return null
+    return inflowwCreators.find(ic => ic.user_name?.toLowerCase() === ofHandle.toLowerCase()) || null
   })()
-
-  const mainAccount = ofAccounts.find(a => !a.display_label) || ofAccounts[0]
 
   // ─── Styling helpers ──────────────────────────────────────────
   const cardCls = isLight
@@ -289,157 +322,207 @@ export default function SettingsClient({ creator, ofAccounts: initialOfAccounts,
         </div>
       </div>
 
-      {/* ─── OnlyFans Accounts ─── */}
+      {/* ─── OnlyFans Account (single) ─── */}
+      <section className={`rounded-xl border ${cardCls} overflow-hidden`}>
+        <div className={`px-5 py-4 border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
+          <h2 className={`text-[13px] font-semibold ${textPrimary}`}>OnlyFans Account</h2>
+          <p className={`text-[11px] mt-0.5 ${textTertiary}`}>
+            Each creator has exactly one OF handle. This is the primary mapping to Infloww.
+          </p>
+        </div>
+        <div className="px-5 py-4 flex items-center gap-2">
+          <label className={`text-[11px] w-32 ${textTertiary}`}>OF @handle</label>
+          <div className={`flex items-center flex-1 max-w-md rounded-lg ${inputCls}`}>
+            <span className={`pl-3 text-[13px] ${textTertiary}`}>@</span>
+            <input
+              type="text"
+              value={ofHandleDraft}
+              onChange={e => setOfHandleDraft(e.target.value)}
+              onBlur={saveOfHandle}
+              onKeyDown={e => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                if (e.key === 'Escape') { setOfHandleDraft(ofHandle); (e.target as HTMLInputElement).blur() }
+              }}
+              placeholder="handle"
+              className="flex-1 px-1 py-1.5 bg-transparent text-[13px] outline-none"
+              disabled={ofHandleSaving}
+            />
+          </div>
+          {ofHandle && (
+            <span className={`text-[11px] ${textTertiary}`}>
+              onlyfans.com/{ofHandle}
+            </span>
+          )}
+        </div>
+      </section>
+
+      {/* ─── Conversion Accounts (multi) ─── */}
       <section className={`rounded-xl border ${cardCls} overflow-hidden`}>
         <div className={`px-5 py-4 border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'} flex items-center justify-between`}>
           <div>
-            <h2 className={`text-[13px] font-semibold ${textPrimary}`}>OnlyFans Accounts</h2>
+            <h2 className={`text-[13px] font-semibold ${textPrimary}`}>Conversion Accounts</h2>
             <p className={`text-[11px] mt-0.5 ${textTertiary}`}>
-              The @handle is the primary mapping to Infloww. Mark one as the main account.
+              Sheet tabs from Conversion Tracking (main, alts, ESP, etc.). Each has its own daily target and daily numbers.
             </p>
           </div>
           <span className={`text-[11px] px-2 py-0.5 rounded-full ${
             isLight ? 'bg-black/[0.05] text-black/50' : 'bg-white/[0.06] text-white/50'
           }`}>
-            {ofAccounts.length} {ofAccounts.length === 1 ? 'account' : 'accounts'}
+            {conversionAccounts.length} {conversionAccounts.length === 1 ? 'account' : 'accounts'}
           </span>
         </div>
 
         <div className={isLight ? 'divide-y divide-black/[0.05]' : 'divide-y divide-white/[0.05]'}>
-          {ofAccounts.length === 0 && (
+          {conversionAccounts.length === 0 && (
             <div className={`px-5 py-6 text-[12px] text-center ${textTertiary}`}>
-              No OF accounts yet. Add one below.
+              No conversion accounts yet. Add one below.
             </div>
           )}
 
-          {ofAccounts.map(account => {
-            const isMain = !account.display_label
-            return (
-              <div key={account.id} className="px-5 py-3.5 flex items-center gap-4">
-                <div className="flex-1 min-w-0 flex items-center gap-3">
-                  <div className={`flex-1 min-w-0`}>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`text-[13px] font-medium ${textPrimary} font-mono`}>@{account.handle}</span>
-                      {isMain && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                          isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-blue-500/15 text-blue-400'
-                        }`}>MAIN</span>
-                      )}
-                      {account.display_label && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                          isLight ? 'bg-black/[0.05] text-black/50' : 'bg-white/[0.06] text-white/50'
-                        }`}>
-                          {account.display_label}
-                        </span>
-                      )}
-                      {!account.is_active && (
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                          isLight ? 'bg-amber-500/10 text-amber-600' : 'bg-amber-500/15 text-amber-400'
-                        }`}>
-                          Inactive
-                        </span>
-                      )}
-                    </div>
-                    <p className={`text-[11px] mt-0.5 ${textTertiary}`}>
-                      onlyfans.com/{account.handle}
-                    </p>
+          {conversionAccounts.map(account => (
+            <div key={account.id} className="px-5 py-3.5 flex items-center gap-4">
+              <div className="flex-1 min-w-0 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[13px] font-medium ${textPrimary} font-mono`}>@{account.handle}</span>
+                    {!account.display_label && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                        isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-blue-500/15 text-blue-400'
+                      }`}>MAIN</span>
+                    )}
+                    {account.display_label && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                        isLight ? 'bg-black/[0.05] text-black/50' : 'bg-white/[0.06] text-white/50'
+                      }`}>
+                        {account.display_label}
+                      </span>
+                    )}
+                    {!account.is_active && (
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                        isLight ? 'bg-amber-500/10 text-amber-600' : 'bg-amber-500/15 text-amber-400'
+                      }`}>
+                        Inactive
+                      </span>
+                    )}
                   </div>
-
-                  {/* Label editor */}
-                  <input
-                    type="text"
-                    value={account.display_label || ''}
-                    onChange={e => {
-                      const v = e.target.value
-                      setOfAccounts(prev => prev.map(a => a.id === account.id ? { ...a, display_label: v } : a))
-                    }}
-                    onBlur={e => {
-                      const v = e.target.value.trim() || null
-                      if (v !== account.display_label) {
-                        updateAccount(account.id, { display_label: v })
-                      }
-                    }}
-                    placeholder="Label (e.g. alt, ESP)"
-                    className={`w-40 px-2.5 py-1.5 rounded-lg text-[12px] outline-none transition-colors ${inputCls}`}
-                  />
-                </div>
-
-                {/* Actions */}
-                <div className="flex items-center gap-1">
-                  {!isMain && (
-                    <button
-                      onClick={() => makeMain(account.id)}
-                      className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
-                        isLight ? 'text-black/50 hover:text-black/80 hover:bg-black/[0.04]' : 'text-white/45 hover:text-white/80 hover:bg-white/[0.05]'
-                      }`}
-                    >
-                      Make main
-                    </button>
-                  )}
-                  <button
-                    onClick={() => updateAccount(account.id, { is_active: !account.is_active })}
-                    className={`w-8 h-[18px] rounded-full transition-colors relative ml-1 ${
-                      account.is_active
-                        ? isLight ? 'bg-black/80' : 'bg-white/80'
-                        : isLight ? 'bg-black/10' : 'bg-white/10'
-                    }`}
-                    title={account.is_active ? 'Active — click to deactivate' : 'Inactive — click to activate'}
-                  >
-                    <div className={`w-3.5 h-3.5 rounded-full absolute top-[2px] transition-all ${
-                      account.is_active
-                        ? isLight ? 'left-[17px] bg-white' : 'left-[17px] bg-black'
-                        : isLight ? 'left-[2px] bg-black/30' : 'left-[2px] bg-white/30'
-                    }`} />
-                  </button>
-                  {isSuperAdmin && (
-                    <button
-                      onClick={() => deleteAccount(account.id, account.handle)}
-                      className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ml-1 ${
-                        isLight ? 'text-red-500/70 hover:text-red-600 hover:bg-red-500/[0.08]' : 'text-red-400/70 hover:text-red-400 hover:bg-red-500/[0.12]'
-                      }`}
-                    >
-                      Delete
-                    </button>
+                  {account.sheet_tab_name && (
+                    <p className={`text-[11px] mt-0.5 ${textTertiary}`}>
+                      Sheet tab: {account.sheet_tab_name}
+                    </p>
                   )}
                 </div>
+
+                {/* Label editor */}
+                <input
+                  type="text"
+                  value={account.display_label || ''}
+                  onChange={e => {
+                    const v = e.target.value
+                    setConversionAccounts(prev => prev.map(a => a.id === account.id ? { ...a, display_label: v } : a))
+                  }}
+                  onBlur={e => {
+                    const v = e.target.value.trim() || null
+                    if (v !== account.display_label) {
+                      updateConversionAccount(account.id, { display_label: v })
+                    }
+                  }}
+                  placeholder="Label (e.g. alt, ESP)"
+                  className={`w-32 px-2.5 py-1.5 rounded-lg text-[12px] outline-none transition-colors ${inputCls}`}
+                />
+
+                {/* Sheet tab editor */}
+                <input
+                  type="text"
+                  value={account.sheet_tab_name || ''}
+                  onChange={e => {
+                    const v = e.target.value
+                    setConversionAccounts(prev => prev.map(a => a.id === account.id ? { ...a, sheet_tab_name: v } : a))
+                  }}
+                  onBlur={e => {
+                    const v = e.target.value.trim() || null
+                    if (v !== account.sheet_tab_name) {
+                      updateConversionAccount(account.id, { sheet_tab_name: v })
+                    }
+                  }}
+                  placeholder="Sheet tab"
+                  className={`w-40 px-2.5 py-1.5 rounded-lg text-[12px] outline-none transition-colors ${inputCls}`}
+                />
               </div>
-            )
-          })}
+
+              {/* Actions */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => updateConversionAccount(account.id, { is_active: !account.is_active })}
+                  className={`w-8 h-[18px] rounded-full transition-colors relative ml-1 ${
+                    account.is_active
+                      ? isLight ? 'bg-black/80' : 'bg-white/80'
+                      : isLight ? 'bg-black/10' : 'bg-white/10'
+                  }`}
+                  title={account.is_active ? 'Active — click to deactivate' : 'Inactive — click to activate'}
+                >
+                  <div className={`w-3.5 h-3.5 rounded-full absolute top-[2px] transition-all ${
+                    account.is_active
+                      ? isLight ? 'left-[17px] bg-white' : 'left-[17px] bg-black'
+                      : isLight ? 'left-[2px] bg-black/30' : 'left-[2px] bg-white/30'
+                  }`} />
+                </button>
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => deleteConversionAccount(account.id, account.handle)}
+                    className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ml-1 ${
+                      isLight ? 'text-red-500/70 hover:text-red-600 hover:bg-red-500/[0.08]' : 'text-red-400/70 hover:text-red-400 hover:bg-red-500/[0.12]'
+                    }`}
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
         </div>
 
-        {/* Add OF account row */}
+        {/* Add conversion account row */}
         <div className={`px-5 py-3.5 border-t ${isLight ? 'border-black/[0.06] bg-black/[0.015]' : 'border-white/[0.06] bg-white/[0.015]'} flex items-center gap-2`}>
           <div className="flex-1 flex items-center gap-2">
-            <div className={`flex items-center gap-1 flex-1 max-w-xs rounded-lg ${inputCls}`}>
+            <div className={`flex items-center gap-1 flex-1 max-w-[180px] rounded-lg ${inputCls}`}>
               <span className={`pl-3 text-[13px] ${textTertiary}`}>@</span>
               <input
                 type="text"
-                value={newHandle}
-                onChange={e => setNewHandle(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') addAccount() }}
+                value={newConvHandle}
+                onChange={e => setNewConvHandle(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') addConversionAccount() }}
                 placeholder="handle"
                 className="flex-1 px-1 py-1.5 bg-transparent text-[13px] outline-none"
-                disabled={addingAccount}
+                disabled={addingConv}
               />
             </div>
             <input
               type="text"
-              value={newLabel}
-              onChange={e => setNewLabel(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') addAccount() }}
+              value={newConvLabel}
+              onChange={e => setNewConvLabel(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addConversionAccount() }}
               placeholder="Label (optional)"
+              className={`w-32 px-2.5 py-1.5 rounded-lg text-[12px] outline-none ${inputCls}`}
+              disabled={addingConv}
+            />
+            <input
+              type="text"
+              value={newConvSheet}
+              onChange={e => setNewConvSheet(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') addConversionAccount() }}
+              placeholder="Sheet tab (optional)"
               className={`w-40 px-2.5 py-1.5 rounded-lg text-[12px] outline-none ${inputCls}`}
-              disabled={addingAccount}
+              disabled={addingConv}
             />
           </div>
           <button
-            onClick={addAccount}
-            disabled={addingAccount || !newHandle.trim()}
+            onClick={addConversionAccount}
+            disabled={addingConv || !newConvHandle.trim()}
             className={`px-4 py-1.5 text-[12px] font-medium rounded-lg transition-all disabled:opacity-40 ${
               isLight ? 'bg-black text-white hover:bg-black/90' : 'bg-white text-black hover:bg-white/90'
             }`}
           >
-            {addingAccount ? 'Adding…' : 'Add account'}
+            {addingConv ? 'Adding…' : 'Add account'}
           </button>
         </div>
       </section>
@@ -449,7 +532,7 @@ export default function SettingsClient({ creator, ofAccounts: initialOfAccounts,
         <div className={`px-5 py-4 border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
           <h2 className={`text-[13px] font-semibold ${textPrimary}`}>Infloww Mapping</h2>
           <p className={`text-[11px] mt-0.5 ${textTertiary}`}>
-            Link this creator to their Infloww profile for revenue tracking. Infloww's handle (@user_name) should match one of the OF accounts above.
+            Link this creator to their Infloww profile for revenue tracking. Infloww's handle (@user_name) should match the OF handle above.
           </p>
         </div>
         <div className="px-5 py-4 space-y-3">
@@ -550,22 +633,22 @@ export default function SettingsClient({ creator, ofAccounts: initialOfAccounts,
       </section>
 
       {/* ─── Quick References ─── */}
-      {mainAccount && (
-        <div className={`rounded-xl border ${cardCls} px-5 py-4 grid grid-cols-1 md:grid-cols-3 gap-4`}>
-          <div>
-            <p className={`text-[10px] uppercase tracking-widest ${textTertiary}`}>Main @handle</p>
-            <p className={`text-[14px] font-mono font-medium mt-1 ${textPrimary}`}>@{mainAccount.handle}</p>
-          </div>
-          <div>
-            <p className={`text-[10px] uppercase tracking-widest ${textTertiary}`}>Slug</p>
-            <p className={`text-[14px] font-mono mt-1 ${textSecondary}`}>{creator.slug}</p>
-          </div>
-          <div>
-            <p className={`text-[10px] uppercase tracking-widest ${textTertiary}`}>Total OF accounts</p>
-            <p className={`text-[14px] mt-1 ${textSecondary}`}>{ofAccounts.length}</p>
-          </div>
+      <div className={`rounded-xl border ${cardCls} px-5 py-4 grid grid-cols-1 md:grid-cols-3 gap-4`}>
+        <div>
+          <p className={`text-[10px] uppercase tracking-widest ${textTertiary}`}>OF @handle</p>
+          <p className={`text-[14px] font-mono font-medium mt-1 ${textPrimary}`}>
+            {ofHandle ? `@${ofHandle}` : <span className={textTertiary}>— not set —</span>}
+          </p>
         </div>
-      )}
+        <div>
+          <p className={`text-[10px] uppercase tracking-widest ${textTertiary}`}>Slug</p>
+          <p className={`text-[14px] font-mono mt-1 ${textSecondary}`}>{creator.slug}</p>
+        </div>
+        <div>
+          <p className={`text-[10px] uppercase tracking-widest ${textTertiary}`}>Conversion accounts</p>
+          <p className={`text-[14px] mt-1 ${textSecondary}`}>{conversionAccounts.length}</p>
+        </div>
+      </div>
     </div>
   )
 }
