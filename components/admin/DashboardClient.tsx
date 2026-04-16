@@ -545,6 +545,22 @@ export default function DashboardClient({
                     Conversions
                   </Link>
                 )}
+                {/* Delete — super admin only */}
+                {isSuperAdmin && (
+                  <button
+                    onClick={() => deleteCreator(c.id, c.display_name)}
+                    disabled={deleting === c.id}
+                    aria-label={`Delete ${c.display_name}`}
+                    title="Delete creator"
+                    className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      isLight
+                        ? 'text-red-500/70 hover:text-red-600 hover:bg-red-500/[0.08]'
+                        : 'text-red-400/70 hover:text-red-400 hover:bg-red-500/[0.12]'
+                    }`}
+                  >
+                    {deleting === c.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                )}
               </div>
 
               {/* Right: Social stats columns with tooltips */}

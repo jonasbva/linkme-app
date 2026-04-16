@@ -19,6 +19,7 @@ export const PATCH = handleUpdate
 export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
   const user = await getSessionUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!user.is_super_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const supabase = createServerSupabaseClient()
   await supabase.from('creators').delete().eq('id', params.id)
   return NextResponse.json({ ok: true })
