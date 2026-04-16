@@ -527,7 +527,6 @@ function ConversionTableTab({
   const [editingCell, setEditingCell] = useState<string | null>(null)
   const [editField, setEditField] = useState<string>('new_subs')
   const [editValue, setEditValue] = useState('')
-  const [calculating, setCalculating] = useState(false)
   const [creatorSearch, setCreatorSearch] = useState('')
   const [showCreatorDropdown, setShowCreatorDropdown] = useState(false)
   const creatorDropdownRef = useRef<HTMLDivElement>(null)
@@ -588,32 +587,6 @@ function ConversionTableTab({
       })
     }
     setEditingCell(null)
-  }
-
-  async function runCalculation() {
-    setCalculating(true)
-    try {
-      // Calculate for yesterday
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      const dateStr = yesterday.toISOString().split('T')[0]
-
-      const res = await fetch('/api/admin/conversions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'calculate_daily', date: dateStr }),
-      })
-      if (res.ok) {
-        // Refetch daily data
-        const fetchRes = await fetch(`/api/admin/conversions?action=daily&from=${dateStart.toISOString().split('T')[0]}&to=${dateEnd.toISOString().split('T')[0]}`)
-        if (fetchRes.ok) {
-          const newData = await fetchRes.json()
-          setDailyData(newData)
-        }
-      }
-    } finally {
-      setCalculating(false)
-    }
   }
 
   function fmtNum(n: number): string {
@@ -716,19 +689,6 @@ function ConversionTableTab({
           isLight={isLight}
         />
 
-        {/* Calculate button */}
-        <button
-          onClick={runCalculation}
-          disabled={calculating}
-          className={`px-3 py-1.5 rounded-lg text-[12px] transition-colors ${
-            isLight
-              ? 'bg-black/[0.04] text-black/50 hover:text-black/80 hover:bg-black/[0.08]'
-              : 'bg-white/[0.06] text-white/50 hover:text-white/80 hover:bg-white/[0.1]'
-          }`}
-        >
-          {calculating ? 'Calculating...' : 'Recalculate yesterday'}
-        </button>
-
         {target > 0 && (
           <span className={`text-[12px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Target: <span className={`font-medium ${isLight ? 'text-black/60' : 'text-white/60'}`}>{target} subs/day</span></span>
         )}
@@ -755,7 +715,7 @@ function ConversionTableTab({
             {filteredData.length === 0 ? (
               <tr>
                 <td colSpan={10} className={`text-center py-12 text-[13px] ${isLight ? 'text-black/20' : 'text-white/20'}`}>
-                  No data for this period. Use "Recalculate yesterday" or enter subs in the Daily Input tab.
+                  No data for this period. Enter subs in the Daily Input tab.
                 </td>
               </tr>
             ) : (
