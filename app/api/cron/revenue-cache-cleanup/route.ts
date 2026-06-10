@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { verifyCronSecret } from '@/lib/auth'
 
 // Prune stale revenue_cache rows.
 //  - `live:*`  rows older than 24h
@@ -7,9 +8,7 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 // Backward-compat keys ('today', 'YYYY-MM-DD') are left untouched —
 // they are idempotently overwritten by the rebuild cron.
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!verifyCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import CreatorEditor from '@/components/admin/CreatorEditor'
+import { canViewCreator } from '@/lib/auth'
 
 interface Props {
   params: { id: string }
@@ -39,6 +40,8 @@ async function fetchAllClicks(supabase: any, creatorId: string) {
 }
 
 export default async function CreatorAnalysisPage({ params }: Props) {
+  if (!(await canViewCreator(params.id))) notFound()
+
   const supabase = createServerSupabaseClient()
 
   const [creatorRes, clicks, linksRes] = await Promise.all([

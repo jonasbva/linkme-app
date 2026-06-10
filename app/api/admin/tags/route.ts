@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireUser, requireSuperAdmin, requireCreatorAccess, guardResponse } from '@/lib/auth'
 
-// GET /api/admin/tags — list all tags, optionally with creator assignments
+// GET /api/admin/tags — list all tags
 export async function GET() {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase.from('tags').select('*').order('name')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -14,10 +14,23 @@ export async function GET() {
 
 // POST /api/admin/tags — create tag, assign/unassign tag, update tag, delete tag
 export async function POST(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
   const supabase = createServerSupabaseClient()
   const body = await req.json()
+
+  // Managing the tag catalog itself is a super-admin action.
+  const isCatalogAction = ['create_tag', 'update_tag', 'delete_tag'].includes(body.action)
+  if (isCatalogAction) {
+    const adminGate = await requireSuperAdmin()
+    if (!adminGate.ok) return guardResponse(adminGate)
+  }
+
+  // Assigning/removing a tag on a creator requires access to that creator.
+  if (body.action === 'assign_tag' || body.action === 'unassign_tag') {
+    const accessGate = await requireCreatorAccess(body.creator_id, 'edit_settings')
+    if (!accessGate.ok) return guardResponse(accessGate)
+  }
 
   if (body.action === 'create_tag') {
     const { name, color } = body

@@ -1,18 +1,12 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireUser, guardResponse } from '@/lib/auth'
 
 // GET: Fetch cached Infloww creators from Supabase (no API call)
 // These are populated automatically when revenue data is fetched
 export async function GET() {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 

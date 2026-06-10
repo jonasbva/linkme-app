@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireUser, guardResponse } from '@/lib/auth'
 
 // GET: Fetch all revenue expectations (joined with creator names)
 export async function GET() {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 
@@ -47,9 +41,8 @@ export async function GET() {
 
 // POST: Create or update a revenue expectation
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const body = await req.json()
   const { creator_id, daily_revenue_target, revenue_per_fan_baseline, check_frequency, free_subs } = body

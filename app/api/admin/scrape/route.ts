@@ -1,24 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireUser, requireCreatorAccess, guardResponse } from '@/lib/auth'
 import { scrapeSingleInstagram, scrapeAndSaveAll } from '@/lib/scraper'
 
 // POST /api/admin/scrape
 // Body: { social_account_id: string } — scrapes that one account
 // Or:   { creator_id: string }        — scrapes ALL active accounts for that creator (batched)
 export async function POST(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const base = await requireUser()
+  if (!base.ok) return guardResponse(base)
 
   const body = await req.json()
   const supabase = createServerSupabaseClient()
 
-  // Resolve which social accounts to scrape
+  // Resolve the creator this scrape targets + which accounts to scrape.
+  let creatorId: string | null = null
   let accountIds: string[] = []
 
   if (body.social_account_id) {
-    accountIds = [body.social_account_id]
+    const { data: acc } = await supabase
+      .from('social_accounts')
+      .select('id, creator_id')
+      .eq('id', body.social_account_id)
+      .single()
+    if (!acc) return NextResponse.json({ error: 'Social account not found' }, { status: 404 })
+    creatorId = acc.creator_id
+    accountIds = [acc.id]
   } else if (body.creator_id) {
+    creatorId = body.creator_id
     const { data: accounts, error } = await supabase
       .from('social_accounts')
       .select('id')
@@ -29,6 +38,10 @@ export async function POST(req: NextRequest) {
   } else {
     return NextResponse.json({ error: 'social_account_id or creator_id required' }, { status: 400 })
   }
+
+  // Scoped: caller must be able to edit this creator's social accounts.
+  const gate = await requireCreatorAccess(creatorId!, 'edit_social')
+  if (!gate.ok) return guardResponse(gate)
 
   if (accountIds.length === 0) {
     return NextResponse.json({ error: 'No active social accounts found' }, { status: 404 })
@@ -116,8 +129,8 @@ export async function POST(req: NextRequest) {
 // GET /api/admin/scrape?social_account_id=xxx&limit=30
 // Returns snapshot history for a social account
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const base = await requireUser()
+  if (!base.ok) return guardResponse(base)
 
   const accountId = req.nextUrl.searchParams.get('social_account_id')
   const limit = parseInt(req.nextUrl.searchParams.get('limit') ?? '30')
@@ -125,6 +138,17 @@ export async function GET(req: NextRequest) {
   if (!accountId) return NextResponse.json({ error: 'social_account_id required' }, { status: 400 })
 
   const supabase = createServerSupabaseClient()
+
+  // Scope: caller must be able to view this account's creator.
+  const { data: acc } = await supabase
+    .from('social_accounts')
+    .select('creator_id')
+    .eq('id', accountId)
+    .single()
+  if (!acc) return NextResponse.json({ error: 'Social account not found' }, { status: 404 })
+  const gate = await requireCreatorAccess(acc.creator_id, 'view_social')
+  if (!gate.ok) return guardResponse(gate)
+
   const { data, error } = await supabase
     .from('social_snapshots')
     .select('id, scraped_at, scrape_date, followers, following, post_count, total_views, total_likes, total_comments, raw_data')

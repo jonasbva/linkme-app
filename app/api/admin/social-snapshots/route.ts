@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireCreatorAccess, guardResponse } from '@/lib/auth'
 
 // Lightweight columns — everything except raw_data (which can be 50-100KB per row)
 const LIGHT_COLS = 'id, social_account_id, scraped_at, scrape_date, followers, following, post_count, total_views, total_likes, total_comments'
@@ -10,14 +10,14 @@ const LIGHT_COLS = 'id, social_account_id, scraped_at, scrape_date, followers, f
 // plus all snapshots in range for charting.
 // Only the end snapshot includes raw_data (for the post carousel).
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const creatorId = req.nextUrl.searchParams.get('creator_id')
   const start = req.nextUrl.searchParams.get('start') // YYYY-MM-DD
   const end = req.nextUrl.searchParams.get('end')     // YYYY-MM-DD
 
   if (!creatorId) return NextResponse.json({ error: 'creator_id required' }, { status: 400 })
+
+  const gate = await requireCreatorAccess(creatorId, 'view_social')
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 

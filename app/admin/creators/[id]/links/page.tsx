@@ -1,12 +1,15 @@
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import LinksManager from '@/components/admin/LinksManager'
+import { canViewCreator } from '@/lib/auth'
 
 interface Props {
   params: { id: string }
 }
 
 export default async function CreatorLinksPage({ params }: Props) {
+  if (!(await canViewCreator(params.id))) notFound()
+
   const supabase = createServerSupabaseClient()
   const [creatorRes, linksRes] = await Promise.all([
     supabase.from('creators').select('*').eq('id', params.id).single(),

@@ -1,14 +1,12 @@
-import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
 import RevenueClient from '@/components/admin/RevenueClient'
+import { getSessionUser } from '@/lib/auth'
 
-export default function RevenuePage() {
-  const cookieStore = cookies()
-  const isAdmin = cookieStore.get('admin_auth')?.value === 'true'
-
-  if (!isAdmin) {
+export default async function RevenuePage() {
+  const user = await getSessionUser()
+  if (!user) {
     redirect('/login')
   }
 
-  return <RevenueClient />
+  return <RevenueClient isSuperAdmin={user.is_super_admin} />
 }

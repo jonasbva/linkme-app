@@ -113,14 +113,11 @@ input:focus, select:focus, textarea:focus {
 }
 
 /* ── Admin Theme: shared utility classes ── */
-.admin-nav {
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+.admin-sidebar {
+  border-right: 1px solid rgba(255,255,255,0.06);
   background: rgba(6,6,6,0.85);
   backdrop-filter: blur(24px) saturate(1.2);
   -webkit-backdrop-filter: blur(24px) saturate(1.2);
-  position: sticky;
-  top: 0;
-  z-index: 50;
 }
 .admin-text { color: #fff; }
 .admin-text-muted { color: rgba(255,255,255,0.45); }
@@ -140,8 +137,8 @@ input:focus, select:focus, textarea:focus {
   --admin-hover: rgba(0,0,0,0.04);
 }
 
-[data-theme="light"] .admin-nav {
-  border-bottom-color: rgba(0,0,0,0.06);
+[data-theme="light"] .admin-sidebar {
+  border-right-color: rgba(0,0,0,0.06);
   background: rgba(255,255,255,0.88);
 }
 [data-theme="light"] .admin-text { color: #1a1a1a; }

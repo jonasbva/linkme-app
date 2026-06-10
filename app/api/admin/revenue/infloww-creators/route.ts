@@ -1,19 +1,14 @@
 import { NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireSuperAdmin, guardResponse } from '@/lib/auth'
+import { decryptSecret } from '@/lib/infloww-crypto'
 
 const INFLOWW_BASE = 'https://openapi.infloww.com'
 
 // GET: Fetch creators list directly from Infloww API
 export async function GET() {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 
@@ -23,7 +18,8 @@ export async function GET() {
     .limit(1)
     .single()
 
-  if (!config?.api_key || !config?.agency_oid) {
+  const apiKey = await decryptSecret(config?.api_key)
+  if (!apiKey || !config?.agency_oid) {
     return NextResponse.json(
       { error: 'Infloww API not configured. Set your API key in Settings first.' },
       { status: 400 }
@@ -32,7 +28,7 @@ export async function GET() {
 
   const headers = {
     Accept: 'application/json',
-    Authorization: config.api_key,
+    Authorization: apiKey,
     'x-oid': config.agency_oid,
   }
 

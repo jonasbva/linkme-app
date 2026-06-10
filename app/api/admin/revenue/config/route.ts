@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireSuperAdmin, guardResponse } from '@/lib/auth'
+import { encryptSecret, decryptSecret } from '@/lib/infloww-crypto'
 
 // GET: Fetch Infloww config
 export async function GET() {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase
@@ -24,12 +19,14 @@ export async function GET() {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // Mask the API key for display (show last 8 chars only)
+  // Decrypt, then mask for display (last 8 chars), and NEVER return the real
+  // key to the client — only the masked form leaves the server.
   if (data && data.api_key) {
-    const key = data.api_key
+    const key = await decryptSecret(data.api_key)
     data.api_key_masked = key.length > 8
       ? '•'.repeat(key.length - 8) + key.slice(-8)
       : key
+    delete data.api_key
   }
 
   return NextResponse.json({ config: data || null })
@@ -37,9 +34,8 @@ export async function GET() {
 
 // PUT: Update Infloww config
 export async function PUT(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const body = await req.json()
   const { api_key, agency_oid, refund_threshold_dollars, fetching_enabled } = body
@@ -58,7 +54,8 @@ export async function PUT(req: NextRequest) {
   }
 
   if (api_key !== undefined) {
-    updates.api_key = api_key
+    // Encrypt at rest. Empty string clears the key.
+    updates.api_key = api_key ? await encryptSecret(api_key) : ''
     updates.api_key_updated_at = new Date().toISOString()
   }
   if (agency_oid !== undefined) updates.agency_oid = agency_oid
@@ -77,7 +74,7 @@ export async function PUT(req: NextRequest) {
     result = await supabase
       .from('infloww_config')
       .insert({
-        api_key: api_key || '',
+        api_key: api_key ? await encryptSecret(api_key) : '',
         agency_oid: agency_oid || '',
         refund_threshold_dollars: refund_threshold_dollars || 20,
         api_key_updated_at: new Date().toISOString(),
@@ -90,5 +87,13 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: result.error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ config: result.data })
+  // Mirror GET: return only the masked key, never the stored ciphertext.
+  const out = result.data as Record<string, any>
+  if (out && out.api_key) {
+    const key = await decryptSecret(out.api_key)
+    out.api_key_masked = key.length > 8 ? '•'.repeat(key.length - 8) + key.slice(-8) : key
+    delete out.api_key
+  }
+
+  return NextResponse.json({ config: out })
 }

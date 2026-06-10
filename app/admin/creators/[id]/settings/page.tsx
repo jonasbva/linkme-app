@@ -1,13 +1,16 @@
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import SettingsClient from '@/components/admin/SettingsClient'
-import { getSessionUser } from '@/lib/auth'
+import { getSessionUser, canViewCreator } from '@/lib/auth'
 
 interface Props {
   params: { id: string }
 }
 
 export default async function CreatorSettingsPage({ params }: Props) {
+  // Block non-super-admins from reading a creator they don't have access to.
+  if (!(await canViewCreator(params.id))) notFound()
+
   const supabase = createServerSupabaseClient()
   const user = await getSessionUser()
 

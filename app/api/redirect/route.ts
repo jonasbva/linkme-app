@@ -38,7 +38,12 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Invalid URL', { status: 400 })
   }
 
-  const escapedUrl = url.replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  // Safe to embed inside a <script> block: JSON.stringify quotes the string,
+  // and escaping < > & prevents a "</script>" breakout / HTML injection.
+  const urlForScript = JSON.stringify(url)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e')
+    .replace(/&/g, '\\u0026')
 
   const html = `<!DOCTYPE html>
 <html>
@@ -152,7 +157,7 @@ export async function GET(req: NextRequest) {
   </div>
 
   <script>
-    var url = ${JSON.stringify(url)};
+    var url = ${urlForScript};
     var ua = navigator.userAgent || '';
     var isAndroid = /Android/i.test(ua);
     var isIOS = /iPhone|iPad|iPod/i.test(ua);

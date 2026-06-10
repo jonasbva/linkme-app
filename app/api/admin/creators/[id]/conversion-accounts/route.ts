@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireCreatorAccess, guardResponse } from '@/lib/auth'
 
 // GET: list conversion accounts for a creator
 export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireCreatorAccess(params.id, 'view_conversions')
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase
@@ -21,8 +21,8 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
 
 // POST: create a new conversion account
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireCreatorAccess(params.id, 'input_conversions')
+  if (!gate.ok) return guardResponse(gate)
 
   const body = await req.json()
   const handle = String(body.handle || '').trim().replace(/^@/, '').toLowerCase()

@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser } from '@/lib/auth'
+import { requireSuperAdmin, guardResponse } from '@/lib/auth'
 import { createServerSupabaseClient } from '@/lib/supabase'
 
 // GET /api/admin/roles — list all roles with their creator access and permissions
 export async function GET() {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!user.is_super_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 
@@ -57,9 +56,8 @@ export async function GET() {
 
 // POST /api/admin/roles — action-based operations
 export async function POST(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!user.is_super_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 

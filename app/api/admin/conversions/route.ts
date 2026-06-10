@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireUser, requireSuperAdmin, requireCreatorAccess, canAccessCreator, guardResponse, getUserPermissions } from '@/lib/auth'
 
 /**
  * Conversions API — keyed on conversion_account_id (not creator_id).
@@ -12,15 +12,27 @@ import { getSessionUser } from '@/lib/auth'
 // GET /api/admin/conversions?action=expectations  → list all expectations
 // GET /api/admin/conversions?action=daily&account_id=…&from=…&to=… → daily rows
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
   const supabase = createServerSupabaseClient()
+
+  // Determine creator scope. null = unrestricted (super-admin / grant-all).
+  let visibleIds: string[] | null = null
+  if (!gate.user.is_super_admin) {
+    const perms = await getUserPermissions(gate.user.id)
+    if (!perms.grantAllCreators) visibleIds = perms.visibleCreatorIds
+  }
 
   const { searchParams } = new URL(req.url)
   const action = searchParams.get('action')
 
   if (action === 'expectations') {
-    const { data, error } = await supabase.from('conversion_expectations').select('*')
+    let q = supabase.from('conversion_expectations').select('*')
+    if (visibleIds !== null) {
+      if (visibleIds.length === 0) return NextResponse.json([])
+      q = q.in('creator_id', visibleIds)
+    }
+    const { data, error } = await q
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
@@ -36,6 +48,10 @@ export async function GET(req: NextRequest) {
     if (creatorId && !accountId) query = query.eq('creator_id', creatorId)
     if (from) query = query.gte('date', from)
     if (to) query = query.lte('date', to)
+    if (visibleIds !== null) {
+      if (visibleIds.length === 0) return NextResponse.json([])
+      query = query.in('creator_id', visibleIds)
+    }
     query = query.order('date', { ascending: false })
 
     const { data, error } = await query
@@ -48,8 +64,8 @@ export async function GET(req: NextRequest) {
 
 // POST /api/admin/conversions
 export async function POST(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
   const supabase = createServerSupabaseClient()
   const body = await req.json()
 
@@ -69,6 +85,9 @@ export async function POST(req: NextRequest) {
       .eq('id', conversion_account_id)
       .single()
     if (caErr || !ca) return NextResponse.json({ error: 'Conversion account not found' }, { status: 404 })
+
+    const access = await requireCreatorAccess(ca.creator_id, 'input_conversions')
+    if (!access.ok) return guardResponse(access)
 
     const { data, error } = await supabase
       .from('conversion_expectations')
@@ -107,6 +126,16 @@ export async function POST(req: NextRequest) {
       .in('id', accountIds)
     if (accErr) return NextResponse.json({ error: accErr.message }, { status: 500 })
     const creatorByAccount = Object.fromEntries((accounts || []).map(a => [a.id, a.creator_id]))
+
+    // Scope: every targeted account must belong to a creator the caller can write.
+    if (!gate.user.is_super_admin) {
+      const creatorIds = Array.from(new Set(Object.values(creatorByAccount))) as string[]
+      for (const cid of creatorIds) {
+        if (!(await canAccessCreator(gate.user.id, cid, 'input_conversions'))) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
+      }
+    }
 
     // Preserve existing views / profile_views / link_clicks per (account, date).
     const { data: existingRows } = await supabase
@@ -167,6 +196,9 @@ export async function POST(req: NextRequest) {
       .single()
     if (caErr || !ca) return NextResponse.json({ error: 'Conversion account not found' }, { status: 404 })
 
+    const access = await requireCreatorAccess(ca.creator_id, 'input_conversions')
+    if (!access.ok) return guardResponse(access)
+
     const { data: existing } = await supabase
       .from('conversion_daily')
       .select('views, profile_views, link_clicks, new_subs')
@@ -206,6 +238,10 @@ export async function POST(req: NextRequest) {
    * Body: { action: 'calculate_daily', date? }
    */
   if (body.action === 'calculate_daily') {
+    // Global recompute across all creators — super-admin only.
+    const adminGate = await requireSuperAdmin()
+    if (!adminGate.ok) return guardResponse(adminGate)
+
     const targetDate =
       body.date ||
       (() => {

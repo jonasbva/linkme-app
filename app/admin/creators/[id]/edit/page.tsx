@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
 import CreatorEditor from '@/components/admin/CreatorEditor'
 import TagManager from '@/components/admin/TagManager'
+import { getSessionUser, canViewCreator } from '@/lib/auth'
 
 interface Props {
   params: { id: string }
@@ -9,6 +10,15 @@ interface Props {
 
 export default async function EditCreatorEditPage({ params }: Props) {
   const isNew = params.id === 'new'
+
+  // Creating a creator is super-admin only; editing requires access to it.
+  if (isNew) {
+    const user = await getSessionUser()
+    if (!user?.is_super_admin) notFound()
+  } else if (!(await canViewCreator(params.id))) {
+    notFound()
+  }
+
   let creator = null
   let links: any[] = []
   let allTags: any[] = []
