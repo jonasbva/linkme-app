@@ -15,13 +15,23 @@ The original **LinkMe link-in-bio** feature (public creator pages, links, custom
 ---
 
 ## Navigation (left sidebar)
-Navigation is a **left sidebar** (`components/admin/Sidebar.tsx`), rendered by `app/admin/layout.tsx` as a flex shell (fixed sidebar + scrollable main). Groups:
+Navigation is a **left sidebar** (`components/admin/Sidebar.tsx`, `w-56`), rendered by `app/admin/layout.tsx` as a flex shell (fixed sidebar + scrollable main). Groups:
 
-- **Tracking** — Dashboard (`/admin`), Conversions (`/admin/conversions`), Revenue (`/admin/revenue`), Social Accounts (`/admin/social-accounts`, super-admin)
+- **Tracking** — Dashboard (`/admin`), Creators (`/admin/creators`), Conversions (`/admin/conversions`), Revenue (`/admin/revenue`), Social Accounts (`/admin/social-accounts`, super-admin)
 - **LinkMe (optional)** — Domains (`/admin/domains`)
 - **Admin** (super-admin only) — Access (`/admin/access`)
 
-Theme toggle (system/light/dark via `ThemeProvider`), the signed-in user's name, and logout live at the **bottom** of the sidebar. Mobile uses a hamburger + off-canvas drawer. The old top `AdminNav` has been removed.
+**Contextual creator sub-nav:** when on `/admin/creators/<id>/…`, the sidebar shows the current creator (avatar + name) with nested links — Social Media (`/analysis`), Conversions (`/conversions?creator=`), LinkMe (`/edit`), Settings (super-admin) — filtered by per-creator permission. The sidebar fetches `/api/admin/creators` once (module-cached) to resolve the creator; the layout passes a serialized `userPermissions` snapshot for gating. Active items get a blue left accent bar.
+
+Bottom: theme toggle, the signed-in user's name (links to **`/admin/profile`**), and logout. Mobile uses a hamburger + off-canvas drawer.
+
+## Pages
+- **`/admin` — Overview** (`DashboardClient`): KPI cards (followers, engagement, new subs, revenue-today-from-cache — no live Infloww fetch), a **Needs attention** panel (revenue emergencies, accounts below sub target today, unmapped Infloww, stale scrapes), and Quick actions. Data: `getOverviewData` in `lib/dashboard-data.ts`.
+- **`/admin/creators` — Creators list** (`CreatorsClient`): the searchable/sortable creator list (moved off the dashboard). Data: `getCreatorStats` in `lib/dashboard-data.ts`.
+- **`/admin/profile` — Profile** (`ProfileClient` + `app/api/admin/profile/route.ts`): self-service change own display name + password (`requireUser`, self only; re-issues the signed cookie on name change).
+
+## Loading / responsiveness
+Every slow segment has a `loading.tsx` rendering `<PageLoader/>` (from `components/admin/ui.tsx`) so a spinner appears **instantly** on navigation. Shared primitives in `components/admin/ui.tsx`: `Spinner`, `Skeleton`, `PageLoader`, `Card`, `Button`, `ButtonLink`, `SectionHeader`.
 
 ---
 
