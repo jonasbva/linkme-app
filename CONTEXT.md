@@ -1,148 +1,97 @@
-# LinkMe Admin Dashboard — Project Context
+# LinkMe / Tracking Admin — Project Context
 
 ## Overview
-LinkMe is a Next.js 14 (App Router, TypeScript) link-in-bio platform for adult content creators. There is a public-facing creator page and a private admin dashboard. Hosted on Vercel, database on Supabase.
+A Next.js 14 (App Router, TypeScript) admin app for an adult-content creator agency. The product **focus has shifted**: it is now primarily a **tracking dashboard for the traffic team** —
 
-- **Live URL:** https://linkme-app.vercel.app
-- **Admin:** https://linkme-app.vercel.app/admin
-- **Repo:** https://github.com/jonasbva/linkme-app
-- **Stack:** Next.js 14, TypeScript, Tailwind CSS, Supabase, Vercel
+1. **Social media tracking** (Instagram follower/engagement snapshots, per-post analytics)
+2. **Revenue tracking** (live Infloww OnlyFans revenue, per-creator + agency totals)
+3. **Subscriber / conversion tracking** (per-account daily funnel: views → profile views → link clicks → new subs, vs. targets)
+
+The original **LinkMe link-in-bio** feature (public creator pages, links, custom domains, themes) is still present but **optional/secondary** — re-enableable per creator via the `linkme_enabled` flag.
+
+- **Stack:** Next.js 14, TypeScript, Tailwind CSS, Supabase (Postgres), Vercel, lucide-react, recharts
+- **Hosting:** Vercel · **DB:** Supabase
 
 ---
 
-## File Structure (relevant parts)
+## Navigation (left sidebar)
+Navigation is a **left sidebar** (`components/admin/Sidebar.tsx`), rendered by `app/admin/layout.tsx` as a flex shell (fixed sidebar + scrollable main). Groups:
 
+- **Tracking** — Dashboard (`/admin`), Conversions (`/admin/conversions`), Revenue (`/admin/revenue`), Social Accounts (`/admin/social-accounts`, super-admin)
+- **LinkMe (optional)** — Domains (`/admin/domains`)
+- **Admin** (super-admin only) — Access (`/admin/access`)
+
+Theme toggle (system/light/dark via `ThemeProvider`), the signed-in user's name, and logout live at the **bottom** of the sidebar. Mobile uses a hamburger + off-canvas drawer. The old top `AdminNav` has been removed.
+
+---
+
+## Auth (IMPORTANT — changed)
+Custom email/password auth backed by the `admin_users` table (NOT Supabase Auth).
+
+- **Session cookie:** `admin_session`, an **HMAC-SHA256-signed** token (`lib/auth.ts`) — `<base64url(payload)>.<base64url(sig)>`. The payload (incl. `is_super_admin`) cannot be forged. Signing secret: `SESSION_SECRET` (falls back to `SUPABASE_SERVICE_ROLE_KEY`).
+- **The legacy unsigned token and the `admin_auth=true` cookie are gone.** Revenue routes/page previously gated on `admin_auth` (which login never set) — that was both broken and forgeable; all now use the guards below.
+- **Guards (`lib/auth.ts`):**
+  - `requireUser()` — any logged-in admin.
+  - `requireSuperAdmin()` — re-validates `is_super_admin`/`is_active` against the DB (defeats stale tokens). Used for user/role management, Infloww config, creator create/delete, bulk social-account ops, global scrape/recompute.
+  - `requireCreatorAccess(creatorId, permission?)` — per-creator permission via `getUserPermissions` (super-admins bypass). Used on all creator-scoped routes.
+  - `childBelongsToCreator(table, childId, creatorId)` — closes IDOR on nested resources (links, conversion accounts).
+  - `verifyCronSecret(req)` — cron routes fail **closed** if `CRON_SECRET` is unset.
+- **Rate limiting:** login is limited per-IP and per-email via `lib/rate-limit.ts` (Upstash; no-op without Upstash env vars).
+
+Permission types: `view_links · view_social · view_conversions · view_link_analytics · edit_settings · edit_links · input_conversions · edit_social`, granted per-creator to users or roles (`getUserPermissions`). List reads (dashboard, creators, conversions, social accounts) are scoped to the user's visible creators.
+
+---
+
+## Required environment variables
+See `.env.example`. Notable:
+- `SUPABASE_SERVICE_ROLE_KEY` — server-side DB access (the app uses this for all DB access; the anon key is not used for DB reads).
+- `SESSION_SECRET` — session signing (set explicitly in prod).
+- `CRON_SECRET` — **required** for `/api/cron/*` (Vercel Cron sends it as a bearer; routes reject everything if unset).
+- `UPSTASH_REDIS_REST_URL` / `_TOKEN` — rate limiting (else limiters are no-ops).
+
+---
+
+## Database (Supabase)
+Service-role server-side everywhere; **anon key is not used for DB access**. RLS hardening + an `of_handle` unique constraint are shipped as reviewed SQL in `supabase/` (apply manually):
+- `supabase/security_rls_hardening_2026-06-05.sql` — locks anon/authenticated out of all sensitive tables (admin/infloww/revenue/conversion/social/tags), enables RLS on `scrape_jobs` + `conversion_accounts`, keeps only active `creators`/`links` publicly readable.
+- `supabase/of_handle_unique_2026-06-05.sql` — case-insensitive unique `creators.of_handle`.
+
+Key tables:
+- **creators** — hub. `of_handle` (Infloww mapping key, unique), `linkme_enabled`, plus LinkMe page styling columns.
+- **social_accounts → social_snapshots / social_posts** — IG accounts, daily metric snapshots, per-post analytics.
+- **conversion_accounts → conversion_daily / conversion_expectations** — N accounts per creator; daily funnel rows + per-account daily sub target.
+- **revenue_expectations / revenue_emergency_status / revenue_cache** + **infloww_config / infloww_creator_map / infloww_creators_cache** — Infloww revenue integration & caching.
+- **admin_users / admin_roles / admin_user_roles / admin_permissions / admin_creator_access** — RBAC.
+- **tags / creator_tags**, **scrape_jobs** (async scrape progress).
+- **links / clicks** — LEGACY LinkMe (kept; optional).
+
+---
+
+## Revenue cache
+`lib/revenue-cache.ts` holds the shared in-process rebuild (`rebuildRevenueCache(fromMs, toMs)`, `resolveRevenueRange`). Both the cron route (`/api/cron/revenue-cache`) and the admin cache route (`/api/admin/revenue/cache`) call it directly — no internal HTTP self-call or shared-secret coupling. Cache keys: `live:<from>-<bucketedTo>` (≤2 min from now), `rng:<from>-<to>`, plus legacy `today` / `YYYY-MM-DD`. Cleanup cron prunes `live:*` >24h and `rng:*` >90d.
+
+---
+
+## Image proxy (SSRF-guarded)
+`/api/admin/proxy-image?url=` — admin-only; only fetches `*.cdninstagram.com` / `*.fbcdn.net` over https, blocks private/loopback/link-local/metadata IPs, no redirects, image content-type + size capped. Used by `SocialTab`. `lib/ssrf.ts` holds the guard (also applied to `check-domain`).
+
+---
+
+## File structure (relevant)
 ```
-app/
-  admin/
-    layout.tsx                        # Admin shell, wraps all admin pages
-    page.tsx                          # Dashboard home
-    creators/
-      page.tsx                        # Creators list (Edit · Analysis · Preview per row)
-      [id]/
-        page.tsx                      # Redirects → /edit
-        edit/page.tsx                 # Edit page: Profile + Links sub-tabs
-        analysis/page.tsx             # Analysis page: Social Media + Link Analysis sub-tabs
-        links/page.tsx                # Dedicated links management page
-    domains/
-      page.tsx                        # Shared domains management page
-  api/
-    admin/
-      creators/route.ts               # GET/POST creators
-      creators/[id]/route.ts          # GET/PATCH/DELETE creator
-      creators/[id]/links/route.ts    # GET/POST links
-      creators/[id]/links/[linkId]/route.ts  # PATCH/DELETE individual link
-      check-domain/route.ts           # DNS verification via Google DNS-over-HTTPS
-      proxy-image/route.ts            # Server-side image proxy (Instagram CORS bypass)
-      upload/route.ts                 # Image upload to Supabase storage
-      login/route.ts
-      logout/route.ts
-      scrape/route.ts
-      social-accounts/route.ts
-    track/route.ts                    # Click/view tracking
-    redirect/route.ts
-    resolve-domain/route.ts
-
-components/
-  admin/
-    AdminNav.tsx                      # Nav: Dashboard · Creators · Domains + theme toggle
-    ThemeProvider.tsx                 # Light/dark/system theme context
-    CreatorEditor.tsx                 # Shared editor component (mode="edit" | "analysis")
-    LinksManager.tsx                  # Standalone links management client component
-    DomainsManager.tsx                # Domains management client component
-    SocialTab.tsx                     # Instagram post/account analytics tab
-  CreatorPage.tsx                     # Public-facing creator link page
+app/admin/                layout.tsx (sidebar shell), page.tsx (dashboard),
+  conversions/ revenue/ social-accounts/ domains/ access/ creators/[id]/{edit,analysis,links,settings}
+app/api/admin/...         all guarded per lib/auth (see Auth)
+app/api/cron/...          CRON_SECRET-gated (fail closed)
+components/admin/         Sidebar, ThemeProvider, DashboardClient, ConversionsClient, RevenueClient,
+                          SocialAccountsClient, SettingsClient, CreatorEditor, LinksManager, DomainsManager, ...
+components/CreatorPage.tsx public LinkMe page
+lib/                       auth.ts, supabase.ts, rate-limit.ts, ssrf.ts, revenue-cache.ts, scraper.ts
+supabase/                  schema + migrations + the two hardening SQL files above
 ```
 
 ---
 
-## Database Tables (Supabase)
-
-**creators**
-- id, display_name, slug, username, bio, avatar_url
-- background_color, button_color, text_color, button_style
-- link_font_size, link_text_align, link_icon_style (`inline` | `large`)
-- background_image_url, avatar_position, hero_height, hero_position, hero_scale
-- custom_domain, show_verified, show_footer, is_active
-
-**links**
-- id, creator_id, title, url, icon, custom_icon_url
-- thumbnail_url, thumbnail_position, thumbnail_height
-- sort_order, is_active
-
----
-
-## Admin Pages
-
-### `/admin/creators`
-List of all creators. Each row: avatar, name, slug + **Edit · Analysis · Preview ↗** buttons.
-
-### `/admin/creators/[id]/edit`
-Renders `<CreatorEditor mode="edit" />`. Sub-tabs: **Profile** (all creator settings) and **Links** (existing links + add new).
-
-### `/admin/creators/[id]/analysis`
-Renders `<CreatorEditor mode="analysis" />`. Sub-tabs: **Social Media** (Instagram posts/stats via `SocialTab`) and **Link Analysis** (click chart, countries, devices).
-
-### `/admin/creators/[id]/links`
-Renders `<LinksManager />`. Full-page link management: collapsible link cards, ▲/▼ reorder, toggle active, edit fields, live preview card, add new link. "Save changes" saves all at once.
-
-### `/admin/domains`
-Renders `<DomainsManager />`. Shared across all creators. Shows all custom domains with:
-- Live DNS status (auto-checked on load via Google DNS API)
-- "Check DNS" button, "Setup" expands CNAME instructions
-- CNAME target: `cname.vercel-dns.com`
-- "Add domain" form: pick creator + enter domain
-- "Remove" to clear a domain from a creator
-
----
-
-## Key Components
-
-### `CreatorEditor.tsx`
-- `mode="edit"`: shows Profile + Links sub-tabs
-- `mode="analysis"`: shows Social Media + Link Analysis sub-tabs
-- Edit mode header has a **Preview ↗** button
-- Link preview cards use **creator's profile settings** (button_color, text_color, link_font_size, link_text_align, link_icon_style) — never the admin theme
-- Icons: `PLATFORM_ICONS` map + `renderPreviewIcon(link, size)` — checks `custom_icon_url` first, falls back to platform SVG. `link_icon_style === 'large'` shows 36px icon top-left; `inline` shows 20px icon in the gradient overlay
-
-### `SocialTab.tsx`
-- Full light/dark mode support via `useTheme` / `isLight`
-- Instagram images loaded via `/api/admin/proxy-image?url=` (CORS bypass)
-- Post cards: 260×320px
-- Caption text always white; stats bar responds to light/dark
-
-### `LinksManager.tsx`
-- Standalone client component, uses same API routes as CreatorEditor
-- Collapse/expand per link, reorder, add, delete, toggle active
-- Live preview using creator profile settings + `renderIcon(link, size)`
-
-### `DomainsManager.tsx`
-- On mount, auto-checks DNS for all existing domains
-- DNS check hits `/api/admin/check-domain?domain=` which uses Google DNS-over-HTTPS
-- Checks for CNAME containing "vercel" or A record matching Vercel IPs (76.76.21.21/22)
-
----
-
-## Image Proxy
-**`/api/admin/proxy-image?url=<encoded_url>`**
-Fetches images server-side with browser User-Agent + `Referer: https://www.instagram.com/`. Needed to bypass Instagram CDN hotlink protection. Returns image buffer with `Cache-Control: public, max-age=3600`.
-
----
-
-## Auth
-Cookie-based: `admin_auth=true`. Set by `/api/admin/login`, cleared by `/api/admin/logout`. All admin API routes check `cookies().get('admin_auth')?.value === 'true'`.
-
----
-
-## Theme
-`ThemeProvider` wraps the admin layout. Three modes: `system` / `light` / `dark`. Cycled via the System button in the nav. Components use `const { resolved } = useTheme()` and check `resolved === 'light'`.
-
----
-
-## Custom Domains Flow
-1. Add domain in `/admin/domains` → saves to `creator.custom_domain` in Supabase
-2. Add CNAME `@ → cname.vercel-dns.com` at domain registrar
-3. Add domain in Vercel project → Settings → Domains
-4. Click "Check DNS" to verify — green when both DNS + Vercel are configured
-
-The public creator page at `CreatorPage.tsx` is resolved via `resolve-domain` API route which looks up the creator by custom_domain or slug.
+## Build notes
+- `next.config.js` sets `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds` (true). A few **pre-existing** type errors remain (RevenueClient casts, `CreatorPage` `lock_*` fields not on the `Creator` type) — they don't block the SWC build. `tsconfig.json` now sets `target: es2017`.
+- Tests: `npm test` (vitest) — auth/login/creators/redirect/track/rate-limit covered.

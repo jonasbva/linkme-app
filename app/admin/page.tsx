@@ -21,50 +21,42 @@ async function getDashboardStats(visibleCreatorIds?: string[]) {
   const creatorTags = creatorTagsRes.data || []
   const socialAccounts = socialAccountsRes.data || []
 
-  // Fetch latest snapshot per social account for social stats
+  // Fetch the latest snapshot + a ~7-days-ago snapshot per social account.
+  // Per-account queries (vs. one capped cross-account fetch) avoid a
+  // truncation bug where a single account with many snapshots could crowd
+  // out others and leave them showing 0.
   const accountIds = socialAccounts.map(a => a.id)
-  let latestSnapshots: any[] = []
-  let prevSnapshots: any[] = []
+  const latestSnapshots: any[] = []
+  const prevSnapshots: any[] = []
   if (accountIds.length > 0) {
-    // Get latest snapshot per account (using distinct on via RPC or fetching all recent)
-    const { data: snaps } = await supabase
-      .from('social_snapshots')
-      .select('social_account_id, followers, following, total_views, total_likes, total_comments, scraped_at')
-      .in('social_account_id', accountIds)
-      .order('scraped_at', { ascending: false })
-      .limit(accountIds.length * 2) // Get enough to find latest per account
-
-    if (snaps) {
-      // Get latest snapshot per account
-      const seen = new Set<string>()
-      for (const snap of snaps) {
-        if (!seen.has(snap.social_account_id)) {
-          seen.add(snap.social_account_id)
-          latestSnapshots.push(snap)
-        }
-      }
-    }
-
-    // Get snapshots from ~7 days ago for growth calculation (use scrape_date index)
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0]
-    const { data: oldSnaps } = await supabase
-      .from('social_snapshots')
-      .select('social_account_id, followers, total_views, total_likes, total_comments, scraped_at')
-      .in('social_account_id', accountIds)
-      .lte('scrape_date', sevenDaysAgoStr)
-      .order('scraped_at', { ascending: false })
-      .limit(accountIds.length * 2)
 
-    if (oldSnaps) {
-      const seenOld = new Set<string>()
-      for (const snap of oldSnaps) {
-        if (!seenOld.has(snap.social_account_id)) {
-          seenOld.add(snap.social_account_id)
-          prevSnapshots.push(snap)
-        }
-      }
+    const perAccount = await Promise.all(
+      accountIds.map(async (id) => {
+        const [latestRes, prevRes] = await Promise.all([
+          supabase
+            .from('social_snapshots')
+            .select('social_account_id, followers, following, total_views, total_likes, total_comments, scraped_at')
+            .eq('social_account_id', id)
+            .order('scraped_at', { ascending: false })
+            .limit(1),
+          supabase
+            .from('social_snapshots')
+            .select('social_account_id, followers, total_views, total_likes, total_comments, scraped_at')
+            .eq('social_account_id', id)
+            .lte('scrape_date', sevenDaysAgoStr)
+            .order('scraped_at', { ascending: false })
+            .limit(1),
+        ])
+        return { latest: latestRes.data?.[0] ?? null, prev: prevRes.data?.[0] ?? null }
+      })
+    )
+
+    for (const r of perAccount) {
+      if (r.latest) latestSnapshots.push(r.latest)
+      if (r.prev) prevSnapshots.push(r.prev)
     }
   }
 

@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireCreatorAccess, guardResponse } from '@/lib/auth'
 
 // PATCH: set/clear the single OF handle on the creator row.
 // Body: { of_handle: string | null }
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireCreatorAccess(params.id, 'edit_settings')
+  if (!gate.ok) return guardResponse(gate)
 
   const body = await req.json()
   let next: string | null
@@ -24,6 +24,19 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const { data: creator } = await supabase.from('creators').select('id').eq('id', params.id).single()
   if (!creator) return NextResponse.json({ error: 'Creator not found' }, { status: 404 })
+
+  // Enforce uniqueness across creators (handle is stored normalized lowercase).
+  if (next) {
+    const { data: clash } = await supabase
+      .from('creators')
+      .select('id')
+      .eq('of_handle', next)
+      .neq('id', params.id)
+      .maybeSingle()
+    if (clash) {
+      return NextResponse.json({ error: `@${next} is already linked to another creator` }, { status: 409 })
+    }
+  }
 
   const { data, error } = await supabase
     .from('creators')

@@ -408,9 +408,14 @@ function InlineProgress({ message, current, total, isLight }: {
 // ═════════════════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═════════════════════════════════════════════════════════════════════
-export default function RevenueClient() {
+export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?: boolean }) {
   const { resolved } = useTheme()
   const isLight = resolved === 'light'
+
+  // Settings (Infloww API key / mapping) is super-admin only.
+  const visibleTabs: SubTab[] = isSuperAdmin
+    ? ['overview', 'tracking', 'expectations', 'settings']
+    : ['overview', 'tracking', 'expectations']
 
   const [activeTab, setActiveTab] = useState<SubTab>('overview')
   const [loading, setLoading] = useState(false)
@@ -804,7 +809,7 @@ export default function RevenueClient() {
 
       {/* Tabs */}
       <div className="flex gap-1 mb-8">
-        {(['overview', 'tracking', 'expectations', 'settings'] as SubTab[]).map(tab => (
+        {visibleTabs.map(tab => (
           <button key={tab} className={tabCls(tab)} onClick={() => setActiveTab(tab)}>
             {tab === 'overview' ? 'Overview' : tab === 'tracking' ? 'Revenue Tracking' : tab === 'expectations' ? 'Expectations' : 'Settings'}
           </button>

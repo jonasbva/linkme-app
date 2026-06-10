@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireUser, guardResponse } from '@/lib/auth'
+import { rebuildRevenueCache, resolveRevenueRange } from '@/lib/revenue-cache'
 
 // ─── Cache key logic ────────────────────────────────────────────────
 // Historical: rng:${fromMs}-${toMs}
@@ -75,24 +71,10 @@ function resolveRange(searchParams: URLSearchParams): ResolvedRange | null {
   return null
 }
 
-async function triggerRebuild(baseUrl: string, fromMs: number, toMs: number): Promise<void> {
-  const cronSecret = process.env.CRON_SECRET || ''
-  const qs = new URLSearchParams({ from: String(fromMs), to: String(toMs) }).toString()
-  const res = await fetch(`${baseUrl}/api/cron/revenue-cache?${qs}`, {
-    headers: { Authorization: `Bearer ${cronSecret}` },
-    cache: 'no-store',
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body as any).error || `Rebuild failed: HTTP ${res.status}`)
-  }
-}
-
 // ─── GET — read from cache, optionally rebuild if stale/missing ─────
 export async function GET(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const { searchParams } = new URL(req.url)
   const resolved = resolveRange(searchParams) ?? resolveRange(new URLSearchParams({ key: 'today' }))!
@@ -115,19 +97,17 @@ export async function GET(req: NextRequest) {
   const staleLive = resolved.isLive && cachedAgeMs > LIVE_STALE_MS
 
   if (!cached || staleLive) {
-    try {
-      await triggerRebuild(req.nextUrl.origin, resolved.fromMs, resolved.toMs)
+    // Rebuild in-process (no internal HTTP hop / shared secret).
+    const rebuild = await rebuildRevenueCache(resolved.fromMs, resolved.toMs)
+    if (rebuild.ok) {
       cached = await readCache()
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Rebuild failed'
-      if (!cached) {
-        return NextResponse.json(
-          { error: msg, totals: null, fetchedAt: null },
-          { status: 502 }
-        )
-      }
-      // Fall through — serve stale cache if rebuild fails
+    } else if (!cached) {
+      return NextResponse.json(
+        { error: rebuild.error, totals: null, fetchedAt: null },
+        { status: 502 }
+      )
     }
+    // else: rebuild failed but we have stale cache — fall through and serve it.
   }
 
   if (!cached) {
@@ -142,38 +122,18 @@ export async function GET(req: NextRequest) {
 }
 
 // ─── POST — trigger a manual cache refresh ──────────────────────────
+// Any admin may refresh (the traffic team relies on live revenue); the
+// in-process rebuild is internally rate-limited against the Infloww API.
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const { searchParams } = new URL(req.url)
-  const resolved = resolveRange(searchParams)
+  const { fromMs, toMs } = resolveRevenueRange(searchParams)
 
-  const baseUrl = req.nextUrl.origin
-  const cronSecret = process.env.CRON_SECRET || ''
-
-  // Build the cron URL: prefer from/to if given, else legacy ?date=YYYY-MM-DD for BC
-  let cronUrl = `${baseUrl}/api/cron/revenue-cache`
-  if (resolved) {
-    const qs = new URLSearchParams({ from: String(resolved.fromMs), to: String(resolved.toMs) }).toString()
-    cronUrl = `${cronUrl}?${qs}`
-  } else {
-    // Legacy: accept ?date=YYYY-MM-DD passthrough
-    const dateParam = searchParams.get('date')
-    if (dateParam) cronUrl = `${cronUrl}?date=${encodeURIComponent(dateParam)}`
+  const result = await rebuildRevenueCache(fromMs, toMs)
+  if (!result.ok) {
+    return NextResponse.json({ error: result.error }, { status: result.status })
   }
-
-  const res = await fetch(cronUrl, {
-    headers: { Authorization: `Bearer ${cronSecret}` },
-    cache: 'no-store',
-  })
-
-  const result = await res.json()
-
-  if (!res.ok) {
-    return NextResponse.json({ error: result.error || 'Failed to refresh' }, { status: 500 })
-  }
-
   return NextResponse.json(result)
 }

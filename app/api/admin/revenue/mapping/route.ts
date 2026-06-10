@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireSuperAdmin, guardResponse } from '@/lib/auth'
 
 // GET: Fetch all creator mappings
 export async function GET() {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 
@@ -28,9 +22,8 @@ export async function GET() {
 
 // POST: Create or update a mapping
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const body = await req.json()
   const { creator_id, infloww_creator_id, infloww_creator_name } = body
@@ -69,9 +62,8 @@ export async function POST(req: NextRequest) {
 
 // DELETE: Remove a mapping
 export async function DELETE(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const { searchParams } = new URL(req.url)
   const creatorId = searchParams.get('creator_id')

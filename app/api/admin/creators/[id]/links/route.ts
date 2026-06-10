@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireCreatorAccess, guardResponse } from '@/lib/auth'
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireCreatorAccess(params.id, 'edit_links')
+  if (!gate.ok) return guardResponse(gate)
   const body = await req.json()
   const supabase = createServerSupabaseClient()
+  // Force creator_id to the route's creator so a payload can't reassign the link.
+  const { id, creator_id, ...rest } = body
   const { data, error } = await supabase
     .from('links')
-    .insert({ ...body, creator_id: params.id })
+    .insert({ ...rest, creator_id: params.id })
     .select()
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })

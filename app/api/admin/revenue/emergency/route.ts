@@ -1,17 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireUser, guardResponse } from '@/lib/auth'
 
 // GET: Fetch all emergency statuses
 export async function GET() {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase
@@ -27,9 +21,8 @@ export async function GET() {
 
 // POST: Set or update emergency status for a creator
 export async function POST(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const body = await req.json()
   const { creator_id, emergency_since, notes } = body

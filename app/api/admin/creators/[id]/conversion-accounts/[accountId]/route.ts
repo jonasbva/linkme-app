@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireCreatorAccess, requireSuperAdmin, guardResponse } from '@/lib/auth'
 
 // PATCH: update a conversion account
 export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string; accountId: string } }
 ) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireCreatorAccess(params.id, 'input_conversions')
+  if (!gate.ok) return guardResponse(gate)
 
   const body = await req.json()
   const updates: Record<string, any> = {}
@@ -72,9 +72,8 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string; accountId: string } }
 ) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!user.is_super_admin) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 

@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser } from '@/lib/auth'
+import { requireUser, guardResponse } from '@/lib/auth'
+import { isBlockedHost } from '@/lib/ssrf'
 
 // Vercel custom domains should CNAME to cname.vercel-dns.com
 const VERCEL_CNAME_TARGET = 'cname.vercel-dns.com'
 
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const domain = req.nextUrl.searchParams.get('domain')
   if (!domain) return NextResponse.json({ error: 'Missing domain' }, { status: 400 })
@@ -36,11 +37,12 @@ export async function GET(req: NextRequest) {
     const vercelIPs = ['76.76.21.21', '76.76.21.22', '76.76.21.9', '76.76.21.61', '76.76.21.93', '76.76.21.123', '76.76.21.164', '76.76.21.241']
     const aMatch = aAnswers.some(ip => vercelIPs.includes(ip))
 
-    // Fallback: try fetching the domain to see if it actually works
+    // Fallback: try fetching the domain to see if it actually works.
+    // SSRF guard: never probe internal/private hosts, and don't follow redirects.
     let reachable = false
-    if (!cnameMatch && !aMatch) {
+    if (!cnameMatch && !aMatch && !isBlockedHost(domain)) {
       try {
-        const probe = await fetch(`https://${domain}`, { method: 'HEAD', redirect: 'follow', signal: AbortSignal.timeout(5000) })
+        const probe = await fetch(`https://${domain}`, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(5000) })
         const server = probe.headers.get('server') || ''
         const via = probe.headers.get('x-vercel-id') || probe.headers.get('x-vercel-cache') || ''
         reachable = server.toLowerCase().includes('vercel') || via.length > 0 || probe.ok

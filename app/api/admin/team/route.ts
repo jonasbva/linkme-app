@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { hashPassword, getSessionUser } from '@/lib/auth'
+import { hashPassword, requireSuperAdmin, guardResponse } from '@/lib/auth'
 
-// GET /api/admin/team — list all admin users with roles
+// GET /api/admin/team — list all admin users with roles (super-admin only)
 export async function GET() {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
 
@@ -45,10 +45,10 @@ export async function GET() {
   return NextResponse.json(usersWithRoles)
 }
 
-// POST /api/admin/team — action-based operations on admin users
+// POST /api/admin/team — action-based operations on admin users (super-admin only)
 export async function POST(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
   const body = await req.json()

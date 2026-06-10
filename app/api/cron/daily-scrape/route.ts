@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { scrapeAndSaveAll } from '@/lib/scraper'
+import { verifyCronSecret } from '@/lib/auth'
 
 // GET /api/cron/daily-scrape
 // Protected by CRON_SECRET — called by Vercel Cron daily at 6 AM UTC
 // 1. Scrapes all active IG accounts in batches (fast)
 // 2. Calculates conversion data for yesterday
 export async function GET(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  const cronSecret = process.env.CRON_SECRET
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
+  if (!verifyCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

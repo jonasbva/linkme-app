@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireUser, requireSuperAdmin, requireCreatorAccess, guardResponse, getUserPermissions } from '@/lib/auth'
 
 // GET /api/admin/social-accounts?creator_id=xxx  — accounts for one creator
 // GET /api/admin/social-accounts                 — ALL accounts with creator name + last scraped
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const creatorId = req.nextUrl.searchParams.get('creator_id')
   const supabase = createServerSupabaseClient()
 
   if (creatorId) {
+    const gate = await requireCreatorAccess(creatorId, 'view_social')
+    if (!gate.ok) return guardResponse(gate)
     const { data, error } = await supabase
       .from('social_accounts')
       .select('*')
@@ -22,10 +21,24 @@ export async function GET(req: NextRequest) {
   }
 
   // All accounts with creator name + last snapshot date
-  const { data: accounts, error } = await supabase
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
+
+  let accountsQuery = supabase
     .from('social_accounts')
     .select('id, creator_id, platform, username, is_active, created_at, creators(display_name)')
     .order('created_at', { ascending: true })
+
+  // Non-super-admins only see accounts for creators they can access.
+  if (!gate.user.is_super_admin) {
+    const perms = await getUserPermissions(gate.user.id)
+    if (!perms.grantAllCreators) {
+      if (perms.visibleCreatorIds.length === 0) return NextResponse.json([])
+      accountsQuery = accountsQuery.in('creator_id', perms.visibleCreatorIds)
+    }
+  }
+
+  const { data: accounts, error } = await accountsQuery
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
@@ -71,13 +84,14 @@ export async function GET(req: NextRequest) {
 
 // POST /api/admin/social-accounts — add a social account to track
 export async function POST(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { creator_id, platform, username } = await req.json()
 
   if (!creator_id || !platform || !username) {
     return NextResponse.json({ error: 'creator_id, platform, and username are required' }, { status: 400 })
   }
+
+  const gate = await requireCreatorAccess(creator_id, 'edit_social')
+  if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
   const { data, error } = await supabase
@@ -93,8 +107,8 @@ export async function POST(req: NextRequest) {
 // PATCH /api/admin/social-accounts — bulk update accounts
 // Body: { updates: [{ id, username?, is_active?, platform? }] }
 export async function PATCH(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const { updates } = await req.json()
   if (!Array.isArray(updates) || updates.length === 0) {
@@ -129,8 +143,8 @@ export async function PATCH(req: NextRequest) {
 // DELETE /api/admin/social-accounts?id=xxx
 // DELETE /api/admin/social-accounts  body: { ids: [...] }  — bulk delete
 export async function DELETE(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   const id = req.nextUrl.searchParams.get('id')
   const supabase = createServerSupabaseClient()

@@ -1,4 +1,5 @@
 import { cookies } from 'next/headers'
+import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from './supabase'
 
 // ── Password hashing using Web Crypto (no external deps) ──
@@ -30,6 +31,56 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return derivedHex === hashHex
 }
 
+// ── Signed session tokens (HMAC-SHA-256, no external deps) ──
+//
+// Token format: `<base64url(payload)>.<base64url(hmac)>`.
+// The signature is verified on every read, so the payload (including
+// is_super_admin) cannot be forged the way an unsigned base64 blob could.
+
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!secret) {
+    throw new Error('SESSION_SECRET (or SUPABASE_SERVICE_ROLE_KEY) must be set to sign sessions')
+  }
+  return secret
+}
+
+function base64urlFromBytes(bytes: Uint8Array): string {
+  let bin = ''
+  for (const b of bytes) bin += String.fromCharCode(b)
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+}
+
+function base64urlToBytes(s: string): Uint8Array {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/')
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+async function hmacSign(data: string): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(getSessionSecret()),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data))
+  return base64urlFromBytes(new Uint8Array(sig))
+}
+
+// Length-safe constant-time string compare.
+function timingSafeEqual(a: string, b: string): boolean {
+  const ab = new TextEncoder().encode(a)
+  const bb = new TextEncoder().encode(b)
+  let diff = ab.length ^ bb.length
+  const len = Math.max(ab.length, bb.length)
+  for (let i = 0; i < len; i++) diff |= (ab[i] ?? 0) ^ (bb[i] ?? 0)
+  return diff === 0
+}
+
 // ── Session / Auth helpers ──
 
 export interface SessionUser {
@@ -41,20 +92,41 @@ export interface SessionUser {
 
 export async function getSessionUser(): Promise<SessionUser | null> {
   const cookieStore = cookies()
-  const sessionToken = cookieStore.get('admin_session')?.value
+  const token = cookieStore.get('admin_session')?.value
+  if (!token) return null
 
-  if (!sessionToken) return null
+  const [payloadB64, sig] = token.split('.')
+  // Reject malformed and legacy unsigned (single-segment) tokens.
+  if (!payloadB64 || !sig) return null
+
+  let expectedSig: string
+  try {
+    expectedSig = await hmacSign(payloadB64)
+  } catch {
+    return null
+  }
+  if (!timingSafeEqual(sig, expectedSig)) return null
 
   try {
-    const payload = JSON.parse(Buffer.from(sessionToken, 'base64').toString())
+    const payload = JSON.parse(new TextDecoder().decode(base64urlToBytes(payloadB64)))
     if (!payload.id || !payload.exp || Date.now() > payload.exp) return null
-    return { id: payload.id, email: payload.email, display_name: payload.display_name, is_super_admin: payload.is_super_admin }
+    return {
+      id: payload.id,
+      email: payload.email,
+      display_name: payload.display_name,
+      is_super_admin: payload.is_super_admin,
+    }
   } catch {
     return null
   }
 }
 
-export function createSessionToken(user: { id: string; email: string; display_name: string; is_super_admin: boolean }): string {
+export async function createSessionToken(user: {
+  id: string
+  email: string
+  display_name: string
+  is_super_admin: boolean
+}): Promise<string> {
   const payload = {
     id: user.id,
     email: user.email,
@@ -62,18 +134,61 @@ export function createSessionToken(user: { id: string; email: string; display_na
     is_super_admin: user.is_super_admin,
     exp: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
   }
-  return Buffer.from(JSON.stringify(payload)).toString('base64')
+  const payloadB64 = base64urlFromBytes(new TextEncoder().encode(JSON.stringify(payload)))
+  const sig = await hmacSign(payloadB64)
+  return `${payloadB64}.${sig}`
 }
 
-// ── API route auth helper ──
+// ── API route guards ──
+//
+// These return a discriminated result so route handlers can branch and emit
+// the right HTTP status. Use unauthorizedResponse() to convert a failed guard
+// into a NextResponse in one line.
 
-export async function requireAuth(): Promise<SessionUser | null> {
-  return getSessionUser()
+export type GuardResult =
+  | { ok: true; user: SessionUser }
+  | { ok: false; status: 401 | 403; error: string }
+
+export function guardResponse(result: { ok: false; status: 401 | 403; error: string }): NextResponse {
+  return NextResponse.json({ error: result.error }, { status: result.status })
+}
+
+export async function requireUser(): Promise<GuardResult> {
+  const user = await getSessionUser()
+  if (!user) return { ok: false, status: 401, error: 'Unauthorized' }
+  return { ok: true, user }
+}
+
+// Re-validates super-admin status against the DB so a still-valid token issued
+// before a demotion (or deactivation) cannot be used for privileged actions.
+export async function requireSuperAdmin(): Promise<GuardResult> {
+  const user = await getSessionUser()
+  if (!user) return { ok: false, status: 401, error: 'Unauthorized' }
+
+  const supabase = createServerSupabaseClient()
+  const { data } = await supabase
+    .from('admin_users')
+    .select('is_super_admin, is_active')
+    .eq('id', user.id)
+    .single()
+
+  if (!data || data.is_active === false || data.is_super_admin !== true) {
+    return { ok: false, status: 403, error: 'Forbidden' }
+  }
+  return { ok: true, user: { ...user, is_super_admin: true } }
 }
 
 // ── Permission helpers ──
 
-export type PermissionType = 'view_links' | 'view_social' | 'view_conversions' | 'view_link_analytics' | 'edit_settings' | 'edit_links' | 'input_conversions' | 'edit_social'
+export type PermissionType =
+  | 'view_links'
+  | 'view_social'
+  | 'view_conversions'
+  | 'view_link_analytics'
+  | 'edit_settings'
+  | 'edit_links'
+  | 'input_conversions'
+  | 'edit_social'
 
 export async function getUserPermissions(userId: string): Promise<{
   visibleCreatorIds: string[]
@@ -143,6 +258,17 @@ export async function getUserPermissions(userId: string): Promise<{
     permissions[p.creator_id].add(p.permission_type as PermissionType)
   })
 
+  // Also get user-level permissions (assigned directly to the user)
+  const { data: userPerms } = await supabase
+    .from('admin_permissions')
+    .select('creator_id, permission_type')
+    .eq('user_id', userId)
+
+  ;(userPerms || []).forEach(p => {
+    if (!permissions[p.creator_id]) permissions[p.creator_id] = new Set()
+    permissions[p.creator_id].add(p.permission_type as PermissionType)
+  })
+
   // If user has grant_all_creators role but also has user-level creator assignments,
   // restrict visibility to only those assigned creators
   const effectiveGrantAll = grantAllCreators && !hasUserLevelAccess
@@ -153,4 +279,64 @@ export async function getUserPermissions(userId: string): Promise<{
     grantAllCreators: effectiveGrantAll,
     allCreatorsPermissions,
   }
+}
+
+// True if the user can see (and optionally has `permission` on) the creator.
+export async function canAccessCreator(
+  userId: string,
+  creatorId: string,
+  permission?: PermissionType,
+): Promise<boolean> {
+  const perms = await getUserPermissions(userId)
+  if (perms.grantAllCreators) {
+    return permission ? perms.allCreatorsPermissions.has(permission) : true
+  }
+  if (!perms.visibleCreatorIds.includes(creatorId)) return false
+  if (!permission) return true
+  return perms.permissions[creatorId]?.has(permission) ?? false
+}
+
+// For server-component pages: may the current session user VIEW this creator's
+// page? Super-admins and grant-all roles always can; otherwise the creator must
+// be in their visible set. Pages call this and `notFound()` on false.
+export async function canViewCreator(creatorId: string): Promise<boolean> {
+  const user = await getSessionUser()
+  if (!user) return false
+  if (user.is_super_admin) return true
+  return canAccessCreator(user.id, creatorId)
+}
+
+// requireUser + per-creator access. Super-admins bypass (the is_super_admin
+// flag is now signed and therefore trustworthy for read/write scoping).
+export async function requireCreatorAccess(
+  creatorId: string,
+  permission?: PermissionType,
+): Promise<GuardResult> {
+  const gate = await requireUser()
+  if (!gate.ok) return gate
+  if (gate.user.is_super_admin) return gate
+  const allowed = await canAccessCreator(gate.user.id, creatorId, permission)
+  if (!allowed) return { ok: false, status: 403, error: 'Forbidden' }
+  return gate
+}
+
+// Verifies a child row actually belongs to the creator named in the route,
+// closing IDOR on nested resources. Generalizes the check already used in
+// conversion-accounts/[accountId].
+export async function childBelongsToCreator(
+  table: 'links' | 'conversion_accounts' | 'social_accounts',
+  childId: string,
+  creatorId: string,
+): Promise<boolean> {
+  const supabase = createServerSupabaseClient()
+  const { data } = await supabase.from(table).select('id, creator_id').eq('id', childId).single()
+  return !!data && data.creator_id === creatorId
+}
+
+// ── Cron auth ──
+// Fails CLOSED: if CRON_SECRET is unset, no request is authorized.
+export function verifyCronSecret(req: Request): boolean {
+  const secret = process.env.CRON_SECRET
+  if (!secret) return false
+  return req.headers.get('authorization') === `Bearer ${secret}`
 }

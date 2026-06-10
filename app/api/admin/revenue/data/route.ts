@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { cookies } from 'next/headers'
 import { createServerSupabaseClient } from '@/lib/supabase'
-
-function isAdmin() {
-  const cookieStore = cookies()
-  return cookieStore.get('admin_auth')?.value === 'true'
-}
+import { requireUser, guardResponse } from '@/lib/auth'
+import { decryptSecret } from '@/lib/infloww-crypto'
 
 const INFLOWW_BASE = 'https://openapi.infloww.com'
 
@@ -304,9 +300,8 @@ async function mergeWithSupabase(creatorData: any[], supabase: any, startDate: D
 // ─── GET Handler ────────────────────────────────────────────────────
 // Query params: ?days=1 &date=2026-04-01 &stream=true
 export async function GET(req: NextRequest) {
-  if (!isAdmin()) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const { searchParams } = new URL(req.url)
   const days = parseInt(searchParams.get('days') || '1', 10)
@@ -331,7 +326,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: errMsg, fetching_disabled: true }, { status: 403 })
   }
 
-  if (!config?.api_key || !config?.agency_oid) {
+  const apiKey = await decryptSecret(config?.api_key)
+  if (!apiKey || !config?.agency_oid) {
     const errMsg = 'Infloww API not configured. Please set your API key and Agency OID in Settings.'
     if (stream) {
       return new Response(`data: ${JSON.stringify({ type: 'error', error: errMsg })}\n\n`, {
@@ -343,7 +339,7 @@ export async function GET(req: NextRequest) {
 
   const apiHeaders = {
     Accept: 'application/json',
-    Authorization: config.api_key,
+    Authorization: apiKey,
     'x-oid': config.agency_oid,
   }
 

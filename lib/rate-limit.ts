@@ -20,10 +20,17 @@ interface RateLimitConfig {
   windowSeconds: number // window size in seconds
 }
 
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN
+// Read at call time (not module load) so env set after import — and serverless
+// cold starts — are respected.
+function upstashConfig() {
+  return {
+    url: process.env.UPSTASH_REDIS_REST_URL,
+    token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  }
+}
 
 async function redisCommand(command: string[]): Promise<unknown> {
+  const { url: UPSTASH_URL, token: UPSTASH_TOKEN } = upstashConfig()
   if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
 
   const res = await fetch(`${UPSTASH_URL}`, {
@@ -46,6 +53,7 @@ async function redisCommand(command: string[]): Promise<unknown> {
  * Upstash supports this via POST to /pipeline
  */
 async function redisPipeline(commands: string[][]): Promise<unknown[] | null> {
+  const { url: UPSTASH_URL, token: UPSTASH_TOKEN } = upstashConfig()
   if (!UPSTASH_URL || !UPSTASH_TOKEN) return null
 
   const res = await fetch(`${UPSTASH_URL}/pipeline`, {
@@ -77,6 +85,7 @@ export async function rateLimit(
   config: RateLimitConfig
 ): Promise<RateLimitResult> {
   const { max, windowSeconds } = config
+  const { url: UPSTASH_URL, token: UPSTASH_TOKEN } = upstashConfig()
 
   // Fail-open: if Redis is not configured, allow all requests
   if (!UPSTASH_URL || !UPSTASH_TOKEN) {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { getSessionUser } from '@/lib/auth'
+import { requireUser, requireSuperAdmin, guardResponse } from '@/lib/auth'
 import { scrapeAndSaveAll } from '@/lib/scraper'
 
 export const maxDuration = 300 // 5 min for scraping all accounts
@@ -17,8 +17,8 @@ export const maxDuration = 300 // 5 min for scraping all accounts
  * the response hasn't been sent yet (still doing work).
  */
 export async function POST(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireSuperAdmin()
+  if (!gate.ok) return guardResponse(gate)
 
   let body: any = {}
   try { body = await req.json() } catch {}
@@ -172,8 +172,8 @@ export async function POST(req: NextRequest) {
  * Returns current progress for a scrape job. Client polls this every 3 seconds.
  */
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const gate = await requireUser()
+  if (!gate.ok) return guardResponse(gate)
 
   const jobId = req.nextUrl.searchParams.get('jobId')
   const supabase = createServerSupabaseClient()
