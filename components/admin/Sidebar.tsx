@@ -111,6 +111,7 @@ export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: 
     items: [
       { href: '/admin', label: 'Overview', exact: true, icon: LayoutDashboard },
       { href: '/admin/creators', label: 'All Creators', icon: Users },
+      { href: '/admin/conversions', label: 'Conversions', icon: TrendingUp },
       { href: '/admin/revenue', label: 'Revenue', icon: DollarSign },
       ...(isSuperAdmin ? [{ href: '/admin/social-accounts', label: 'Social Accounts', icon: BarChart3 }] : []),
       { href: '/admin/domains', label: 'Domains', icon: Globe },
