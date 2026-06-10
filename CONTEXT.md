@@ -15,15 +15,16 @@ The original **LinkMe link-in-bio** feature (public creator pages, links, custom
 ---
 
 ## Navigation (left sidebar)
-Navigation is a **left sidebar** (`components/admin/Sidebar.tsx`, `w-56`), rendered by `app/admin/layout.tsx` as a flex shell (fixed sidebar + scrollable main). Groups:
+Navigation is a **left sidebar** (`components/admin/Sidebar.tsx`, `w-60`), rendered by `app/admin/layout.tsx` as a flex shell (fixed sidebar + scrollable main). Active items use a **solid blue pill**.
 
-- **Tracking** — Dashboard (`/admin`), Creators (`/admin/creators`), Conversions (`/admin/conversions`), Revenue (`/admin/revenue`), Social Accounts (`/admin/social-accounts`, super-admin)
-- **LinkMe (optional)** — Domains (`/admin/domains`)
-- **Admin** (super-admin only) — Access (`/admin/access`)
-
-**Contextual creator sub-nav:** when on `/admin/creators/<id>/…`, the sidebar shows the current creator (avatar + name) with nested links — Social Media (`/analysis`), Conversions (`/conversions?creator=`), LinkMe (`/edit`), Settings (super-admin) — filtered by per-creator permission. The sidebar fetches `/api/admin/creators` once (module-cached) to resolve the creator; the layout passes a serialized `userPermissions` snapshot for gating. Active items get a blue left accent bar.
+- **Creator switcher** (top, CreatorHero-style): a card showing the active creator (avatar + name + chevrons); clicking opens a searchable popover of all creators. Selecting one persists `activeCreatorId` (localStorage) and navigates to that creator's Social Media page. On first load the active creator defaults to the route's creator → last selected → the first creator, so the creator tabs are always populated.
+- **Creator** group — the active creator's tabs (always visible): Social Media (`/analysis`), Conversions (`/conversions?creator=`), LinkMe (`/edit`), Settings (super-admin). Filtered by per-creator permission (layout passes a serialized `userPermissions` snapshot; the sidebar fetches `/api/admin/creators` once, module-cached, to resolve creators).
+- **Workspace** group — Overview (`/admin`), All Creators (`/admin/creators`), Revenue, Social Accounts (super-admin), Domains.
+- **Admin** group (super-admin only) — Access (`/admin/access` — manage users, roles, and per-creator permissions; this is where access is granted).
 
 Bottom: theme toggle, the signed-in user's name (links to **`/admin/profile`**), and logout. Mobile uses a hamburger + off-canvas drawer.
+
+> Note: super-admin nav visibility reads the signed session token, so a user promoted to super-admin must **log out and back in** for super-admin items to appear (the API guards re-check the DB immediately regardless).
 
 ## Pages
 - **`/admin` — Overview** (`DashboardClient`): KPI cards (followers, engagement, new subs, revenue-today-from-cache — no live Infloww fetch), a **Needs attention** panel (revenue emergencies, accounts below sub target today, unmapped Infloww, stale scrapes), and Quick actions. Data: `getOverviewData` in `lib/dashboard-data.ts`.
