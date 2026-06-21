@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect, Dispatch, SetStateAction } from '
 import { useSearchParams } from 'next/navigation'
 import { useTheme } from './ThemeProvider'
 import DateRangePicker from './DateRangePicker'
+import DatePicker from './DatePicker'
 
 interface Creator {
   id: string
@@ -527,16 +528,7 @@ function DailyInputTab({
           }`}
         />
         <label className={`text-[12px] ${isLight ? 'text-black/40' : 'text-white/40'}`}>Date:</label>
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          className={`border rounded-lg px-3 py-1.5 text-[13px] outline-none ${
-            isLight
-              ? 'bg-black/[0.03] border-black/[0.1] text-black/80 focus:border-black/20'
-              : 'bg-white/[0.04] border-white/[0.08] text-white/80 focus:border-white/20'
-          }`}
-        />
+        <DatePicker value={date} onChange={setDate} isLight={isLight} />
         <button
           onClick={saveAll}
           disabled={saving}
