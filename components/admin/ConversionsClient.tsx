@@ -72,6 +72,19 @@ export default function ConversionsClient({
   const [activeTab, setActiveTab] = useState<Tab>(preselectedCreator ? 'table' : 'expectations')
   const [expectations, setExpectations] = useState(initialExpectations)
   const [dailyData, setDailyData] = useState(initialDaily)
+  // True when the Daily Input tab has typed-but-unsaved subscriber numbers.
+  const [inputDirty, setInputDirty] = useState(false)
+
+  // Guard tab switches when the Daily Input has unsaved numbers.
+  function requestTab(tab: Tab) {
+    if (tab === activeTab) return
+    if (activeTab === 'input' && inputDirty) {
+      const leave = window.confirm('You have entered subscriber numbers that haven’t been saved.\n\nClick OK to discard them and continue, or Cancel to stay and press “Save all” first.')
+      if (!leave) return
+      setInputDirty(false)
+    }
+    setActiveTab(tab)
+  }
 
   const creatorById = useMemo(() => {
     const map: Record<string, Creator> = {}
@@ -98,7 +111,7 @@ export default function ConversionsClient({
         {tabs.map(tab => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+            onClick={() => requestTab(tab.key)}
             className={`px-4 py-1.5 rounded-md text-[13px] transition-colors ${
               activeTab === tab.key
                 ? isLight ? 'bg-black/[0.08] text-black/90 font-medium' : 'bg-white/[0.08] text-white/90 font-medium'
@@ -127,6 +140,7 @@ export default function ConversionsClient({
           expectations={expectations}
           dailyData={dailyData}
           setDailyData={setDailyData}
+          setInputDirty={setInputDirty}
           isLight={isLight}
         />
       )}
@@ -409,6 +423,7 @@ function DailyInputTab({
   expectations,
   dailyData,
   setDailyData,
+  setInputDirty,
   isLight,
 }: {
   creatorById: Record<string, Creator>
@@ -416,6 +431,7 @@ function DailyInputTab({
   expectations: Expectation[]
   dailyData: DailyRow[]
   setDailyData: Dispatch<SetStateAction<DailyRow[]>>
+  setInputDirty: Dispatch<SetStateAction<boolean>>
   isLight: boolean
 }) {
   const yesterday = useMemo(() => {
@@ -438,6 +454,8 @@ function DailyInputTab({
   }, [expectations])
 
   // Pre-fill with existing values for the selected date.
+  // (Note: do NOT reset `saved` here — this effect re-runs when `dailyData` updates
+  // right after a successful save, which would instantly wipe the "Saved" confirmation.)
   useEffect(() => {
     const dateRows = dailyData.filter(d => d.date === date)
     const filled: Record<string, string> = {}
@@ -445,8 +463,44 @@ function DailyInputTab({
       if (row.conversion_account_id) filled[row.conversion_account_id] = String(row.new_subs)
     })
     setInputs(filled)
-    setSaved(false)
   }, [date, dailyData])
+
+  // The saved (baseline) numbers for this date — drives unsaved-changes detection.
+  const baseline = useMemo(() => {
+    const m: Record<string, string> = {}
+    dailyData.filter(d => d.date === date).forEach(r => {
+      if (r.conversion_account_id) m[r.conversion_account_id] = String(r.new_subs)
+    })
+    return m
+  }, [dailyData, date])
+
+  // Dirty = any non-empty input that differs from its saved baseline (mirrors what Save persists).
+  const dirty = useMemo(() =>
+    Object.keys(inputs).some(k => {
+      const v = (inputs[k] ?? '').trim()
+      return v !== '' && v !== (baseline[k] ?? '')
+    }), [inputs, baseline])
+
+  // Report dirty state up (drives the tab-switch guard); clear it when the tab unmounts.
+  useEffect(() => { setInputDirty(dirty) }, [dirty, setInputDirty])
+  useEffect(() => () => setInputDirty(false), [setInputDirty])
+  // Once the user edits again, drop the transient "Saved" confirmation.
+  useEffect(() => { if (dirty) setSaved(false) }, [dirty])
+
+  // Warn before leaving the page (refresh / close / browser back) with unsaved numbers.
+  useEffect(() => {
+    if (!dirty) return
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [dirty])
+
+  // Switching dates discards unsaved numbers for the current date — confirm first.
+  function requestDateChange(next: string) {
+    if (next === date) return
+    if (dirty && !window.confirm('You have unsaved subscriber numbers for this date.\n\nClick OK to discard them and switch dates, or Cancel to stay and press “Save all” first.')) return
+    setDate(next)
+  }
 
   const sorted = useMemo(() => {
     let list = [...conversionAccounts]
@@ -528,22 +582,31 @@ function DailyInputTab({
           }`}
         />
         <label className={`text-[12px] ${isLight ? 'text-black/40' : 'text-white/40'}`}>Date:</label>
-        <DatePicker value={date} onChange={setDate} isLight={isLight} />
+        <DatePicker value={date} onChange={requestDateChange} isLight={isLight} />
         <button
           onClick={saveAll}
           disabled={saving}
-          className={`px-4 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+          className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-medium transition-colors disabled:opacity-50 ${
             saved
-              ? isLight
-                ? 'bg-emerald-500/20 text-emerald-700'
-                : 'bg-emerald-500/20 text-emerald-300'
+              ? 'bg-emerald-500 text-white'
               : isLight
-                ? 'bg-black text-white hover:bg-black/90 disabled:opacity-50'
-                : 'bg-white text-black hover:bg-white/90 disabled:opacity-50'
+                ? 'bg-black text-white hover:bg-black/90'
+                : 'bg-white text-black hover:bg-white/90'
           }`}
         >
-          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save all'}
+          {saving && (
+            <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="9" opacity="0.25" />
+              <path d="M21 12a9 9 0 0 0-9-9" />
+            </svg>
+          )}
+          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save all'}
         </button>
+        {dirty && !saving && !saved && (
+          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
+            <span className="text-[8px] leading-none">●</span> Unsaved changes
+          </span>
+        )}
       </div>
 
       {/* Accounts input grid */}
