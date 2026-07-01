@@ -340,3 +340,15 @@ export function verifyCronSecret(req: Request): boolean {
   if (!secret) return false
   return req.headers.get('authorization') === `Bearer ${secret}`
 }
+
+// ── Subscriber MCP read-only token ──
+// Guards GET /api/subscribers (read-only conversion data for the subscriber MCP server).
+// Fails CLOSED: if SUBSCRIBER_MCP_TOKEN is unset, no request is authorized.
+export function verifySubscriberToken(req: Request): boolean {
+  const secret = process.env.SUBSCRIBER_MCP_TOKEN
+  if (!secret) return false
+  const header = req.headers.get('authorization') || ''
+  const prefix = 'Bearer '
+  if (!header.startsWith(prefix)) return false
+  return timingSafeEqual(header.slice(prefix.length), secret)
+}
