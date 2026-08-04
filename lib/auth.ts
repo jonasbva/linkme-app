@@ -352,3 +352,18 @@ export function verifySubscriberToken(req: Request): boolean {
   if (!header.startsWith(prefix)) return false
   return timingSafeEqual(header.slice(prefix.length), secret)
 }
+
+// ── Management MCP token ──
+// Guards the read-only remote MCP server at /api/mcp.
+//
+// Unlike verifySubscriberToken this takes the candidate string rather than the
+// request, because the token may arrive either as a header OR as a path segment:
+// Claude's custom-connector UI only reliably exposes a URL field (request-header
+// auth is still a gated beta), so /api/mcp/<token> has to work too.
+//
+// Fails CLOSED: if MANAGEMENT_MCP_TOKEN is unset, nothing is authorized.
+export function verifyManagementMcpToken(candidate: string | null | undefined): boolean {
+  const secret = process.env.MANAGEMENT_MCP_TOKEN
+  if (!secret || !candidate) return false
+  return timingSafeEqual(candidate, secret)
+}
