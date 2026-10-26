@@ -25,10 +25,11 @@ interface Account {
 }
 
 /** What Instagram served on the last scrape attempt. */
-type AccountHealth = 'ok' | 'restricted' | 'private' | 'removed' | 'never_seen'
+type AccountHealth = 'ok' | 'partial' | 'restricted' | 'private' | 'removed' | 'never_seen'
 
 const HEALTH_LABEL: Record<AccountHealth, string> = {
   ok: 'Live',
+  partial: 'No posts',
   restricted: 'Restricted',
   private: 'Private',
   removed: 'Gone',
@@ -39,6 +40,8 @@ const HEALTH_LABEL: Record<AccountHealth, string> = {
 // Gone is red: nothing to fix, it needs replacing.
 const HEALTH_STYLE: Record<AccountHealth, string> = {
   ok: 'bg-emerald-500/10 text-emerald-500',
+  // Followers come through, posts do not — real but half-blind.
+  partial: 'bg-sky-500/15 text-sky-400',
   restricted: 'bg-amber-500/15 text-amber-500',
   private: 'bg-amber-500/15 text-amber-500',
   removed: 'bg-red-500/15 text-red-400',
@@ -352,7 +355,7 @@ export default function SocialAccountsClient() {
           ))}
         </div>
         <div className="flex items-center gap-1">
-          {(['all', 'ok', 'restricted', 'private', 'removed'] as const).map(h => {
+          {(['all', 'ok', 'partial', 'restricted', 'private', 'removed'] as const).map(h => {
             const count = h === 'all' ? accounts.length : accounts.filter(a => a.status === h).length
             if (h !== 'all' && count === 0) return null
             return (

@@ -166,6 +166,25 @@ Name matching (see Tracking links) is therefore the only route from an Infloww l
 
 ---
 
+## What Instagram withholds from logged-out visitors (tested 2026-10-26)
+Apify is not erroring on these accounts — it gets exactly what Instagram serves a logged-out client, and for some accounts that is a reduced profile. Three public accounts, same batch, same proxy, three different results:
+
+| Account | followers | posts | what we store |
+|---|---|---|---|
+| `sophiiaa.west` | ✅ | ✅ | `ok` |
+| `its.sophiawest` | ✅ 1.6M | ❌ | `partial` |
+| `alicegotrhythm` | ❌ | ❌ | `restricted` |
+
+All three return HTTP 200 to a plain logged-out browser request, all report `private: false`, and all carry a bio, full name and avatar. They open normally for anyone **logged in** — which is why they look fine when the team checks them.
+
+Ruled out, by testing rather than assumption: Apify's datacenter proxy, Apify's RESIDENTIAL proxy, the alternative `apify/instagram-scraper` actor, and three consecutive retries on the same handle. Every combination returns the identical reduced payload, so it is Instagram's decision, not a proxy or actor problem.
+
+The only thing that would lift it is an authenticated Instagram session in the scraper, which breaks Instagram's ToS and risks the account being banned. **Not implemented — it is a business decision, not a technical one.**
+
+`partial` is therefore its own health state: the follower number is real and gets stored, but the account contributes nothing to any per-post view, so it must not sit in the dashboard looking healthy. Filter for it on Social Accounts.
+
+---
+
 ## Account health
 Every scrape attempt records what Instagram served, on `social_accounts.status`:
 

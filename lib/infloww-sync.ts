@@ -62,125 +62,24 @@ async function resolveMany(creatorIds: string[], cfg: InflowwConfig): Promise<Ma
 }
 
 /**
- * How far back discovery looks. A link worth auto-binding was made recently —
- * anything older has either been bound already or is not in use. Keeping this
- * short is what lets discovery and the snapshot pass share one cron run.
+ * How far back discovery looks when a creator has nothing bound yet. A link
+ * worth auto-binding is recent; once something IS bound, the lookback comes
+ * from that link's age instead (see lookbackFor).
  */
 const DISCOVERY_LOOKBACK_DAYS = 93
 
-export interface DiscoveryResult {
+export interface LinkPassResult {
   creatorsChecked: number
   linksSeen: number
-  connected: { creator: string; username: string; link: string }[]
+  /** Links bound to an account during this pass. */
+  newlyConnected: { creator: string; username: string; link: string }[]
+  snapshotsWritten: number
+  dailyRowsWritten: number
+  /** Bound links Infloww no longer returns — deleted, or older than the lookback. */
+  linksMissing: string[]
+  /** Creators with no resolvable Infloww counterpart. */
+  creatorsSkipped: string[]
   errors: string[]
-}
-
-/**
- * Pull every creator's Infloww tracking links and bind the ones that clearly
- * belong to an account we track, so new links wire themselves up instead of
- * waiting for someone to do it by hand.
- *
- * Deliberately conservative: only an EXACT handle match (score 100) is bound
- * automatically. A 90 (punctuation-stripped) or 75 (near-miss) is a good
- * suggestion for a human in the Links page, but not good enough to write
- * without anyone looking — @sophiaawesst and @sophiaa.wesst are different
- * accounts that differ by one dot.
- */
-export async function discoverTrackingLinks(creatorId?: string): Promise<DiscoveryResult> {
-  const supabase = createServerSupabaseClient()
-  const result: DiscoveryResult = { creatorsChecked: 0, linksSeen: 0, connected: [], errors: [] }
-
-  let cfg: InflowwConfig
-  try {
-    cfg = await getInflowwConfig()
-  } catch (e) {
-    result.errors.push(e instanceof Error ? e.message : 'Infloww not configured')
-    return result
-  }
-
-  let creatorQuery = supabase.from('creators').select('id, display_name').eq('is_active', true)
-  if (creatorId) creatorQuery = creatorQuery.eq('id', creatorId)
-  const { data: creators } = await creatorQuery
-  if (!creators || creators.length === 0) return result
-
-  // Only creators that actually have accounts to bind.
-  const { data: accounts } = await supabase
-    .from('social_accounts')
-    .select('id, creator_id, username')
-    .eq('is_active', true)
-    .in('creator_id', creators.map(c => c.id))
-  if (!accounts || accounts.length === 0) return result
-
-  const accountsByCreator = new Map<string, { id: string; username: string }[]>()
-  for (const a of accounts) {
-    const list = accountsByCreator.get(a.creator_id) || []
-    list.push({ id: a.id, username: a.username })
-    accountsByCreator.set(a.creator_id, list)
-  }
-
-  const resolved = await resolveMany([...accountsByCreator.keys()], cfg)
-
-  for (const creator of creators) {
-    const creatorAccounts = accountsByCreator.get(creator.id)
-    if (!creatorAccounts) continue
-    const inflowwCreatorId = resolved.get(creator.id)
-    if (!inflowwCreatorId) continue
-    result.creatorsChecked++
-
-    let links: InflowwLink[]
-    try {
-      links = await listTrackingLinks(cfg, inflowwCreatorId, DISCOVERY_LOOKBACK_DAYS)
-    } catch (e) {
-      result.errors.push(`${creator.display_name}: ${e instanceof Error ? e.message : 'fetch failed'}`)
-      continue
-    }
-    result.linksSeen += links.length
-
-    const { data: existing } = await supabase
-      .from('tracking_links')
-      .select('id, social_account_id, infloww_link_id')
-      .eq('creator_id', creator.id)
-
-    const rows = existing || []
-    const claimed = new Set(rows.map(r => r.infloww_link_id).filter(Boolean) as string[])
-    const linkByAccount = new Map(rows.filter(r => r.social_account_id).map(r => [r.social_account_id as string, r]))
-
-    for (const account of creatorAccounts) {
-      const current = linkByAccount.get(account.id)
-      if (current?.infloww_link_id) continue // already wired
-
-      const match = links.find(l => !claimed.has(l.id) && matchScore(l.name, account.username) === 100)
-      if (!match) continue
-
-      const payload = {
-        infloww_link_id: match.id,
-        infloww_link_name: match.name,
-        infloww_code: match.code,
-        infloww_created_at: match.createdTime,
-        infloww_synced_at: new Date().toISOString(),
-        label: match.name,
-        updated_at: new Date().toISOString(),
-      }
-
-      const { error } = current
-        ? await supabase.from('tracking_links').update(payload).eq('id', current.id)
-        : await supabase.from('tracking_links').insert({
-            ...payload,
-            creator_id: creator.id,
-            social_account_id: account.id,
-            sort_order: rows.length,
-          })
-
-      if (error) {
-        result.errors.push(`${account.username}: ${error.message}`)
-        continue
-      }
-      claimed.add(match.id)
-      result.connected.push({ creator: creator.display_name, username: account.username, link: match.name })
-    }
-  }
-
-  return result
 }
 
 /**
@@ -207,30 +106,29 @@ function dayString(offsetDays = 0): string {
 }
 
 /**
- * Refresh stats for every tracking link bound to an Infloww link.
- * Pass `creatorId` to limit the run to one creator.
+ * The daily tracking-link pass: bind new links, then snapshot every bound one.
+ *
+ * Both halves need the same thing — this creator's list of Infloww tracking
+ * links — so they share one fetch. Done separately it was two walks per
+ * creator, and /v1/links costs one request per 31 days of lookback, so the
+ * saving is most of the run.
+ *
+ * Binding is deliberately conservative: only an EXACT handle match (score 100)
+ * is written without a human. A 90 (equal once punctuation is dropped) or a 75
+ * (near-miss) is a good suggestion for the Links page, but not good enough to
+ * write unattended — @sophiaawesst and @sophiaa.wesst are different accounts
+ * that differ by one dot. Where several links match, the newest wins, because
+ * listTrackingLinks returns them newest-first.
+ *
+ * Pass `creatorId` to limit the pass to one creator.
  */
-export async function syncInflowwLinkStats(creatorId?: string): Promise<SyncResult> {
+export async function runInflowwLinkPass(creatorId?: string): Promise<LinkPassResult> {
   const supabase = createServerSupabaseClient()
-  const result: SyncResult = {
-    linksConsidered: 0, snapshotsWritten: 0, dailyRowsWritten: 0,
-    creatorsSkipped: [], linksMissing: [], errors: [],
+  const result: LinkPassResult = {
+    creatorsChecked: 0, linksSeen: 0, newlyConnected: [],
+    snapshotsWritten: 0, dailyRowsWritten: 0,
+    linksMissing: [], creatorsSkipped: [], errors: [],
   }
-
-  let q = supabase
-    .from('tracking_links')
-    .select('id, creator_id, infloww_link_id, label, infloww_created_at')
-    .not('infloww_link_id', 'is', null)
-    .eq('is_active', true)
-  if (creatorId) q = q.eq('creator_id', creatorId)
-
-  const { data: bound, error } = await q
-  if (error) {
-    result.errors.push(error.message)
-    return result
-  }
-  if (!bound || bound.length === 0) return result
-  result.linksConsidered = bound.length
 
   let cfg: InflowwConfig
   try {
@@ -240,42 +138,121 @@ export async function syncInflowwLinkStats(creatorId?: string): Promise<SyncResu
     return result
   }
 
-  // One /v1/links walk per creator covers all of that creator's links.
-  const byCreator = new Map<string, typeof bound>()
-  for (const row of bound) {
-    const list = byCreator.get(row.creator_id) || []
-    list.push(row)
-    byCreator.set(row.creator_id, list)
+  let creatorQuery = supabase.from('creators').select('id, display_name').eq('is_active', true)
+  if (creatorId) creatorQuery = creatorQuery.eq('id', creatorId)
+  const { data: creators } = await creatorQuery
+  if (!creators || creators.length === 0) return result
+
+  const creatorIds = creators.map(c => c.id)
+
+  const [{ data: accounts }, { data: allLinks }] = await Promise.all([
+    supabase.from('social_accounts')
+      .select('id, creator_id, username')
+      .eq('is_active', true)
+      .in('creator_id', creatorIds),
+    supabase.from('tracking_links')
+      .select('id, creator_id, social_account_id, label, infloww_link_id, infloww_created_at')
+      .eq('is_active', true)
+      .in('creator_id', creatorIds),
+  ])
+
+  const accountsByCreator = new Map<string, { id: string; username: string }[]>()
+  for (const a of accounts || []) {
+    const list = accountsByCreator.get(a.creator_id) || []
+    list.push({ id: a.id, username: a.username })
+    accountsByCreator.set(a.creator_id, list)
   }
+  const linksByCreator = new Map<string, NonNullable<typeof allLinks>>()
+  for (const l of allLinks || []) {
+    const list = linksByCreator.get(l.creator_id) || []
+    list.push(l)
+    linksByCreator.set(l.creator_id, list)
+  }
+
+  // Resolve every creator against one roster fetch rather than one each.
+  const resolved = await resolveMany(creatorIds, cfg)
 
   const today = dayString()
   const yesterday = dayString(-1)
 
-  for (const [cid, rows] of byCreator) {
-    let live: Map<string, InflowwLink>
-    try {
-      const inflowwCreatorId = await resolveInflowwCreatorId(cid, cfg)
-      if (!inflowwCreatorId) {
-        result.creatorsSkipped.push(cid)
-        continue
-      }
-      // Only walk back as far as this creator's oldest known link. Infloww
-      // filters /v1/links on creation time, so anything older than that is
-      // guaranteed to hold nothing of ours.
-      live = new Map(
-        (await listTrackingLinks(cfg, inflowwCreatorId, lookbackFor(rows))).map(l => [l.id, l])
-      )
-    } catch (e) {
-      result.errors.push(`${cid}: ${e instanceof Error ? e.message : 'fetch failed'}`)
+  for (const creator of creators) {
+    const creatorAccounts = accountsByCreator.get(creator.id) || []
+    const creatorLinks = linksByCreator.get(creator.id) || []
+    const bound = creatorLinks.filter(l => l.infloww_link_id)
+    // Nothing to bind and nothing to refresh.
+    if (creatorAccounts.length === 0 && bound.length === 0) continue
+
+    const inflowwCreatorId = resolved.get(creator.id)
+    if (!inflowwCreatorId) {
+      result.creatorsSkipped.push(creator.display_name)
       continue
     }
+    result.creatorsChecked++
 
-    const snapshotRows: any[] = []
+    // One fetch, wide enough for both halves: back to the oldest link we
+    // already track, or the discovery window when we track none yet.
+    const lookback = bound.length > 0 ? lookbackFor(bound) : DISCOVERY_LOOKBACK_DAYS
+    let links: InflowwLink[]
+    try {
+      links = await listTrackingLinks(cfg, inflowwCreatorId, lookback)
+    } catch (e) {
+      result.errors.push(`${creator.display_name}: ${e instanceof Error ? e.message : 'fetch failed'}`)
+      continue
+    }
+    result.linksSeen += links.length
+    const liveById = new Map(links.map(l => [l.id, l]))
+
+    // ── 1. Bind anything new ──
+    const claimed = new Set(bound.map(l => String(l.infloww_link_id)))
+    const linkByAccount = new Map(
+      creatorLinks.filter(l => l.social_account_id).map(l => [l.social_account_id as string, l])
+    )
+
+    for (const account of creatorAccounts) {
+      const current = linkByAccount.get(account.id)
+      if (current?.infloww_link_id) continue
+
+      const match = links.find(l => !claimed.has(l.id) && matchScore(l.name, account.username) === 100)
+      if (!match) continue
+
+      const payload = {
+        infloww_link_id: match.id,
+        infloww_link_name: match.name,
+        infloww_code: match.code,
+        infloww_created_at: match.createdTime,
+        infloww_synced_at: new Date().toISOString(),
+        label: match.name,
+        updated_at: new Date().toISOString(),
+      }
+
+      if (current) {
+        const { error } = await supabase.from('tracking_links').update(payload).eq('id', current.id)
+        if (error) { result.errors.push(`${account.username}: ${error.message}`); continue }
+        bound.push({ ...current, ...payload })
+      } else {
+        const { data: created, error } = await supabase.from('tracking_links').insert({
+          ...payload,
+          creator_id: creator.id,
+          social_account_id: account.id,
+          sort_order: creatorLinks.length,
+        }).select('id, creator_id, social_account_id, label, infloww_link_id, infloww_created_at').single()
+        if (error || !created) { result.errors.push(`${account.username}: ${error?.message || 'insert failed'}`); continue }
+        bound.push(created)
+      }
+
+      claimed.add(match.id)
+      result.newlyConnected.push({ creator: creator.display_name, username: account.username, link: match.name })
+    }
+
+    // ── 2. Snapshot every bound link, including the ones just bound ──
+    if (bound.length === 0) continue
+
+    const snapshotRows: Record<string, unknown>[] = []
     const linkIds: string[] = []
-    for (const row of rows) {
-      const l = live.get(String(row.infloww_link_id))
+    for (const row of bound) {
+      const l = liveById.get(String(row.infloww_link_id))
       if (!l) {
-        // The link was deleted in Infloww, or it is older than the lookback.
+        // Deleted in Infloww, or created before the lookback reaches.
         result.linksMissing.push(row.id)
         continue
       }
@@ -293,7 +270,8 @@ export async function syncInflowwLinkStats(creatorId?: string): Promise<SyncResu
         captured_at: new Date().toISOString(),
       })
 
-      // Keep the cached name fresh so the UI shows what Infloww shows.
+      // Keep the cached name and creation date current for the UI and for the
+      // next pass's lookback.
       await supabase
         .from('tracking_links')
         .update({
@@ -311,12 +289,12 @@ export async function syncInflowwLinkStats(creatorId?: string): Promise<SyncResu
       .from('infloww_link_snapshots')
       .upsert(snapshotRows, { onConflict: 'tracking_link_id,date' })
     if (snapErr) {
-      result.errors.push(`${cid}: ${snapErr.message}`)
+      result.errors.push(`${creator.display_name}: ${snapErr.message}`)
       continue
     }
     result.snapshotsWritten += snapshotRows.length
 
-    // Yesterday's counters, to turn cumulative totals into a day's numbers.
+    // Yesterday's counters turn cumulative totals into a day's numbers.
     const { data: prior } = await supabase
       .from('infloww_link_snapshots')
       .select('tracking_link_id, click_count, sub_count, earnings_net_cents')
@@ -325,28 +303,28 @@ export async function syncInflowwLinkStats(creatorId?: string): Promise<SyncResu
 
     const priorBy = new Map((prior || []).map(p => [p.tracking_link_id, p]))
 
-    const dailyRows: any[] = []
+    const dailyRows: Record<string, unknown>[] = []
     for (const snap of snapshotRows) {
-      const prev = priorBy.get(snap.tracking_link_id)
+      const prev = priorBy.get(snap.tracking_link_id as string)
       if (!prev) continue // no baseline — leave the day blank rather than guess
       dailyRows.push({
         tracking_link_id: snap.tracking_link_id,
         date: today,
-        // A counter that goes backwards means Infloww reset or rebuilt the
-        // link; clamp at zero instead of writing a negative day.
-        infloww_clicks: Math.max(0, snap.click_count - (prev.click_count || 0)),
-        infloww_new_subs: Math.max(0, snap.sub_count - (prev.sub_count || 0)),
-        infloww_earnings_net_cents: Math.max(0, snap.earnings_net_cents - (prev.earnings_net_cents || 0)),
+        // A counter going backwards means Infloww reset or rebuilt the link;
+        // clamp at zero instead of writing a negative day.
+        infloww_clicks: Math.max(0, (snap.click_count as number) - (prev.click_count || 0)),
+        infloww_new_subs: Math.max(0, (snap.sub_count as number) - (prev.sub_count || 0)),
+        infloww_earnings_net_cents: Math.max(0, (snap.earnings_net_cents as number) - (prev.earnings_net_cents || 0)),
       })
     }
 
     if (dailyRows.length > 0) {
-      // onConflict leaves the hand-entered views/profile_views columns alone:
-      // only the infloww_* columns named here are written.
+      // onConflict names only the infloww_* columns, so hand-entered views /
+      // profile_views / link_clicks survive a sync untouched.
       const { error: dailyErr } = await supabase
         .from('link_daily')
         .upsert(dailyRows, { onConflict: 'tracking_link_id,date' })
-      if (dailyErr) result.errors.push(`${cid}: ${dailyErr.message}`)
+      if (dailyErr) result.errors.push(`${creator.display_name}: ${dailyErr.message}`)
       else result.dailyRowsWritten += dailyRows.length
     }
   }

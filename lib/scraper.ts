@@ -75,6 +75,13 @@ export interface ScrapeMetrics {
   profile_pic_url: string | null
   /** The link in the bio, if the account carries one. Usually null — see bioLink(). */
   bio_link: string | null
+  /**
+   * True when Instagram gave us the account's followers but withheld its posts.
+   * The follower number is real and worth keeping; the account just cannot
+   * contribute to any per-post view. Flagged so it does not sit in the
+   * dashboard looking healthy while silently adding nothing.
+   */
+  posts_withheld: boolean
   raw_data: any
 }
 
@@ -175,6 +182,13 @@ async function scrapeInstagramBatch(usernames: string[]): Promise<Map<string, Sc
       continue
     }
 
+    // Instagram serves logged-out visitors a reduced profile for some accounts.
+    // The fullest version of that is counts-and-no-posts: followers come
+    // through, posts do not. Keep the snapshot — the follower count is real —
+    // but mark it, because post metrics for this account will be empty.
+    const postsWithheld =
+      profile.postsCount === undefined || (profile.latestPosts ?? []).length === 0
+
     const posts: any[] = profile.latestPosts ?? []
     let totalViews = 0, totalLikes = 0, totalComments = 0
     for (const post of posts) {
@@ -193,6 +207,7 @@ async function scrapeInstagramBatch(usernames: string[]): Promise<Map<string, Sc
       total_comments: totalComments,
       profile_pic_url: profile.profilePicUrlHD || profile.profilePicUrl || null,
       bio_link: bioLink(profile),
+      posts_withheld: postsWithheld,
       raw_data: profile,
     })
   }
@@ -326,7 +341,7 @@ export async function scrapeAndSaveAll(
       }
 
       const saveErr = await saveScrapedAccount(account, scraped)
-      if (!saveErr) await recordAccountStatus(account.id, 'ok', null)
+      if (!saveErr) await recordAccountStatus(account.id, scraped.posts_withheld ? 'partial' : 'ok', null)
       if (saveErr) {
         results.push({ username: account.username, status: 'error', error: saveErr })
         await onProgress?.(done, igAccounts.length, account.username, 'error', saveErr)
@@ -530,17 +545,21 @@ export async function saveScrapedAccount(
  */
 export async function recordAccountStatus(
   socialAccountId: string,
-  status: 'ok' | Exclude<ScrapeFailureReason, 'transient'>,
+  status: 'ok' | 'partial' | Exclude<ScrapeFailureReason, 'transient'>,
   detail: string | null,
 ): Promise<void> {
   const supabase = createServerSupabaseClient()
 
-  if (status === 'ok') {
+  // 'partial' is a successful scrape, so it clears the failure counter the
+  // same way 'ok' does; it only changes what the dashboard shows.
+  if (status === 'ok' || status === 'partial') {
     await supabase
       .from('social_accounts')
       .update({
-        status: 'ok',
-        status_detail: null,
+        status,
+        status_detail: status === 'partial'
+          ? 'Instagram served followers but withheld this account\'s posts to logged-out visitors'
+          : null,
         status_checked_at: new Date().toISOString(),
         consecutive_failures: 0,
       })
