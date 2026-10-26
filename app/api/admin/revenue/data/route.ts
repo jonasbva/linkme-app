@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { requireUser, guardResponse } from '@/lib/auth'
 import { decryptSecret } from '@/lib/infloww-crypto'
+import { rateLimitedFetch, mapWithConcurrency, CREATOR_CONCURRENCY } from '@/lib/infloww-rate-limit'
 
 const INFLOWW_BASE = 'https://openapi.infloww.com'
+
+// A full revenue pull is one Infloww round trip per creator (plus paging), so
+// give it the longest window Vercel allows. Without this the route inherited
+// the default and was killed mid-fetch, which is why Revenue often showed
+// nothing in production while working locally.
+export const maxDuration = 300
 
 interface InflowwTransaction {
   id: string
@@ -26,55 +33,6 @@ interface InflowwCreator {
   nickName: string
   userName: string
   tagName: string
-}
-
-// ─── Rate Limiter ───────────────────────────────────────────────────
-// Conservative: ~1.6 req/sec and tracks 60/min window
-let lastRequestTime = 0
-const MIN_REQUEST_GAP_MS = 600
-const requestTimestamps: number[] = []
-const MAX_REQUESTS_PER_MINUTE = 50
-
-async function rateLimitedFetch(
-  url: string,
-  headers: Record<string, string>,
-  maxRetries = 3
-): Promise<Response> {
-  const now = Date.now()
-  while (requestTimestamps.length > 0 && requestTimestamps[0] < now - 60000) {
-    requestTimestamps.shift()
-  }
-
-  if (requestTimestamps.length >= MAX_REQUESTS_PER_MINUTE) {
-    const waitUntil = requestTimestamps[0] + 60000
-    const waitMs = waitUntil - Date.now() + 100
-    if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs))
-  }
-
-  const elapsed = Date.now() - lastRequestTime
-  if (elapsed < MIN_REQUEST_GAP_MS) {
-    await new Promise((r) => setTimeout(r, MIN_REQUEST_GAP_MS - elapsed))
-  }
-  lastRequestTime = Date.now()
-  requestTimestamps.push(Date.now())
-
-  const response = await fetch(url, { headers, cache: 'no-store' })
-
-  if (response.status === 429) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const retryAfter = parseInt(response.headers.get('retry-after') || '0', 10)
-      const backoffMs = Math.max(retryAfter * 1000, attempt * 2000)
-      console.warn(`Rate limited (429). Retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`)
-      await new Promise((r) => setTimeout(r, backoffMs))
-      lastRequestTime = Date.now()
-      requestTimestamps.push(Date.now())
-      const retryResponse = await fetch(url, { headers, cache: 'no-store' })
-      if (retryResponse.status !== 429) return retryResponse
-    }
-    throw new Error('Infloww API rate limit exceeded after multiple retries. Please wait a minute and try again.')
-  }
-
-  return response
 }
 
 // ─── Paginated Fetch ────────────────────────────────────────────────
@@ -114,6 +72,25 @@ async function fetchAllPages(
   return allItems
 }
 
+// One upsert instead of one per creator. This cache backs the Overview's
+// "unmapped Infloww creators" count, so it only stays current while revenue is
+// being fetched successfully.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function cacheInflowwCreators(creators: InflowwCreator[], supabase: any) {
+  if (creators.length === 0) return
+  const seenAt = new Date().toISOString()
+  await supabase.from('infloww_creators_cache').upsert(
+    creators.map((c) => ({
+      infloww_id: c.id,
+      name: c.name,
+      user_name: c.userName,
+      nick_name: c.nickName || '',
+      last_seen_at: seenAt,
+    })),
+    { onConflict: 'infloww_id' }
+  )
+}
+
 // ─── Per-Creator Transaction Fetch ──────────────────────────────────
 async function fetchCreatorTransactions(
   creator: InflowwCreator,
@@ -122,20 +99,23 @@ async function fetchCreatorTransactions(
 ) {
   const { startTime, endTime, startTime14d, days } = params
 
-  const periodTransactions = (await fetchAllPages(
+  // The 14-day baseline and the selected period overlap, so fetch the wider of
+  // the two once and slice both out of it. This used to be two separate pulls
+  // per creator, which doubled the request count for no new data — the single
+  // biggest reason a full refresh ran past the function timeout.
+  const windowStart = Math.min(Number(startTime), Number(startTime14d))
+  const allTransactions = (await fetchAllPages(
     '/v1/transactions',
-    { creatorId: creator.id, platformCode: 'OnlyFans', startTime, endTime, limit: '100' },
+    { creatorId: creator.id, platformCode: 'OnlyFans', startTime: String(windowStart), endTime, limit: '100' },
     headers
   )) as InflowwTransaction[]
 
-  const transactions14d =
-    days === 14
-      ? periodTransactions
-      : ((await fetchAllPages(
-          '/v1/transactions',
-          { creatorId: creator.id, platformCode: 'OnlyFans', startTime: startTime14d, endTime, limit: '100' },
-          headers
-        )) as InflowwTransaction[])
+  const at = (t: InflowwTransaction) => Number(t.createdTime)
+  const periodStart = Number(startTime)
+  const baselineStart = Number(startTime14d)
+  const periodTransactions = allTransactions.filter((t) => at(t) >= periodStart)
+  const transactions14d = allTransactions.filter((t) => at(t) >= baselineStart)
+  void days
 
   const breakdown = calculateBreakdown(periodTransactions)
 
@@ -230,9 +210,10 @@ async function mergeWithSupabase(creatorData: any[], supabase: any, startDate: D
     if (creatorId) bucket(creatorId).clicks += row.link_clicks || 0
   }
 
-  const { data: expectations } = await supabase.from('revenue_expectations').select('*')
+  // Revenue expectations were removed: targets per creator were never kept up
+  // to date, so "x% of target" was noise. Emergencies stay — those are set by
+  // hand when something is actually wrong.
   const { data: emergencies } = await supabase.from('revenue_emergency_status').select('*')
-  const expMap = new Map(expectations?.map((e: { creator_id: string }) => [e.creator_id, e]) || [])
   const emergencyMap = new Map(emergencies?.map((e: { creator_id: string }) => [e.creator_id, e]) || [])
 
   const { data: creatorMappings } = await supabase.from('infloww_creator_map').select('creator_id, infloww_creator_id')
@@ -251,8 +232,6 @@ async function mergeWithSupabase(creatorData: any[], supabase: any, startDate: D
     const creatorId = (supabaseCreator as any)?.id || null
     const convData = creatorId ? clicksByCreator[creatorId] : null
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const expectation = creatorId ? expMap.get(creatorId) as any : null
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const emergency = creatorId ? emergencyMap.get(creatorId) as any : null
 
     const linkClicks = convData?.clicks || 0
@@ -267,17 +246,6 @@ async function mergeWithSupabase(creatorData: any[], supabase: any, startDate: D
       display_name: (supabaseCreator as any)?.display_name || cd.name,
       linkClicks,
       conversionRate: Math.round(conversionRate * 100) / 100,
-      expectation: expectation
-        ? {
-            daily_revenue_target: expectation.daily_revenue_target,
-            revenue_per_fan_baseline: expectation.revenue_per_fan_baseline,
-            check_frequency: expectation.check_frequency,
-            free_subs: expectation.free_subs,
-          }
-        : null,
-      generatedRevenuePct: expectation?.daily_revenue_target
-        ? Math.round(((cd.totalRevenue / (expectation.daily_revenue_target * days)) - 1) * 1000) / 10
-        : null,
       emergency_since: emergency?.emergency_since || null,
       emergency_notes: emergency?.notes || '',
     }
@@ -397,24 +365,17 @@ export async function GET(req: NextRequest) {
             apiHeaders
           )) as InflowwCreator[]
 
-          for (const c of creators) {
-            await supabase
-              .from('infloww_creators_cache')
-              .upsert(
-                { infloww_id: c.id, name: c.name, user_name: c.userName, nick_name: c.nickName || '', last_seen_at: new Date().toISOString() },
-                { onConflict: 'infloww_id' }
-              )
-          }
+          await cacheInflowwCreators(creators, supabase)
 
           send({ type: 'progress', step: 'transactions', total: creators.length, current: 0, message: `Found ${creators.length} creators. Fetching transactions...` })
 
-          const creatorData = []
-          for (let i = 0; i < creators.length; i++) {
-            const creator = creators[i]
-            send({ type: 'progress', step: 'transactions', total: creators.length, current: i + 1, message: `Fetching ${creator.name} (${i + 1}/${creators.length})...` })
+          let completed = 0
+          const creatorData = await mapWithConcurrency(creators, CREATOR_CONCURRENCY, async (creator) => {
             const result = await fetchCreatorTransactions(creator, { startTime, endTime, startTime14d, days }, apiHeaders)
-            creatorData.push(result)
-          }
+            completed++
+            send({ type: 'progress', step: 'transactions', total: creators.length, current: completed, message: `Fetched ${creator.name} (${completed}/${creators.length})...` })
+            return result
+          })
 
           send({ type: 'progress', step: 'merging', message: 'Merging with local data...' })
           const finalResult = await mergeWithSupabase(creatorData, supabase, startDate, endDate, days)
@@ -442,20 +403,11 @@ export async function GET(req: NextRequest) {
       apiHeaders
     )) as InflowwCreator[]
 
-    for (const c of creators) {
-      await supabase
-        .from('infloww_creators_cache')
-        .upsert(
-          { infloww_id: c.id, name: c.name, user_name: c.userName, nick_name: c.nickName || '', last_seen_at: new Date().toISOString() },
-          { onConflict: 'infloww_id' }
-        )
-    }
+    await cacheInflowwCreators(creators, supabase)
 
-    const creatorData = []
-    for (const creator of creators) {
-      const result = await fetchCreatorTransactions(creator, { startTime, endTime, startTime14d, days }, apiHeaders)
-      creatorData.push(result)
-    }
+    const creatorData = await mapWithConcurrency(creators, CREATOR_CONCURRENCY, (creator) =>
+      fetchCreatorTransactions(creator, { startTime, endTime, startTime14d, days }, apiHeaders)
+    )
 
     const finalResult = await mergeWithSupabase(creatorData, supabase, startDate, endDate, days)
     return NextResponse.json(finalResult)

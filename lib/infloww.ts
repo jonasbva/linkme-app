@@ -7,6 +7,7 @@
 
 import { createServerSupabaseClient } from './supabase'
 import { decryptSecret } from './infloww-crypto'
+import { rateLimitedFetch } from './infloww-rate-limit'
 
 const BASE = 'https://openapi.infloww.com'
 
@@ -74,9 +75,10 @@ function toNum(v: unknown): number {
 
 async function call(cfg: InflowwConfig, path: string, params: Record<string, string>): Promise<any> {
   const url = `${BASE}${path}?${new URLSearchParams(params).toString()}`
-  const res = await fetch(url, {
-    headers: { Accept: 'application/json', Authorization: cfg.apiKey, 'x-oid': cfg.agencyOid },
-    cache: 'no-store',
+  const res = await rateLimitedFetch(url, {
+    Accept: 'application/json',
+    Authorization: cfg.apiKey,
+    'x-oid': cfg.agencyOid,
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
@@ -124,7 +126,10 @@ export async function listTrackingLinks(
 ): Promise<InflowwLink[]> {
   const byId = new Map<string, InflowwLink>()
   const now = Date.now()
-  const windows = Math.ceil(lookbackDays / MAX_WINDOW_DAYS)
+  // A year of history is 12 windows per creator. Across the roster that is
+  // hundreds of requests, which does not fit in one cron invocation, so
+  // callers that know how far back they need pass a shorter lookback.
+  const windows = Math.max(1, Math.ceil(lookbackDays / MAX_WINDOW_DAYS))
 
   for (let w = 0; w < windows; w++) {
     const end = new Date(now - w * MAX_WINDOW_DAYS * 86400000)

@@ -1,21 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyCronSecret } from '@/lib/auth'
-import { syncInflowwLinkStats } from '@/lib/infloww-sync'
+import { discoverTrackingLinks, syncInflowwLinkStats } from '@/lib/infloww-sync'
 
-// Snapshotting is one Infloww call per creator, so it fits comfortably, but
-// give it room in case the roster grows.
+// Discovery is one Infloww walk per creator and the snapshot pass is another,
+// so give the function room as the roster grows.
 export const maxDuration = 300
 
-// GET /api/cron/infloww-links — daily tracking-link stats pull.
+// GET /api/cron/infloww-links — the daily tracking-link pass.
 //
-// Runs once a day, late enough that Infloww has settled the previous day (the
-// API lags links by up to ~2h). Each run snapshots cumulative counters and
-// books yesterday→today as one day's clicks and subs.
+// Two steps, in this order:
+//   1. discover — pull every creator's Infloww tracking links and bind the ones
+//      that exactly match an account we track, so new links wire themselves up.
+//   2. sync — snapshot cumulative counters and book yesterday→today as a day.
+//
+// Discovery runs first so a link created today starts collecting from today.
 export async function GET(req: NextRequest) {
   if (!verifyCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
+
   const startedAt = Date.now()
-  const result = await syncInflowwLinkStats()
-  return NextResponse.json({ ...result, elapsedMs: Date.now() - startedAt })
+  const discovery = await discoverTrackingLinks()
+  const sync = await syncInflowwLinkStats()
+
+  return NextResponse.json({
+    discovery: {
+      creatorsChecked: discovery.creatorsChecked,
+      linksSeen: discovery.linksSeen,
+      newlyConnected: discovery.connected.length,
+      connected: discovery.connected,
+      errors: discovery.errors,
+    },
+    sync,
+    elapsedMs: Date.now() - startedAt,
+  })
 }

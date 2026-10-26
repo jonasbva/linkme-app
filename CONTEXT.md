@@ -99,6 +99,17 @@ Key tables:
 
 ---
 
+## Infloww rate limiting
+`lib/infloww-rate-limit.ts` is the single throttle for every Infloww call — the live revenue route, the revenue-cache rebuild and the tracking-link passes. Infloww allows **5 requests/second per key** and **60/minute per agency**; the module holds 4 concurrent, ~4.5/s and 55/min, handing out slots one at a time so two callers never claim the same gap while the fetches overlap.
+
+It replaced two near-identical copies that each left a 600ms gap *and* ran strictly sequentially. A full revenue pull took ~75s and was killed by the function timeout, which is the real reason Revenue often showed nothing in production while working locally. Every long route now also sets `maxDuration = 300`.
+
+The per-minute ceiling, not our own pacing, is what bounds a big pull: a full revenue refresh is still ~65s. The interactive page reads `revenue_cache`; the cron rebuilds it.
+
+**Revenue expectations were removed.** Per-creator targets (`revenue_expectations`, the Expectations tab, "Gen. Revenue %", the 1/3/7-day report grouping) were never kept current, so the percentages were noise. Revenue Tracking is now one table over every mapped creator. The table still exists in Postgres; nothing reads it. Emergencies stay — those are set by hand. `creator_expectations` (daily **sub** targets on Conversions) is a different thing and is untouched.
+
+---
+
 ## Revenue cache
 `lib/revenue-cache.ts` holds the shared in-process rebuild (`rebuildRevenueCache(fromMs, toMs)`, `resolveRevenueRange`). Both the cron route (`/api/cron/revenue-cache`) and the admin cache route (`/api/admin/revenue/cache`) call it directly — no internal HTTP self-call or shared-secret coupling. Cache keys: `live:<from>-<bucketedTo>` (≤2 min from now), `rng:<from>-<to>`, plus legacy `today` / `YYYY-MM-DD`. Cleanup cron prunes `live:*` >24h and `rng:*` >90d.
 
@@ -125,7 +136,13 @@ Each IG account carries one OnlyFans tracking link in its bio. Infloww counts th
 
 **Existing accounts** connect on the creator's **Links** page: *Connect to Infloww* lists the creator's Infloww links with the account each looks like it belongs to, one click each. *Sync stats now* pulls counters on demand.
 
+**The views-per-post chart** (`components/admin/SocialClient.tsx`) is hover- and click-driven: hovering a bar shows the post's thumbnail, date, views, like-quote, comments and percentage against the median; clicking it clears the grid filters (so the post is not filtered out), scrolls to that post's card and rings it for a couple of seconds. Cards carry `id="post-<id>"` for that.
+
 **Matching** (`matchScore` in `lib/infloww.ts`) reads the team's hand-written link names — `IG sophiaawesst 11.10`, `FB jennasmomdiary 14.10` — stripping the platform word and the date. Scores: **100** exact spelling, **90** equal once dots/underscores are dropped, **75** a near-miss of nearly the same length, **0** otherwise; `suggestAccountForLink` ignores anything under 75. The 100/90 gap matters because Sophia runs both `@sophiaawesst` and `@sophiaa.wesst` — different Instagram accounts that collapse to the same string without punctuation. A suggestion is only ever pre-selected, never applied silently, and generic names (`Sophia Tiktok`) deliberately match nothing. Covered by `tests/lib/infloww-match.test.ts`.
+
+**Links bind themselves.** `/api/cron/infloww-links` runs discovery before the snapshot pass: it pulls each creator's recent Infloww links and binds any whose name contains an **exact** account handle (score 100 only — a 90 or 75 is a suggestion for a human, never an automatic write). `lib/infloww-sync.ts` → `discoverTrackingLinks`. The **Sync now** button on the Links page does the same thing on demand.
+
+**Window budgeting.** `/v1/links` filters on *creation* time and caps the window at 31 days, so every creator costs one request per 31 days of lookback. A year per creator across the roster does not fit in one cron run, so: discovery looks back **93 days** (a link worth auto-binding is recent), and the snapshot pass derives its lookback per creator from `tracking_links.infloww_created_at` — the oldest link it already knows about. A full pass is currently ~87 + ~60 requests ≈ 2.7 min against Infloww's 55/min ceiling, inside the 300s `maxDuration`. If that gets tight, the next lever is one shared fetch per creator for both passes.
 
 **Stats are cumulative, so days are deltas.** `/v1/links` reports totals since a link was made, and caps its window at **31 days** while filtering on *creation* time — `listTrackingLinks` therefore walks backwards a month at a time (a year by default) and dedupes by id. `lib/infloww-sync.ts` snapshots today's counters into `infloww_link_snapshots`, then writes `today − yesterday` into `link_daily.infloww_*`. **A day is only written when yesterday's snapshot exists**, so a gap stays blank rather than booking weeks as one day; a counter that moves backwards clamps to 0. The first sync on a link only lays the baseline.
 
@@ -134,6 +151,18 @@ The `infloww_*` columns sit **beside** the hand-entered ones and never overwrite
 Runs nightly via `/api/cron/infloww-links` (`30 4 * * *`, after Infloww's ~2h link lag settles), or on demand via `POST /api/admin/infloww/sync-links` (`{creator_id?}`; omitting it is super-admin only).
 
 The Overview flags **live accounts with no Infloww-bound link** — their clicks and subs cannot be attributed. Accounts Instagram has already removed are excluded: they need replacing, not a link. Social Accounts has a matching **OF Link** column and Linked / No link filters.
+
+---
+
+## Bio links
+`social_accounts.bio_link` records whatever Instagram reports as the account's external link, refreshed on every scrape (`bioLink()` in `lib/scraper.ts`), with `bio_link_checked_at` so "we looked and there was nothing" is distinguishable from "never checked". Shown under the OF Link column on Social Accounts.
+
+It does **not** give us the OnlyFans tracking link, and cannot:
+- Only a handful of accounts set a bio link at all — most route through a story highlight, and their bios say so ("check my highlight 👇"). Instagram exposes nothing about highlights.
+- The ones that do set it point at a link-in-bio aggregator (`link.me`, `sltb.io`, `linklylo.co`), not at OnlyFans.
+- Infloww's `/v1/links` returns a tracking link's `id`, `name` and `code` but **no URL**, so even after following an aggregator there would be nothing to match a URL against.
+
+Name matching (see Tracking links) is therefore the only route from an Infloww link to an account, and the bio link is useful as its own signal: an account with no bio link and no highlight is giving visitors nothing to click.
 
 ---
 

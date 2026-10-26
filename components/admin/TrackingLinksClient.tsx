@@ -72,6 +72,7 @@ export default function TrackingLinksClient({ creator, links: initialLinks, soci
 
   const connectedCount = links.filter(l => l.infloww_link_id).length
 
+
   // Pull today's counters now instead of waiting for the nightly cron. A day's
   // clicks need yesterday's snapshot to subtract from, so the first run on a
   // link only lays the baseline.
@@ -86,7 +87,11 @@ export default function TrackingLinksClient({ creator, links: initialLinks, soci
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Sync failed')
-      const parts: string[] = [`${data.snapshotsWritten} link${data.snapshotsWritten === 1 ? '' : 's'} refreshed`]
+      const parts: string[] = []
+      if (data.newlyConnected > 0) {
+        parts.push(`${data.newlyConnected} new link${data.newlyConnected === 1 ? '' : 's'} connected automatically`)
+      }
+      parts.push(`${data.snapshotsWritten} link${data.snapshotsWritten === 1 ? '' : 's'} refreshed`)
       if (data.dailyRowsWritten > 0) parts.push(`${data.dailyRowsWritten} day row${data.dailyRowsWritten === 1 ? '' : 's'} filled`)
       else if (data.snapshotsWritten > 0) parts.push('baseline set — daily numbers start tomorrow')
       if (data.errors?.length) parts.push(data.errors[0])
@@ -270,14 +275,14 @@ export default function TrackingLinksClient({ creator, links: initialLinks, soci
             <p className={`text-[13px] font-medium ${text1}`}>Connect to Infloww</p>
             <p className={`text-[12px] mt-0.5 ${text2}`}>
               A link only reports clicks and subs once it is matched to its Infloww counterpart.
+              {connectedCount > 0 && <> {connectedCount} of {links.length} connected.</>}
+              {' '}Sync also binds any new exact matches on its own.
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {connectedCount > 0 && (
-              <Button variant="subtle" onClick={syncNow} loading={syncing}>
-                <RefreshCw className="h-3.5 w-3.5" /> Sync stats now
-              </Button>
-            )}
+            <Button variant="subtle" onClick={syncNow} loading={syncing}>
+              <RefreshCw className="h-3.5 w-3.5" /> Sync now
+            </Button>
             {showInfloww && (
               <Button variant="ghost" onClick={loadInflowwLinks} loading={loadingInfloww}>
                 Reload list

@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   let accountsQuery = supabase
     .from('social_accounts')
-    .select('id, creator_id, platform, username, is_active, created_at, status, status_detail, status_checked_at, consecutive_failures, creators(display_name)')
+    .select('id, creator_id, platform, username, is_active, created_at, status, status_detail, status_checked_at, consecutive_failures, bio_link, bio_link_checked_at, creators(display_name)')
     .order('created_at', { ascending: true })
 
   // Non-super-admins only see accounts for creators they can access.
@@ -100,6 +100,8 @@ export async function GET(req: NextRequest) {
     status_checked_at: a.status_checked_at || null,
     consecutive_failures: a.consecutive_failures ?? 0,
     tracking_link: linkMap[a.id] || null,
+    bio_link: a.bio_link || null,
+    bio_link_checked_at: a.bio_link_checked_at || null,
   }))
 
   return NextResponse.json(result)

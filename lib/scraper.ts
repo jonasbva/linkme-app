@@ -73,6 +73,8 @@ export interface ScrapeMetrics {
   total_comments: number
   /** Instagram CDN avatar. Signed and expiring, so it is refreshed every scrape. */
   profile_pic_url: string | null
+  /** The link in the bio, if the account carries one. Usually null — see bioLink(). */
+  bio_link: string | null
   raw_data: any
 }
 
@@ -190,6 +192,7 @@ async function scrapeInstagramBatch(usernames: string[]): Promise<Map<string, Sc
       total_likes: totalLikes,
       total_comments: totalComments,
       profile_pic_url: profile.profilePicUrlHD || profile.profilePicUrl || null,
+      bio_link: bioLink(profile),
       raw_data: profile,
     })
   }
@@ -423,6 +426,26 @@ export async function cacheProfilePic(socialAccountId: string, igUrl: string): P
 
 
 /**
+ * The link in the account's Instagram bio, if it has one.
+ *
+ * Most of these accounts leave the bio link empty and send people to a story
+ * highlight instead, so null is the common answer. When there is one it is
+ * usually a link-in-bio page (link.me, sltb.io), not the OnlyFans tracking
+ * link itself — Instagram only ever exposes this first hop.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function bioLink(profile: any): string | null {
+  const direct = typeof profile?.externalUrl === 'string' ? profile.externalUrl.trim() : ''
+  if (direct) return direct
+  const list = Array.isArray(profile?.externalUrls) ? profile.externalUrls : []
+  for (const entry of list) {
+    const url = typeof entry === 'string' ? entry : entry?.url
+    if (typeof url === 'string' && url.trim()) return url.trim()
+  }
+  return null
+}
+
+/**
  * Persist one scraped account: snapshot row, cached avatar, and its posts.
  *
  * Shared by the batch walk and the single-account admin scrape. Those two had
@@ -450,6 +473,13 @@ export async function saveScrapedAccount(
     scrape_date: today,
   })
   if (snapErr) return snapErr.message
+
+  // Record the bio link on every scrape, including when there is none — an
+  // account that stopped carrying a link is exactly what we want to notice.
+  await supabase
+    .from('social_accounts')
+    .update({ bio_link: scraped.bio_link ?? null, bio_link_checked_at: new Date().toISOString() })
+    .eq('id', account.id)
 
   // Instagram's own avatar links expire within about a day, so cache the bytes.
   if (scraped.profile_pic_url) {

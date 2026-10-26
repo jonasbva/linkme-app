@@ -33,13 +33,6 @@ interface CreatorRevenue {
   totalSubs14d: number
   linkClicks: number
   conversionRate: number
-  expectation: {
-    daily_revenue_target: number
-    revenue_per_fan_baseline: number
-    check_frequency: number
-    free_subs: boolean
-  } | null
-  generatedRevenuePct: number | null
   emergency_since: string | null
   emergency_notes: string
   hourlyRevenue?: Record<number, number>
@@ -60,19 +53,6 @@ interface RevenueData {
   period: { days: number; startDate: string; endDate: string }
 }
 
-interface ExpectationCreator {
-  id: string
-  display_name: string
-  slug: string
-  avatar_url: string | null
-  expectation: {
-    daily_revenue_target: number
-    revenue_per_fan_baseline: number
-    check_frequency: number
-    free_subs: boolean
-  } | null
-}
-
 interface InflowwConfig {
   id: string
   api_key: string
@@ -89,7 +69,7 @@ interface Toast {
   message: string
 }
 
-type SubTab = 'overview' | 'tracking' | 'expectations' | 'settings'
+type SubTab = 'overview' | 'tracking' | 'settings'
 type SortDir = 'asc' | 'desc'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -140,8 +120,6 @@ function normalizeCreator(c: Partial<CreatorRevenue>): CreatorRevenue {
     totalSubs14d: c.totalSubs14d || 0,
     linkClicks: c.linkClicks || 0,
     conversionRate: c.conversionRate || 0,
-    expectation: c.expectation ?? null,
-    generatedRevenuePct: c.generatedRevenuePct ?? null,
     emergency_since: c.emergency_since ?? null,
     emergency_notes: c.emergency_notes || '',
     hourlyRevenue: c.hourlyRevenue,
@@ -416,8 +394,8 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
 
   // Settings (Infloww API key / mapping) is super-admin only.
   const visibleTabs: SubTab[] = isSuperAdmin
-    ? ['overview', 'tracking', 'expectations', 'settings']
-    : ['overview', 'tracking', 'expectations']
+    ? ['overview', 'tracking', 'settings']
+    : ['overview', 'tracking']
 
   const [activeTab, setActiveTab] = useState<SubTab>('overview')
   const [loading, setLoading] = useState(false)
@@ -465,8 +443,6 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
   }, [])
 
   // Expectations
-  const [expCreators, setExpCreators] = useState<ExpectationCreator[]>([])
-  const [expLoading, setExpLoading] = useState(false)
   const [expSaving, setExpSaving] = useState<string | null>(null)
 
   // Settings
@@ -478,7 +454,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
   // Sorting
   const [sortField, setSortField] = useState('totalRevenue')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [trackSortField, setTrackSortField] = useState('generatedRevenuePct')
+  const [trackSortField, setTrackSortField] = useState('totalRevenue')
   const [trackSortDir, setTrackSortDir] = useState<SortDir>('asc')
 
   // ─── Theme-aware classes ─────────────────────────────────────────
@@ -568,17 +544,6 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
     return () => clearInterval(interval)
   }, [isLive, addToast])
 
-  const fetchExpectations = useCallback(async () => {
-    setExpLoading(true)
-    try {
-      const res = await fetch('/api/admin/revenue/expectations')
-      const json = await res.json()
-      if (res.ok) setExpCreators(json.creators || [])
-      else addToast('error', json.error || 'Failed to load expectations')
-    } catch { addToast('error', 'Failed to load expectations') }
-    finally { setExpLoading(false) }
-  }, [addToast])
-
   const fetchConfig = useCallback(async () => {
     setConfigLoading(true)
     try {
@@ -621,7 +586,6 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
         })
     }
   }, [activeTab, data, addToast, dateStart, dateEnd])
-  useEffect(() => { if (activeTab === 'expectations') fetchExpectations() }, [activeTab, fetchExpectations])
   useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
 
   // ─── Load cached data for the selected [start, end] range ──────
@@ -675,16 +639,16 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
 
   const sortedLinked = useMemo(() => {
     return [...linkedCreators].sort((a, b) => {
-      const aVal = (a as Record<string, unknown>)[sortField] as number || 0
-      const bVal = (b as Record<string, unknown>)[sortField] as number || 0
+      const aVal = (a as unknown as Record<string, unknown>)[sortField] as number || 0
+      const bVal = (b as unknown as Record<string, unknown>)[sortField] as number || 0
       return sortDir === 'asc' ? aVal - bVal : bVal - aVal
     })
   }, [linkedCreators, sortField, sortDir])
 
   const sortedUnlinked = useMemo(() => {
     return [...unlinkedCreators].sort((a, b) => {
-      const aVal = (a as Record<string, unknown>)[sortField] as number || 0
-      const bVal = (b as Record<string, unknown>)[sortField] as number || 0
+      const aVal = (a as unknown as Record<string, unknown>)[sortField] as number || 0
+      const bVal = (b as unknown as Record<string, unknown>)[sortField] as number || 0
       return sortDir === 'asc' ? aVal - bVal : bVal - aVal
     })
   }, [unlinkedCreators, sortField, sortDir])
@@ -693,23 +657,6 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
   const sortedCreators = useMemo(() => [...sortedLinked, ...sortedUnlinked], [sortedLinked, sortedUnlinked])
 
   // ─── Save handlers ──────────────────────────────────────────────
-  const saveExpectation = async (creatorId: string, field: string, value: number | boolean) => {
-    setExpSaving(creatorId)
-    const creator = expCreators.find(c => c.id === creatorId)
-    const existing = creator?.expectation || { daily_revenue_target: 0, revenue_per_fan_baseline: 0, check_frequency: 1, free_subs: false }
-    try {
-      const res = await fetch('/api/admin/revenue/expectations', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ creator_id: creatorId, ...existing, [field]: value }),
-      })
-      if (res.ok) {
-        setExpCreators(prev => prev.map(c => c.id === creatorId ? { ...c, expectation: { ...existing, [field]: value } } : c))
-        addToast('success', 'Expectation saved')
-      } else { addToast('error', 'Failed to save expectation') }
-    } catch { addToast('error', 'Failed to save expectation') }
-    finally { setExpSaving(null) }
-  }
-
   const saveEmergency = async (creatorId: string, emergencySince: string | null, notes: string) => {
     try {
       const res = await fetch('/api/admin/revenue/emergency', {
@@ -749,13 +696,13 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
     addToast('success', 'CSV exported')
   }
 
-  const getTrackingCreators = (freq: number) => {
+  const getTrackingCreators = () => {
     if (!data?.creators) return []
     return [...data.creators]
-      .filter(c => c.supabase_creator_id !== null && c.expectation?.check_frequency === freq)
+      .filter(c => c.supabase_creator_id !== null)
       .sort((a, b) => {
-        const aVal = (a as Record<string, unknown>)[trackSortField] as number || 0
-        const bVal = (b as Record<string, unknown>)[trackSortField] as number || 0
+        const aVal = (a as unknown as Record<string, unknown>)[trackSortField] as number || 0
+        const bVal = (b as unknown as Record<string, unknown>)[trackSortField] as number || 0
         return trackSortDir === 'asc' ? aVal - bVal : bVal - aVal
       })
   }
@@ -769,8 +716,8 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
     return [...data.creators]
       .filter(c => c.supabase_creator_id === null)
       .sort((a, b) => {
-        const aVal = (a as Record<string, unknown>)[trackSortField] as number || 0
-        const bVal = (b as Record<string, unknown>)[trackSortField] as number || 0
+        const aVal = (a as unknown as Record<string, unknown>)[trackSortField] as number || 0
+        const bVal = (b as unknown as Record<string, unknown>)[trackSortField] as number || 0
         return trackSortDir === 'asc' ? aVal - bVal : bVal - aVal
       })
   }, [data, trackSortField, trackSortDir])
@@ -813,7 +760,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
       <div className="flex gap-1 mb-8">
         {visibleTabs.map(tab => (
           <button key={tab} className={tabCls(tab)} onClick={() => setActiveTab(tab)}>
-            {tab === 'overview' ? 'Overview' : tab === 'tracking' ? 'Revenue Tracking' : tab === 'expectations' ? 'Expectations' : 'Settings'}
+            {tab === 'overview' ? 'Overview' : tab === 'tracking' ? 'Revenue Tracking' : 'Settings'}
           </button>
         ))}
       </div>
@@ -978,13 +925,19 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
       {/* ─── TRACKING ──────────────────────────────────────────── */}
       {activeTab === 'tracking' && data && (
         <div>
-          {[1, 3, 7].map(freq => {
-            const creators = getTrackingCreators(freq)
-            if (!creators.length) return null
+          {(() => {
+            // Creators used to be split into 1/3/7-day report groups by their
+            // expectation's check_frequency. With expectations gone there is one
+            // table, over the period the page is already showing.
+            const creators = getTrackingCreators()
+            const periodDays = data.period?.days || 1
+            if (!creators.length) {
+              return <div className={`text-center py-10 ${text2}`}>No creators mapped to Infloww yet.</div>
+            }
             return (
-              <div key={freq} className="mb-10">
+              <div className="mb-10">
                 <div className="flex items-center gap-3 mb-4">
-                  <h2 className={`text-lg font-bold ${text1}`}>Daily Report ({freq} Day{freq > 1 ? 's' : ''})</h2>
+                  <h2 className={`text-lg font-bold ${text1}`}>Daily Report ({periodDays} Day{periodDays > 1 ? 's' : ''})</h2>
                   <span className={`text-sm ${text3}`}>{creators.length} creators</span>
                 </div>
                 <div className={`${card} rounded-xl overflow-x-auto`}>
@@ -992,20 +945,18 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                     <thead>
                       <tr className={`border-b ${tableBorder}`}>
                         <th className={`px-3 py-3 text-left text-xs font-medium uppercase ${text3}`}>OnlyFans Name</th>
-                        <SortHeader label="Exp. Revenue" field="expectation.daily_revenue_target" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
                         <SortHeader label="Revenue" field="totalRevenue" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
-                        <SortHeader label="Gen. Revenue %" field="generatedRevenuePct" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
                         <SortHeader label="14d Sub Avg" field="subAvg14d" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
-                        <SortHeader label={`${freq}d Subs`} field="newSubs" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
+                        <SortHeader label={`${periodDays}d Subs`} field="newSubs" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
                         <th className={`px-3 py-3 text-left text-xs font-medium uppercase ${text3}`}>Subs Avg %</th>
+                        <SortHeader label="Link Clicks" field="linkClicks" sortField={trackSortField} sortDir={trackSortDir} onSort={handleTrackSort} isLight={isLight} />
                         <th className={`px-3 py-3 text-left text-xs font-medium uppercase ${text3}`}>Emergency Since</th>
                         <th className={`px-3 py-3 text-left text-xs font-medium uppercase ${text3}`}>Notes</th>
                       </tr>
                     </thead>
                     <tbody>
                       {creators.map(c => {
-                        const expected = c.expectation ? c.expectation.daily_revenue_target * freq : null
-                        const subsAvgPct = c.subAvg14d > 0 ? Math.round(((c.newSubs / (c.subAvg14d * freq)) - 1) * 1000) / 10 : null
+                        const subsAvgPct = c.subAvg14d > 0 ? Math.round(((c.newSubs / (c.subAvg14d * periodDays)) - 1) * 1000) / 10 : null
                         return (
                           <tr key={c.infloww_id} className={`border-b ${tableBorder} ${tableRowHover}`}>
                             <td className="px-3 py-3">
@@ -1016,15 +967,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                                 <span className={`font-medium ${text1}`}>{c.display_name || c.name}</span>
                               </div>
                             </td>
-                            <td className={`px-3 py-3 ${text1}`}>{expected !== null ? fmt(expected) : '—'}</td>
                             <td className={`px-3 py-3 font-semibold ${text1}`}>{fmt(c.totalRevenue)}</td>
-                            <td className="px-3 py-3">
-                              {c.generatedRevenuePct !== null
-                                ? <span className={`px-2 py-1 rounded text-xs font-medium ${pctColor(c.generatedRevenuePct, isLight)}`}>
-                                    {(c.generatedRevenuePct ?? 0) > 0 ? '+' : ''}{(c.generatedRevenuePct ?? 0).toFixed(1)}%
-                                  </span>
-                                : <span className={text3}>—</span>}
-                            </td>
                             <td className={`px-3 py-3 ${text1}`}>{c.subAvg14d}</td>
                             <td className={`px-3 py-3 ${text1}`}>{c.newSubs}</td>
                             <td className="px-3 py-3">
@@ -1034,6 +977,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                                   </span>
                                 : <span className={text3}>—</span>}
                             </td>
+                            <td className={`px-3 py-3 ${text1}`}>{c.linkClicks}</td>
                             <td className="px-3 py-3">
                               <EmergencyDropdown creatorId={c.supabase_creator_id} currentDate={c.emergency_since}
                                 onSave={date => c.supabase_creator_id && saveEmergency(c.supabase_creator_id, date, c.emergency_notes)}
@@ -1052,17 +996,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                 </div>
               </div>
             )
-          })}
-
-          {linkedCreators.filter(c => !c.expectation).length > 0 && (
-            <div className={`mt-6 rounded-lg p-4 ${isLight ? 'bg-amber-50 border border-amber-200' : 'bg-yellow-900/15 border border-yellow-700/30'}`}>
-              <p className={`text-sm font-medium mb-1 ${isLight ? 'text-amber-800' : 'text-yellow-300'}`}>Creators without expectations:</p>
-              <p className={`text-sm ${isLight ? 'text-amber-700' : 'text-yellow-200/70'}`}>
-                {linkedCreators.filter(c => !c.expectation).map(c => c.display_name).join(', ')}
-              </p>
-              <p className={`text-xs mt-2 ${isLight ? 'text-amber-600' : 'text-yellow-200/40'}`}>Set targets in the Expectations tab.</p>
-            </div>
-          )}
+          })()}
 
           {/* ── Unlinked Infloww accounts ── */}
           {trackingUnlinked.length > 0 && (
@@ -1107,74 +1041,6 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ─── EXPECTATIONS ──────────────────────────────────────── */}
-      {activeTab === 'expectations' && (
-        <div>
-          <p className={`text-sm mb-6 ${text2}`}>Set daily revenue targets and check frequencies. The tracking tab uses these.</p>
-          {expLoading ? (
-            <div className="flex items-center justify-center py-20">
-              <div className={`animate-spin rounded-full h-8 w-8 border-t-2 ${isLight ? 'border-black/20' : 'border-white/30'}`} />
-            </div>
-          ) : (
-            <div className={`${card} rounded-xl overflow-x-auto`}>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className={`border-b ${tableBorder}`}>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${text3}`}>Creator</th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${text3}`}>Daily Revenue Target ($)</th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${text3}`}>Revenue / Fan (14d $)</th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${text3}`}>Check Frequency</th>
-                    <th className={`px-4 py-3 text-left text-xs font-medium uppercase ${text3}`}>Free Subs?</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {expCreators.map(c => {
-                    const exp = c.expectation || { daily_revenue_target: 0, revenue_per_fan_baseline: 0, check_frequency: 1, free_subs: false }
-                    return (
-                      <tr key={c.id} className={`border-b ${tableBorder} ${expSaving === c.id ? 'opacity-50' : ''}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            {c.avatar_url
-                              ? <img src={avatarSrc(c.avatar_url)} alt="" className="w-7 h-7 rounded-full object-cover" />
-                              : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/50'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
-                            <span className={`font-medium ${text1}`}>{c.display_name || c.name}</span>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <input type="number" defaultValue={exp.daily_revenue_target}
-                            onBlur={e => saveExpectation(c.id, 'daily_revenue_target', Number(e.target.value))}
-                            className={`w-28 ${inputCls} rounded px-2 py-1 text-sm outline-none`} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <input type="number" defaultValue={exp.revenue_per_fan_baseline}
-                            onBlur={e => saveExpectation(c.id, 'revenue_per_fan_baseline', Number(e.target.value))}
-                            className={`w-28 ${inputCls} rounded px-2 py-1 text-sm outline-none`} />
-                        </td>
-                        <td className="px-4 py-3">
-                          <select defaultValue={exp.check_frequency}
-                            onChange={e => saveExpectation(c.id, 'check_frequency', Number(e.target.value))}
-                            className={`${selectCls} rounded px-2 py-1 text-sm outline-none`}>
-                            <option value={1}>Every Day</option>
-                            <option value={3}>Every 3 Days</option>
-                            <option value={7}>Every 7 Days</option>
-                          </select>
-                        </td>
-                        <td className="px-4 py-3">
-                          <input type="checkbox" defaultChecked={exp.free_subs}
-                            onChange={e => saveExpectation(c.id, 'free_subs', e.target.checked)}
-                            className="w-4 h-4 rounded" />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {!expCreators.length && <div className={`text-center py-10 ${text2}`}>No active creators found.</div>}
             </div>
           )}
         </div>

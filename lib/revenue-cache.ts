@@ -1,5 +1,6 @@
 import { createServerSupabaseClient } from './supabase'
 import { decryptSecret } from './infloww-crypto'
+import { rateLimitedFetch, mapWithConcurrency, CREATOR_CONCURRENCY } from './infloww-rate-limit'
 
 // Shared Infloww revenue-cache rebuild logic.
 //
@@ -34,53 +35,6 @@ interface InflowwCreator {
 }
 
 // ─── Rate Limiter ───────────────────────────────────────────────────
-let lastRequestTime = 0
-const MIN_REQUEST_GAP_MS = 600
-const requestTimestamps: number[] = []
-const MAX_REQUESTS_PER_MINUTE = 50
-
-async function rateLimitedFetch(
-  url: string,
-  headers: Record<string, string>,
-  maxRetries = 3
-): Promise<Response> {
-  const now = Date.now()
-  while (requestTimestamps.length > 0 && requestTimestamps[0] < now - 60000) {
-    requestTimestamps.shift()
-  }
-
-  if (requestTimestamps.length >= MAX_REQUESTS_PER_MINUTE) {
-    const waitUntil = requestTimestamps[0] + 60000
-    const waitMs = waitUntil - Date.now() + 100
-    if (waitMs > 0) await new Promise((r) => setTimeout(r, waitMs))
-  }
-
-  const elapsed = Date.now() - lastRequestTime
-  if (elapsed < MIN_REQUEST_GAP_MS) {
-    await new Promise((r) => setTimeout(r, MIN_REQUEST_GAP_MS - elapsed))
-  }
-  lastRequestTime = Date.now()
-  requestTimestamps.push(Date.now())
-
-  const response = await fetch(url, { headers, cache: 'no-store' })
-
-  if (response.status === 429) {
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      const retryAfter = parseInt(response.headers.get('retry-after') || '0', 10)
-      const backoffMs = Math.max(retryAfter * 1000, attempt * 2000)
-      console.warn(`[revenue-cache] Rate limited (429). Retrying in ${backoffMs}ms (attempt ${attempt}/${maxRetries})`)
-      await new Promise((r) => setTimeout(r, backoffMs))
-      lastRequestTime = Date.now()
-      requestTimestamps.push(Date.now())
-      const retryResponse = await fetch(url, { headers, cache: 'no-store' })
-      if (retryResponse.status !== 429) return retryResponse
-    }
-    throw new Error('Infloww API rate limit exceeded after retries')
-  }
-
-  return response
-}
-
 async function fetchAllPages(
   endpoint: string,
   params: Record<string, string>,
@@ -288,21 +242,19 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
     }
 
     console.log(`[revenue-cache] Fetching transactions for ${creators.length} creators...`)
-    const creatorData = []
-    for (const creator of creators) {
-      // Period transactions (selected range)
-      const periodTransactions = (await fetchAllPages(
+    const creatorData = await mapWithConcurrency(creators, CREATOR_CONCURRENCY, async (creator) => {
+      // The period and the 14-day baseline overlap, so pull the wider window
+      // once and slice both from it rather than paging Infloww twice.
+      const windowStart = Math.min(Number(startTime), Number(startTime14d))
+      const allTransactions = (await fetchAllPages(
         '/v1/transactions',
-        { creatorId: creator.id, platformCode: 'OnlyFans', startTime, endTime, limit: '100' },
+        { creatorId: creator.id, platformCode: 'OnlyFans', startTime: String(windowStart), endTime, limit: '100' },
         apiHeaders
       )) as InflowwTransaction[]
 
-      // 14d transactions for sub average (anchored at range start)
-      const transactions14d = (await fetchAllPages(
-        '/v1/transactions',
-        { creatorId: creator.id, platformCode: 'OnlyFans', startTime: startTime14d, endTime, limit: '100' },
-        apiHeaders
-      )) as InflowwTransaction[]
+      const at = (t: InflowwTransaction) => Number(t.createdTime)
+      const periodTransactions = allTransactions.filter((t) => at(t) >= Number(startTime))
+      const transactions14d = allTransactions.filter((t) => at(t) >= Number(startTime14d))
 
       const breakdown = calculateBreakdown(periodTransactions)
       const newSubs14d = transactions14d.filter((t) => t.type === 'Subscription')
@@ -326,7 +278,7 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
         sbCreator = creatorBySlug[creator.userName?.toLowerCase()] || creatorBySlug[creator.name?.toLowerCase()] || null
       }
 
-      creatorData.push({
+      return {
         infloww_id: creator.id,
         name: creator.name,
         userName: creator.userName,
@@ -350,8 +302,8 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
         avgFanSpend: Math.round(avgFanSpend * 100) / 100,
         subAvg14d,
         totalSubs14d: newSubs14d.length,
-      })
-    }
+      }
+    })
 
     // Calculate totals
     const totals = {

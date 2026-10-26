@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { ExternalLink, Instagram, MessageSquare, Play, Heart } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Card } from './ui'
@@ -101,6 +101,28 @@ export default function SocialClient({ creator, accounts, posts: initialPosts, s
   const [lqMin, setLqMin] = useState<number | null>(null)
   const [cpmMin, setCpmMin] = useState<number | null>(null)
   const [period, setPeriod] = useState<PeriodFilter>('all')
+  const [highlightId, setHighlightId] = useState<string | null>(null)
+
+  // Clicking a bar should land you on that post. It may be filtered out of the
+  // grid, so clear the filters first — otherwise the click does nothing and
+  // looks broken.
+  function revealPost(post: Post) {
+    setShow('all')
+    setPeriod('all')
+    setLqMin(null)
+    setCpmMin(null)
+    setHighlightId(post.id)
+  }
+
+  useEffect(() => {
+    if (!highlightId) return
+    // One frame for the filter reset to render the card before scrolling to it.
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(`post-${highlightId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    const clear = setTimeout(() => setHighlightId(null), 2600)
+    return () => { cancelAnimationFrame(raf); clearTimeout(clear) }
+  }, [highlightId])
 
   const text1 = isLight ? 'text-black/90' : 'text-white/90'
   const text2 = isLight ? 'text-black/50' : 'text-white/50'
@@ -267,7 +289,7 @@ export default function SocialClient({ creator, accounts, posts: initialPosts, s
       </div>
 
       {/* ── Views per post ── */}
-      <ViewsPerPostChart posts={scopedPosts} medianViews={metrics.medianViews} windowDays={windowDays} isLight={isLight} />
+      <ViewsPerPostChart posts={scopedPosts} medianViews={metrics.medianViews} windowDays={windowDays} isLight={isLight} onSelect={revealPost} />
 
       {selectedAccount && (
         <a
@@ -331,6 +353,7 @@ export default function SocialClient({ creator, accounts, posts: initialPosts, s
               post={p}
               medianViews={metrics.medianViews}
               onToggleTrial={() => toggleTrial(p)}
+              highlighted={highlightId === p.id}
               isLight={isLight}
             />
           ))}
@@ -386,11 +409,13 @@ function Metric({ label, value, sub, tone, isLight }: {
 }
 
 // Bar per post, newest last. Green = beats the median, red = far below it.
-function ViewsPerPostChart({ posts, medianViews, windowDays, isLight }: {
+function ViewsPerPostChart({ posts, medianViews, windowDays, isLight, onSelect }: {
   posts: Post[]; medianViews: number; windowDays: number; isLight: boolean
+  onSelect: (post: Post) => void
 }) {
   const text1 = isLight ? 'text-black/90' : 'text-white/90'
   const text3 = isLight ? 'text-black/30' : 'text-white/30'
+  const [hovered, setHovered] = useState<number | null>(null)
 
   const ordered = useMemo(
     () => [...posts].sort((a, b) => postDate(a) - postDate(b)),
@@ -406,25 +431,78 @@ function ViewsPerPostChart({ posts, medianViews, windowDays, isLight }: {
     )
   }
 
+  const active = hovered !== null ? ordered[hovered] : null
+  const activeLq = active ? likeQuote(active) : null
+  // Keep the card inside the chart: hug the left edge for early bars, the right
+  // edge for late ones.
+  const pos = hovered !== null ? ((hovered + 0.5) / ordered.length) * 100 : 0
+  const clamped = Math.min(88, Math.max(12, pos))
+
   return (
     <Card className="px-5 py-4">
-      <p className={`text-[13px] font-semibold mb-4 ${text1}`}>Views per post ({windowDays} days)</p>
-      <div className="flex items-end gap-[3px] h-48">
-        {ordered.map(p => {
-          const ratio = p.video_view_count / max
-          const vsMedian = medianViews > 0 ? p.video_view_count / medianViews : 1
-          const color = vsMedian >= 1.5 ? 'bg-emerald-500' : vsMedian >= 0.5 ? (isLight ? 'bg-black/20' : 'bg-white/25') : 'bg-rose-500'
-          const date = postDateLabel(p, { day: '2-digit', month: '2-digit' })
-          return (
-            <div
-              key={p.id}
-              title={`${date} · ${fmt(p.video_view_count)} views`}
-              className={`flex-1 min-w-[3px] rounded-t-sm transition-opacity hover:opacity-70 ${color}`}
-              style={{ height: `${Math.max(2, ratio * 100)}%` }}
-            />
-          )
-        })}
+      <div className="flex items-baseline justify-between mb-4">
+        <p className={`text-[13px] font-semibold ${text1}`}>Views per post ({windowDays} days)</p>
+        <p className={`text-[11px] ${text3}`}>hover for detail · click to open the post</p>
       </div>
+
+      <div className="relative">
+        {active && (
+          <div
+            className={`absolute -top-1 z-20 -translate-x-1/2 -translate-y-full pointer-events-none rounded-xl border px-3 py-2 shadow-xl ${
+              isLight ? 'bg-white border-black/10' : 'bg-[#15151a] border-white/12'
+            }`}
+            style={{ left: `${clamped}%` }}
+          >
+            <div className="flex items-center gap-2.5">
+              {active.display_url && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={proxy(active.display_url)} alt="" className="h-12 w-12 rounded-lg object-cover shrink-0" />
+              )}
+              <div className="min-w-0">
+                <p className={`text-[11px] font-semibold ${text1}`}>
+                  {postDateLabel(active, { day: '2-digit', month: 'short', year: 'numeric' })}
+                </p>
+                <p className={`text-[14px] font-bold tabular-nums ${text1}`}>{fmt(active.video_view_count)} views</p>
+                <div className={`flex items-center gap-2.5 mt-0.5 text-[10.5px] tabular-nums ${isLight ? 'text-black/50' : 'text-white/50'}`}>
+                  <span className="inline-flex items-center gap-1"><Heart className="h-2.5 w-2.5" />{activeLq !== null ? activeLq.toFixed(1) + ' %' : '—'}</span>
+                  <span className="inline-flex items-center gap-1"><MessageSquare className="h-2.5 w-2.5" />{fmt(active.comments_count)}</span>
+                  {medianViews > 0 && (
+                    <span className={active.video_view_count >= medianViews ? 'text-emerald-500' : 'text-rose-500'}>
+                      {active.video_view_count >= medianViews ? '+' : ''}
+                      {(((active.video_view_count - medianViews) / medianViews) * 100).toFixed(0)}% vs median
+                    </span>
+                  )}
+                </div>
+                {active.is_trial && <p className="text-[10px] mt-0.5 text-amber-500">Trial</p>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="flex items-end gap-[3px] h-48" onMouseLeave={() => setHovered(null)}>
+          {ordered.map((p, i) => {
+            const ratio = p.video_view_count / max
+            const vsMedian = medianViews > 0 ? p.video_view_count / medianViews : 1
+            const color = vsMedian >= 1.5 ? 'bg-emerald-500' : vsMedian >= 0.5 ? (isLight ? 'bg-black/20' : 'bg-white/25') : 'bg-rose-500'
+            const isHovered = hovered === i
+            return (
+              <button
+                key={p.id}
+                type="button"
+                aria-label={`${postDateLabel(p, { day: '2-digit', month: 'short' })} — ${fmt(p.video_view_count)} views`}
+                onMouseEnter={() => setHovered(i)}
+                onFocus={() => setHovered(i)}
+                onClick={() => onSelect(p)}
+                className={`flex-1 min-w-[3px] rounded-t-sm transition-all cursor-pointer ${color} ${
+                  isHovered ? 'opacity-100 ring-2 ring-offset-0 ring-pink-500/70' : hovered !== null ? 'opacity-40' : 'hover:opacity-80'
+                }`}
+                style={{ height: `${Math.max(2, ratio * 100)}%` }}
+              />
+            )
+          })}
+        </div>
+      </div>
+
       <div className={`flex justify-between mt-2 text-[10px] ${text3}`}>
         <span>{postDateLabel(ordered[0], { day: '2-digit', month: 'short' })}</span>
         <span>median {fmt(medianViews)}</span>
@@ -434,8 +512,8 @@ function ViewsPerPostChart({ posts, medianViews, windowDays, isLight }: {
   )
 }
 
-function PostCard({ post, medianViews, onToggleTrial, isLight }: {
-  post: Post; medianViews: number; onToggleTrial: () => void; isLight: boolean
+function PostCard({ post, medianViews, onToggleTrial, highlighted, isLight }: {
+  post: Post; medianViews: number; onToggleTrial: () => void; highlighted?: boolean; isLight: boolean
 }) {
   const text1 = isLight ? 'text-black/90' : 'text-white/90'
   const text2 = isLight ? 'text-black/50' : 'text-white/50'
@@ -447,12 +525,15 @@ function PostCard({ post, medianViews, onToggleTrial, isLight }: {
   const date = postDateLabel(post, { day: '2-digit', month: 'short', year: 'numeric' })
 
   return (
-    <div className="flex flex-col">
+    // id + ring: clicking a bar in the chart above scrolls here and flags it.
+    <div id={`post-${post.id}`} className="flex flex-col scroll-mt-24">
       <a
         href={`https://instagram.com/p/${post.post_short_code}`}
         target="_blank"
         rel="noopener noreferrer"
-        className={`relative block aspect-[9/16] rounded-xl overflow-hidden group ${isLight ? 'bg-black/[0.05]' : 'bg-white/[0.05]'}`}
+        className={`relative block aspect-[9/16] rounded-xl overflow-hidden group transition-shadow ${
+          highlighted ? 'ring-2 ring-pink-500 ring-offset-2 ' + (isLight ? 'ring-offset-white' : 'ring-offset-[#0c0c10]') : ''
+        } ${isLight ? 'bg-black/[0.05]' : 'bg-white/[0.05]'}`}
       >
         {post.display_url ? (
           // eslint-disable-next-line @next/next/no-img-element

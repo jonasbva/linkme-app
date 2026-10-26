@@ -19,6 +19,9 @@ interface Account {
   status_checked_at: string | null
   consecutive_failures: number
   tracking_link: { id: string; label: string; infloww_link_id: string | null } | null
+  /** What Instagram reports as the account's bio link. Usually null. */
+  bio_link: string | null
+  bio_link_checked_at: string | null
 }
 
 /** What Instagram served on the last scrape attempt. */
@@ -561,6 +564,21 @@ export default function SocialAccountsClient() {
                           {account.tracking_link ? 'Not connected' : 'No link'}
                         </span>
                       )}
+                      {account.bio_link ? (
+                        <a
+                          href={account.bio_link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={account.bio_link}
+                          className={`block mt-0.5 text-[10px] truncate max-w-[200px] hover:underline ${isLight ? 'text-black/40' : 'text-white/40'}`}
+                        >
+                          bio: {account.bio_link.replace(/^https?:\/\//, '')}
+                        </a>
+                      ) : account.bio_link_checked_at ? (
+                        <span className={`block mt-0.5 text-[10px] ${isLight ? 'text-black/25' : 'text-white/25'}`}>
+                          no link in bio
+                        </span>
+                      ) : null}
                     </td>
                     <td className={`px-4 py-2.5 text-[12px] ${
                       !account.last_scraped
