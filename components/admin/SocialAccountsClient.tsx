@@ -94,7 +94,7 @@ export default function SocialAccountsClient() {
   useEffect(() => {
     fetch('/api/admin/creators')
       .then(r => r.json())
-      .then(d => { if (Array.isArray(d)) setCreators(d.filter((c: any) => c.is_active)) })
+      .then(d => { if (Array.isArray(d)) setCreators(d) })
       .catch(() => {})
   }, [])
 

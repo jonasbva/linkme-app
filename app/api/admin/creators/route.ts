@@ -3,15 +3,23 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import { requireUser, requireSuperAdmin, guardResponse, getUserPermissions } from '@/lib/auth'
 
 // GET /api/admin/creators — list creators (scoped to what the user may see)
-export async function GET() {
+//
+// Archived creators are left out by default. Archiving is how a creator leaves
+// the agency, so they should not keep appearing in the sidebar picker or in the
+// access lists. Pass ?include_archived=1 for a view that genuinely needs them.
+export async function GET(req: NextRequest) {
   const gate = await requireUser()
   if (!gate.ok) return guardResponse(gate)
+
+  const includeArchived = req.nextUrl.searchParams.get('include_archived') === '1'
 
   const supabase = createServerSupabaseClient()
   let query = supabase
     .from('creators')
     .select('id, display_name, slug, avatar_url, is_active')
     .order('display_name')
+
+  if (!includeArchived) query = query.eq('is_active', true)
 
   // Non-super-admins only see creators they've been granted access to.
   if (!gate.user.is_super_admin) {
