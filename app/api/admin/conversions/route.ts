@@ -1,33 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { requireUser, requireSuperAdmin, requireCreatorAccess, canAccessCreator, guardResponse, getUserPermissions } from '@/lib/auth'
+import { requireUser, requireCreatorAccess, canAccessCreator, guardResponse, getUserPermissions } from '@/lib/auth'
 
 /**
- * Conversions API — keyed on conversion_account_id (not creator_id).
+ * Conversions API — two layers.
  *
  * Data model:
- *   One creator → N conversion_accounts → N conversion_daily rows + 1 expectation row
+ *   creator (= the OF account every IG link funnels into)
+ *     → creator_daily        one row per creator per day: new_subs
+ *     → creator_expectations one row per creator: daily_sub_target
+ *     → tracking_links       N links (one per IG bio link)
+ *         → link_daily       one row per link per day: views / profile_views / link_clicks
+ *
+ * Both daily tables are entered by hand; the rows are generated for every
+ * creator/link so the traffic team only types numbers.
  */
 
-// GET /api/admin/conversions?action=expectations  → list all expectations
-// GET /api/admin/conversions?action=daily&account_id=…&from=…&to=… → daily rows
+// Creator scope for the caller. null = unrestricted (super-admin / grant-all).
+async function creatorScope(user: { id: string; is_super_admin: boolean }): Promise<string[] | null> {
+  if (user.is_super_admin) return null
+  const perms = await getUserPermissions(user.id)
+  if (perms.grantAllCreators) return null
+  return perms.visibleCreatorIds
+}
+
+// GET /api/admin/conversions?action=expectations
+// GET /api/admin/conversions?action=creator_daily&creator_id=…&from=…&to=…
+// GET /api/admin/conversions?action=link_daily&from=…&to=…
 export async function GET(req: NextRequest) {
   const gate = await requireUser()
   if (!gate.ok) return guardResponse(gate)
   const supabase = createServerSupabaseClient()
 
-  // Determine creator scope. null = unrestricted (super-admin / grant-all).
-  let visibleIds: string[] | null = null
-  if (!gate.user.is_super_admin) {
-    const perms = await getUserPermissions(gate.user.id)
-    if (!perms.grantAllCreators) visibleIds = perms.visibleCreatorIds
-  }
-
+  const visibleIds = await creatorScope(gate.user)
   const { searchParams } = new URL(req.url)
   const action = searchParams.get('action')
 
   if (action === 'expectations') {
-    let q = supabase.from('conversion_expectations').select('*')
+    let q = supabase.from('creator_expectations').select('*')
     if (visibleIds !== null) {
       if (visibleIds.length === 0) return NextResponse.json([])
       q = q.in('creator_id', visibleIds)
@@ -37,24 +47,50 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(data)
   }
 
-  if (action === 'daily') {
-    const accountId = searchParams.get('account_id')
-    const creatorId = searchParams.get('creator_id') // legacy: filter by creator via account lookup
+  if (action === 'creator_daily') {
+    const creatorId = searchParams.get('creator_id')
     const from = searchParams.get('from')
     const to = searchParams.get('to')
 
-    let query = supabase.from('conversion_daily').select('*')
-    if (accountId) query = query.eq('conversion_account_id', accountId)
-    if (creatorId && !accountId) query = query.eq('creator_id', creatorId)
-    if (from) query = query.gte('date', from)
-    if (to) query = query.lte('date', to)
+    let q = supabase.from('creator_daily').select('*')
+    if (creatorId) q = q.eq('creator_id', creatorId)
+    if (from) q = q.gte('date', from)
+    if (to) q = q.lte('date', to)
     if (visibleIds !== null) {
       if (visibleIds.length === 0) return NextResponse.json([])
-      query = query.in('creator_id', visibleIds)
+      q = q.in('creator_id', visibleIds)
     }
-    query = query.order('date', { ascending: false })
 
-    const { data, error } = await query
+    const { data, error } = await q.order('date', { ascending: false })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
+  }
+
+  if (action === 'link_daily') {
+    const creatorId = searchParams.get('creator_id')
+    const linkId = searchParams.get('tracking_link_id')
+    const from = searchParams.get('from')
+    const to = searchParams.get('to')
+
+    // link_daily has no creator_id, so resolve the visible links first.
+    let linksQ = supabase.from('tracking_links').select('id, creator_id')
+    if (creatorId) linksQ = linksQ.eq('creator_id', creatorId)
+    if (visibleIds !== null) {
+      if (visibleIds.length === 0) return NextResponse.json([])
+      linksQ = linksQ.in('creator_id', visibleIds)
+    }
+    const { data: links, error: linksErr } = await linksQ
+    if (linksErr) return NextResponse.json({ error: linksErr.message }, { status: 500 })
+
+    let ids = (links || []).map(l => l.id)
+    if (linkId) ids = ids.filter(id => id === linkId)
+    if (ids.length === 0) return NextResponse.json([])
+
+    let q = supabase.from('link_daily').select('*').in('tracking_link_id', ids)
+    if (from) q = q.gte('date', from)
+    if (to) q = q.lte('date', to)
+
+    const { data, error } = await q.order('date', { ascending: false })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
@@ -62,7 +98,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }
 
-// POST /api/admin/conversions
 export async function POST(req: NextRequest) {
   const gate = await requireUser()
   if (!gate.ok) return guardResponse(gate)
@@ -70,35 +105,21 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
 
   /**
-   * Set/clear the daily-sub target for a conversion_account.
-   * Body: { action: 'set_expectation', conversion_account_id, daily_sub_target }
+   * Daily-sub target for a creator.
+   * Body: { action: 'set_expectation', creator_id, daily_sub_target }
    */
   if (body.action === 'set_expectation') {
-    const { conversion_account_id, daily_sub_target } = body
-    if (!conversion_account_id) {
-      return NextResponse.json({ error: 'conversion_account_id is required' }, { status: 400 })
-    }
-    // We need creator_id for the row (NOT NULL FK). Look it up.
-    const { data: ca, error: caErr } = await supabase
-      .from('conversion_accounts')
-      .select('id, creator_id')
-      .eq('id', conversion_account_id)
-      .single()
-    if (caErr || !ca) return NextResponse.json({ error: 'Conversion account not found' }, { status: 404 })
+    const { creator_id, daily_sub_target } = body
+    if (!creator_id) return NextResponse.json({ error: 'creator_id is required' }, { status: 400 })
 
-    const access = await requireCreatorAccess(ca.creator_id, 'input_conversions')
+    const access = await requireCreatorAccess(creator_id, 'input_conversions')
     if (!access.ok) return guardResponse(access)
 
     const { data, error } = await supabase
-      .from('conversion_expectations')
+      .from('creator_expectations')
       .upsert(
-        {
-          conversion_account_id,
-          creator_id: ca.creator_id,
-          daily_sub_target,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'conversion_account_id' }
+        { creator_id, daily_sub_target: Number(daily_sub_target) || 0, updated_at: new Date().toISOString() },
+        { onConflict: 'creator_id' }
       )
       .select()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -106,30 +127,17 @@ export async function POST(req: NextRequest) {
   }
 
   /**
-   * Batch write new_subs for many accounts on a given date.
-   * Body: { action: 'set_daily_subs', date, entries: [{ conversion_account_id, new_subs }, ...] }
+   * Batch write new_subs for many creators on one date.
+   * Body: { action: 'set_daily_subs', date, entries: [{ creator_id, new_subs }, …] }
    */
   if (body.action === 'set_daily_subs') {
-    const { date, entries } = body as {
-      date: string
-      entries: { conversion_account_id: string; new_subs: number }[]
-    }
+    const { date, entries } = body as { date: string; entries: { creator_id: string; new_subs: number }[] }
     if (!date || !Array.isArray(entries)) {
       return NextResponse.json({ error: 'date and entries are required' }, { status: 400 })
     }
 
-    // Pull creator_id for every account_id in one query.
-    const accountIds = entries.map(e => e.conversion_account_id)
-    const { data: accounts, error: accErr } = await supabase
-      .from('conversion_accounts')
-      .select('id, creator_id')
-      .in('id', accountIds)
-    if (accErr) return NextResponse.json({ error: accErr.message }, { status: 500 })
-    const creatorByAccount = Object.fromEntries((accounts || []).map(a => [a.id, a.creator_id]))
-
-    // Scope: every targeted account must belong to a creator the caller can write.
+    const creatorIds = Array.from(new Set(entries.map(e => e.creator_id)))
     if (!gate.user.is_super_admin) {
-      const creatorIds = Array.from(new Set(Object.values(creatorByAccount))) as string[]
       for (const cid of creatorIds) {
         if (!(await canAccessCreator(gate.user.id, cid, 'input_conversions'))) {
           return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -137,209 +145,144 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Preserve existing views / profile_views / link_clicks per (account, date).
-    const { data: existingRows } = await supabase
-      .from('conversion_daily')
-      .select('conversion_account_id, views, profile_views, link_clicks')
-      .eq('date', date)
-      .in('conversion_account_id', accountIds)
-    const existingMap: Record<string, { views: number; profile_views: number; link_clicks: number }> = {}
-    ;(existingRows || []).forEach((r: any) => {
-      existingMap[r.conversion_account_id] = {
-        views: r.views,
-        profile_views: r.profile_views,
-        link_clicks: r.link_clicks,
-      }
-    })
-
-    const upserts = entries
-      .filter(e => creatorByAccount[e.conversion_account_id])
-      .map(e => ({
-        conversion_account_id: e.conversion_account_id,
-        creator_id: creatorByAccount[e.conversion_account_id],
-        date,
-        new_subs: e.new_subs,
-        views: existingMap[e.conversion_account_id]?.views ?? 0,
-        profile_views: existingMap[e.conversion_account_id]?.profile_views ?? 0,
-        link_clicks: existingMap[e.conversion_account_id]?.link_clicks ?? 0,
-        updated_at: new Date().toISOString(),
-      }))
-
+    const upserts = entries.map(e => ({
+      creator_id: e.creator_id,
+      date,
+      new_subs: Number(e.new_subs) || 0,
+      updated_at: new Date().toISOString(),
+    }))
     if (upserts.length === 0) return NextResponse.json([])
 
     const { data, error } = await supabase
-      .from('conversion_daily')
-      .upsert(upserts, { onConflict: 'conversion_account_id,date' })
+      .from('creator_daily')
+      .upsert(upserts, { onConflict: 'creator_id,date' })
       .select()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
 
   /**
-   * Update one field on a single daily row.
-   * Body: { action: 'update_cell', conversion_account_id, date, field, value }
+   * One creator's new_subs on one date.
+   * Body: { action: 'update_creator_cell', creator_id, date, value }
    */
-  if (body.action === 'update_cell') {
-    const { conversion_account_id, date, field, value } = body
-    const allowedFields = ['views', 'profile_views', 'link_clicks', 'new_subs']
+  if (body.action === 'update_creator_cell') {
+    const { creator_id, date, value } = body
+    if (!creator_id || !date) {
+      return NextResponse.json({ error: 'creator_id and date are required' }, { status: 400 })
+    }
+
+    const access = await requireCreatorAccess(creator_id, 'input_conversions')
+    if (!access.ok) return guardResponse(access)
+
+    const { data, error } = await supabase
+      .from('creator_daily')
+      .upsert(
+        { creator_id, date, new_subs: Number(value) || 0, updated_at: new Date().toISOString() },
+        { onConflict: 'creator_id,date' }
+      )
+      .select()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
+  }
+
+  /**
+   * One link's traffic figure on one date.
+   * Body: { action: 'update_link_cell', tracking_link_id, date, field, value }
+   */
+  if (body.action === 'update_link_cell') {
+    const { tracking_link_id, date, field, value } = body
+    const allowedFields = ['views', 'profile_views', 'link_clicks']
     if (!allowedFields.includes(field)) {
       return NextResponse.json({ error: 'Invalid field' }, { status: 400 })
     }
-    if (!conversion_account_id) {
-      return NextResponse.json({ error: 'conversion_account_id is required' }, { status: 400 })
+    if (!tracking_link_id || !date) {
+      return NextResponse.json({ error: 'tracking_link_id and date are required' }, { status: 400 })
     }
 
-    const { data: ca, error: caErr } = await supabase
-      .from('conversion_accounts')
+    const { data: link, error: linkErr } = await supabase
+      .from('tracking_links')
       .select('id, creator_id')
-      .eq('id', conversion_account_id)
+      .eq('id', tracking_link_id)
       .single()
-    if (caErr || !ca) return NextResponse.json({ error: 'Conversion account not found' }, { status: 404 })
+    if (linkErr || !link) return NextResponse.json({ error: 'Link not found' }, { status: 404 })
 
-    const access = await requireCreatorAccess(ca.creator_id, 'input_conversions')
+    const access = await requireCreatorAccess(link.creator_id, 'input_conversions')
     if (!access.ok) return guardResponse(access)
 
     const { data: existing } = await supabase
-      .from('conversion_daily')
-      .select('views, profile_views, link_clicks, new_subs')
-      .eq('conversion_account_id', conversion_account_id)
+      .from('link_daily')
+      .select('views, profile_views, link_clicks')
+      .eq('tracking_link_id', tracking_link_id)
       .eq('date', date)
       .maybeSingle()
 
-    const upsertData = {
-      conversion_account_id,
-      creator_id: ca.creator_id,
+    const row = {
+      tracking_link_id,
       date,
       views: existing?.views ?? 0,
       profile_views: existing?.profile_views ?? 0,
       link_clicks: existing?.link_clicks ?? 0,
-      new_subs: existing?.new_subs ?? 0,
-      [field]: value,
+      [field]: Number(value) || 0,
       updated_at: new Date().toISOString(),
     }
 
     const { data, error } = await supabase
-      .from('conversion_daily')
-      .upsert(upsertData, { onConflict: 'conversion_account_id,date' })
+      .from('link_daily')
+      .upsert(row, { onConflict: 'tracking_link_id,date' })
       .select()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json(data)
   }
 
   /**
-   * Auto-calculate views / profile_views / link_clicks per conversion_account
-   * for a given date (from clicks + social_snapshots).
-   *
-   * NOTE: clicks + social_accounts are still keyed by creator_id. For now we
-   * attribute them to each creator's MAIN conversion account (display_label IS NULL)
-   * and leave alts (ESP, second, etc.) untouched — those are filled by hand in
-   * the conversion sheet.
-   *
-   * Body: { action: 'calculate_daily', date? }
+   * Batch write link traffic for one date.
+   * Body: { action: 'set_link_daily', date,
+   *         entries: [{ tracking_link_id, views, profile_views, link_clicks }, …] }
    */
-  if (body.action === 'calculate_daily') {
-    // Global recompute across all creators — super-admin only.
-    const adminGate = await requireSuperAdmin()
-    if (!adminGate.ok) return guardResponse(adminGate)
+  if (body.action === 'set_link_daily') {
+    const { date, entries } = body as {
+      date: string
+      entries: { tracking_link_id: string; views: number; profile_views: number; link_clicks: number }[]
+    }
+    if (!date || !Array.isArray(entries)) {
+      return NextResponse.json({ error: 'date and entries are required' }, { status: 400 })
+    }
 
-    const targetDate =
-      body.date ||
-      (() => {
-        const d = new Date()
-        d.setDate(d.getDate() - 1)
-        return d.toISOString().split('T')[0]
-      })()
-
-    const dateStart = targetDate + 'T00:00:00.000Z'
-    const dateEnd = targetDate + 'T23:59:59.999Z'
-
-    // Fetch all main conversion accounts (one per creator).
-    const { data: mainAccounts } = await supabase
-      .from('conversion_accounts')
-      .select('id, creator_id, display_label')
-      .is('display_label', null)
-    if (!mainAccounts) return NextResponse.json({ error: 'No conversion accounts' }, { status: 500 })
-
-    // Clicks per creator → attribute to the creator's main conv account.
-    const { data: clicks } = await supabase
-      .from('clicks')
-      .select('creator_id, type')
-      .gte('created_at', dateStart)
-      .lte('created_at', dateEnd)
-    const clickMap: Record<string, { profile_views: number; link_clicks: number }> = {}
-    ;(clicks || []).forEach((c: any) => {
-      if (!clickMap[c.creator_id]) clickMap[c.creator_id] = { profile_views: 0, link_clicks: 0 }
-      if (c.type === 'page_view') clickMap[c.creator_id].profile_views++
-      else if (c.type === 'link_click') clickMap[c.creator_id].link_clicks++
-    })
-
-    // Views per creator (diff of total_views across snapshots on this date vs prev).
-    const { data: socialAccounts } = await supabase
-      .from('social_accounts')
+    const linkIds = entries.map(e => e.tracking_link_id)
+    const { data: links, error: linksErr } = await supabase
+      .from('tracking_links')
       .select('id, creator_id')
-      .eq('is_active', true)
+      .in('id', linkIds)
+    if (linksErr) return NextResponse.json({ error: linksErr.message }, { status: 500 })
 
-    const prevDate = new Date(targetDate)
-    prevDate.setDate(prevDate.getDate() - 1)
-    const prevDateStr = prevDate.toISOString().split('T')[0]
-
-    const viewsMap: Record<string, number> = {}
-    if (socialAccounts) {
-      for (const acc of socialAccounts) {
-        const [todaySnap, prevSnap] = await Promise.all([
-          supabase
-            .from('social_snapshots')
-            .select('total_views')
-            .eq('social_account_id', acc.id)
-            .gte('scraped_at', dateStart)
-            .lte('scraped_at', dateEnd)
-            .order('scraped_at', { ascending: false })
-            .limit(1),
-          supabase
-            .from('social_snapshots')
-            .select('total_views')
-            .eq('social_account_id', acc.id)
-            .gte('scraped_at', prevDateStr + 'T00:00:00.000Z')
-            .lte('scraped_at', prevDateStr + 'T23:59:59.999Z')
-            .order('scraped_at', { ascending: false })
-            .limit(1),
-        ])
-        const todayViews = todaySnap.data?.[0]?.total_views || 0
-        const prevViews = prevSnap.data?.[0]?.total_views || 0
-        const diff = todayViews - prevViews
-        if (diff > 0) viewsMap[acc.creator_id] = (viewsMap[acc.creator_id] || 0) + diff
+    const creatorByLink = Object.fromEntries((links || []).map(l => [l.id, l.creator_id]))
+    if (!gate.user.is_super_admin) {
+      const creatorIds = Array.from(new Set(Object.values(creatorByLink))) as string[]
+      for (const cid of creatorIds) {
+        if (!(await canAccessCreator(gate.user.id, cid, 'input_conversions'))) {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+        }
       }
     }
 
-    // Upsert per main conversion account, preserving new_subs.
-    const results: any[] = []
-    for (const ma of mainAccounts) {
-      const { data: existing } = await supabase
-        .from('conversion_daily')
-        .select('new_subs')
-        .eq('conversion_account_id', ma.id)
-        .eq('date', targetDate)
-        .maybeSingle()
-
-      const row = {
-        conversion_account_id: ma.id,
-        creator_id: ma.creator_id,
-        date: targetDate,
-        views: viewsMap[ma.creator_id] || 0,
-        profile_views: clickMap[ma.creator_id]?.profile_views || 0,
-        link_clicks: clickMap[ma.creator_id]?.link_clicks || 0,
-        new_subs: existing?.new_subs ?? 0,
+    const upserts = entries
+      .filter(e => creatorByLink[e.tracking_link_id])
+      .map(e => ({
+        tracking_link_id: e.tracking_link_id,
+        date,
+        views: Number(e.views) || 0,
+        profile_views: Number(e.profile_views) || 0,
+        link_clicks: Number(e.link_clicks) || 0,
         updated_at: new Date().toISOString(),
-      }
+      }))
+    if (upserts.length === 0) return NextResponse.json([])
 
-      const { data } = await supabase
-        .from('conversion_daily')
-        .upsert(row, { onConflict: 'conversion_account_id,date' })
-        .select()
-      if (data) results.push(...data)
-    }
-
-    return NextResponse.json({ calculated: results.length, date: targetDate })
+    const { data, error } = await supabase
+      .from('link_daily')
+      .upsert(upserts, { onConflict: 'tracking_link_id,date' })
+      .select()
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json(data)
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })

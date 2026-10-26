@@ -200,21 +200,34 @@ async function mergeWithSupabase(creatorData: any[], supabase: any, startDate: D
   const startDateStr = startDate.toISOString().split('T')[0]
   const endDateStr = endDate.toISOString().split('T')[0]
 
-  const { data: conversionData } = await supabase
-    .from('conversion_daily')
-    .select('creator_id, link_clicks, new_subs')
-    .gte('date', startDateStr)
-    .lte('date', endDateStr)
+  // Subs come from the creator layer; link clicks from the creator's links.
+  const [{ data: subsRows }, { data: linkRows }] = await Promise.all([
+    supabase
+      .from('creator_daily')
+      .select('creator_id, new_subs')
+      .gte('date', startDateStr)
+      .lte('date', endDateStr),
+    supabase
+      .from('link_daily')
+      .select('link_clicks, tracking_links!inner(creator_id)')
+      .gte('date', startDateStr)
+      .lte('date', endDateStr),
+  ])
 
   const { data: allCreators } = await supabase.from('creators').select('id, slug, display_name, avatar_url')
   const creatorMap = new Map(allCreators?.map((c: { slug: string }) => [c.slug, c]) || [])
   const creatorIdMap = new Map(allCreators?.map((c: { id: string }) => [c.id, c]) || [])
 
   const clicksByCreator: Record<string, { clicks: number; subs: number }> = {}
-  for (const row of conversionData || []) {
-    if (!clicksByCreator[row.creator_id]) clicksByCreator[row.creator_id] = { clicks: 0, subs: 0 }
-    clicksByCreator[row.creator_id].clicks += row.link_clicks || 0
-    clicksByCreator[row.creator_id].subs += row.new_subs || 0
+  const bucket = (creatorId: string) => {
+    if (!clicksByCreator[creatorId]) clicksByCreator[creatorId] = { clicks: 0, subs: 0 }
+    return clicksByCreator[creatorId]
+  }
+  for (const row of subsRows || []) bucket(row.creator_id).subs += row.new_subs || 0
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  for (const row of (linkRows || []) as any[]) {
+    const creatorId = row.tracking_links?.creator_id
+    if (creatorId) bucket(creatorId).clicks += row.link_clicks || 0
   }
 
   const { data: expectations } = await supabase.from('revenue_expectations').select('*')

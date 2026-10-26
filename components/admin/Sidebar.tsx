@@ -4,11 +4,12 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import {
-  LayoutDashboard, Users, TrendingUp, DollarSign, BarChart3, Globe, Shield,
+  LayoutDashboard, Users, TrendingUp, DollarSign, BarChart3, Shield,
   Instagram, Link2, Settings, LogOut, Menu, X, Sun, Moon, Monitor,
   ChevronsUpDown, Search,
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
+import { avatarSrc } from '@/lib/avatar'
 
 interface SidebarProps {
   isSuperAdmin?: boolean
@@ -102,7 +103,7 @@ export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: 
   const creatorTabs = activeCreatorId ? [
     { href: `/admin/creators/${activeCreatorId}/analysis`, label: 'Social Media', icon: Instagram, show: hasPerm('view_social'), active: path === `/admin/creators/${activeCreatorId}/analysis` },
     { href: `/admin/conversions?creator=${activeCreatorId}`, label: 'Conversions', icon: TrendingUp, show: hasPerm('view_conversions'), active: false },
-    { href: `/admin/creators/${activeCreatorId}/edit`, label: 'LinkMe', icon: Link2, show: hasPerm('view_links'), active: path === `/admin/creators/${activeCreatorId}/edit` || path === `/admin/creators/${activeCreatorId}/links` },
+    { href: `/admin/creators/${activeCreatorId}/links`, label: 'Links', icon: Link2, show: hasPerm('view_conversions'), active: path === `/admin/creators/${activeCreatorId}/links` },
     { href: `/admin/creators/${activeCreatorId}/settings`, label: 'Settings', icon: Settings, show: !!isSuperAdmin, active: path === `/admin/creators/${activeCreatorId}/settings` },
   ].filter(t => t.show) : []
 
@@ -114,7 +115,6 @@ export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: 
       { href: '/admin/conversions', label: 'Conversions', icon: TrendingUp },
       { href: '/admin/revenue', label: 'Revenue', icon: DollarSign },
       ...(isSuperAdmin ? [{ href: '/admin/social-accounts', label: 'Social Accounts', icon: BarChart3 }] : []),
-      { href: '/admin/domains', label: 'Domains', icon: Globe },
     ],
   }
   const adminGroup: Group | null = isSuperAdmin ? { label: 'Admin', items: [{ href: '/admin/access', label: 'Access', icon: Shield }] } : null
@@ -132,13 +132,13 @@ export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: 
 
   // ── shared classes ──
   const itemBase = 'flex items-center gap-2.5 rounded-lg px-2.5 py-[7px] text-[12.5px] font-medium transition-all duration-150'
-  const activeCls = 'bg-blue-600 text-white shadow-sm shadow-blue-600/20'
+  const activeCls = 'bg-pink-600 text-white shadow-sm shadow-pink-600/25'
   const idleCls = isLight ? 'text-black/55 hover:text-black/90 hover:bg-black/[0.04]' : 'text-white/55 hover:text-white/90 hover:bg-white/[0.06]'
   const subtleBtn = isLight ? 'text-black/45 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/40 hover:text-white/65 hover:bg-white/[0.05]'
   const groupLabel = `mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`
   const Avatar = ({ c, size = 20 }: { c: CreatorLite | null; size?: number }) =>
     c?.avatar_url
-      ? <img src={c.avatar_url} alt="" className="rounded-full object-cover shrink-0" style={{ width: size, height: size }} />
+      ? <img src={avatarSrc(c.avatar_url)} alt="" className="rounded-full object-cover shrink-0" style={{ width: size, height: size }} />
       : <span className={`rounded-full flex items-center justify-center font-medium shrink-0 ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.10] text-white/50'}`} style={{ width: size, height: size, fontSize: size * 0.42 }}>{(c?.display_name || '?').charAt(0).toUpperCase()}</span>
 
   const filteredCreators = search.trim()

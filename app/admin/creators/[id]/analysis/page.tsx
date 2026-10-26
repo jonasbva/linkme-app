@@ -1,132 +1,64 @@
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { notFound } from 'next/navigation'
-import CreatorEditor from '@/components/admin/CreatorEditor'
+import SocialClient from '@/components/admin/SocialClient'
 import { canViewCreator } from '@/lib/auth'
 
 interface Props {
   params: { id: string }
 }
 
-// Fetch all clicks using pagination (Supabase defaults to 1000 rows max)
-async function fetchAllClicks(supabase: any, creatorId: string) {
-  const allClicks: any[] = []
-  const PAGE_SIZE = 1000
-  let from = 0
-  let hasMore = true
-
-  while (hasMore) {
-    const { data, error } = await supabase
-      .from('clicks')
-      .select('type, country, country_code, device, link_id, created_at')
-      .eq('creator_id', creatorId)
-      .order('created_at', { ascending: true })
-      .range(from, from + PAGE_SIZE - 1)
-
-    if (error) {
-      console.error('Error fetching clicks:', error)
-      break
-    }
-
-    if (data && data.length > 0) {
-      allClicks.push(...data)
-      from += PAGE_SIZE
-      hasMore = data.length === PAGE_SIZE
-    } else {
-      hasMore = false
-    }
-  }
-
-  return allClicks
-}
+const WINDOW_DAYS = 30
 
 export default async function CreatorAnalysisPage({ params }: Props) {
   if (!(await canViewCreator(params.id))) notFound()
 
   const supabase = createServerSupabaseClient()
+  const since = new Date()
+  since.setDate(since.getDate() - WINDOW_DAYS)
+  const sinceIso = since.toISOString()
 
-  const [creatorRes, clicks, linksRes] = await Promise.all([
-    supabase.from('creators').select('*').eq('id', params.id).single(),
-    fetchAllClicks(supabase, params.id),
-    supabase.from('links').select('*').eq('creator_id', params.id).order('sort_order'),
+  const [creatorRes, accountsRes] = await Promise.all([
+    supabase.from('creators').select('id, display_name, slug, avatar_url, of_handle').eq('id', params.id).single(),
+    supabase
+      .from('social_accounts')
+      .select('id, platform, username, is_active')
+      .eq('creator_id', params.id)
+      .order('username'),
   ])
 
   if (!creatorRes.data) notFound()
-  const creator = creatorRes.data
-  const now = new Date()
-  const last30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+  const accounts = accountsRes.data || []
+  const accountIds = accounts.map(a => a.id)
 
-  // Build daily views chart data (last 30 days)
-  const dailyMap: Record<string, { views: number; clicks: number }> = {}
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
-    const key = d.toISOString().split('T')[0]
-    dailyMap[key] = { views: 0, clicks: 0 }
-  }
-  clicks.forEach(c => {
-    const key = new Date(c.created_at).toISOString().split('T')[0]
-    if (dailyMap[key]) {
-      if (c.type === 'page_view') dailyMap[key].views++
-      else dailyMap[key].clicks++
-    }
-  })
-  const dailyData = Object.entries(dailyMap)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([date, v]) => ({
-      date: date.slice(5),
-      ...v,
-    }))
-
-  // Country breakdown (label null/empty countries as "Unknown")
-  const countryDetailMap: Record<string, { count: number; code: string }> = {}
-  clicks.forEach(c => {
-    const country = c.country || 'Unknown'
-    const code = c.country_code || ''
-    if (!countryDetailMap[country]) countryDetailMap[country] = { count: 0, code }
-    countryDetailMap[country].count++
-  })
-  const countryDetails = Object.entries(countryDetailMap)
-    .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, 10)
-    .map(([country, d]) => [country, d.code, d.count])
-
-  // Device breakdown
-  const deviceMap: Record<string, number> = {}
-  clicks.forEach(c => { if (c.device) deviceMap[c.device] = (deviceMap[c.device] || 0) + 1 })
-
-  // Per-link clicks
-  const linkClicks: Record<string, number> = {}
-  clicks.filter(c => c.type === 'link_click').forEach((c: any) => {
-    if (c.link_id) linkClicks[c.link_id] = (linkClicks[c.link_id] || 0) + 1
-  })
-
-  // Raw clicks for client-side date filtering
-  const rawClicks = clicks.map(c => ({
-    type: c.type,
-    country: c.country,
-    country_code: c.country_code,
-    device: c.device,
-    link_id: c.link_id,
-    created_at: c.created_at,
-  }))
-
-  const analytics = {
-    totalViews: clicks.filter(c => c.type === 'page_view').length,
-    totalClicks: clicks.filter(c => c.type === 'link_click').length,
-    last30Views: clicks.filter(c => c.type === 'page_view' && new Date(c.created_at) > last30).length,
-    dailyData,
-    countryDetails,
-    devices: deviceMap,
-    linkClicks,
-  }
+  // Posts in the window, plus the latest snapshot per account for followers.
+  const [postsRes, snapshotsRes] = await Promise.all([
+    // post_timestamp was NULL on every row until the scraper's timestamp parsing
+    // was fixed, so fall back to first_seen_at for anything still missing it.
+    accountIds.length
+      ? supabase
+          .from('social_posts')
+          .select('id, social_account_id, post_short_code, post_type, caption, display_url, post_timestamp, video_view_count, likes_count, comments_count, first_seen_at, is_trial')
+          .in('social_account_id', accountIds)
+          .or(`post_timestamp.gte.${sinceIso},and(post_timestamp.is.null,first_seen_at.gte.${sinceIso})`)
+          .order('post_timestamp', { ascending: false, nullsFirst: false })
+      : Promise.resolve({ data: [] as any[] }),
+    accountIds.length
+      ? supabase
+          .from('social_snapshots')
+          .select('social_account_id, scraped_at, followers, post_count, total_views, total_likes')
+          .in('social_account_id', accountIds)
+          .gte('scraped_at', sinceIso)
+          .order('scraped_at', { ascending: false })
+      : Promise.resolve({ data: [] as any[] }),
+  ])
 
   return (
-    <CreatorEditor
-      creator={creator}
-      links={linksRes.data || []}
-      analytics={analytics}
-      rawClicks={rawClicks}
-      isNew={false}
-      mode="analysis"
+    <SocialClient
+      creator={creatorRes.data}
+      accounts={accounts}
+      posts={postsRes.data || []}
+      snapshots={snapshotsRes.data || []}
+      windowDays={WINDOW_DAYS}
     />
   )
 }

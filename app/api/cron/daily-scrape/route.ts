@@ -3,114 +3,88 @@ import { createServerSupabaseClient } from '@/lib/supabase'
 import { scrapeAndSaveAll } from '@/lib/scraper'
 import { verifyCronSecret } from '@/lib/auth'
 
-// GET /api/cron/daily-scrape
-// Protected by CRON_SECRET — called by Vercel Cron daily at 6 AM UTC
-// 1. Scrapes all active IG accounts in batches (fast)
-// 2. Calculates conversion data for yesterday
+// Scraping is slow (a synchronous Apify run per batch), so give the function
+// the longest window Vercel allows. Without this it inherited the default few
+// seconds and was killed after one or two accounts — which is why the roster
+// was never fully scraped even on the days the cron did fire.
+export const maxDuration = 300
+
+/** Stop starting new batches once this much of the window is gone. */
+const TIME_BUDGET_MS = 240_000
+
+/** Accounts per run; whatever is left over is picked up by the next run. */
+const MAX_ACCOUNTS_PER_RUN = 45
+
+// GET /api/cron/daily-scrape — protected by CRON_SECRET.
+//
+// Scrapes the STALEST accounts first and stops before the clock runs out, so a
+// roster bigger than one invocation can handle still gets covered: each run
+// takes whatever has gone longest without a snapshot.
 export async function GET(req: NextRequest) {
   if (!verifyCronSecret(req)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
+  const startedAt = Date.now()
   const supabase = createServerSupabaseClient()
 
-  // 1. Get all active social accounts
   const { data: accounts } = await supabase
     .from('social_accounts')
     .select('id, creator_id, platform, username')
     .eq('is_active', true)
+    .eq('platform', 'instagram')
 
   if (!accounts || accounts.length === 0) {
     return NextResponse.json({ message: 'No active social accounts', results: [] })
   }
 
-  // 2. Scrape all accounts in batches (15 per Apify call)
-  const results = await scrapeAndSaveAll(accounts)
-  const scrapeErrors = results.filter(r => r.status === 'error').length
+  // Order by staleness: accounts with no snapshot at all first, then the ones
+  // scraped longest ago.
+  const { data: lastSeen } = await supabase
+    .from('social_snapshots')
+    .select('social_account_id, scraped_at')
+    .in('social_account_id', accounts.map(a => a.id))
+    .order('scraped_at', { ascending: false })
 
-  // 3. Calculate conversion data for yesterday
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const targetDate = yesterday.toISOString().split('T')[0]
-  const dateStart = targetDate + 'T00:00:00.000Z'
-  const dateEnd = targetDate + 'T23:59:59.999Z'
-
-  const { data: creators } = await supabase.from('creators').select('id')
-  const { data: clicks } = await supabase
-    .from('clicks')
-    .select('creator_id, type')
-    .gte('created_at', dateStart)
-    .lte('created_at', dateEnd)
-
-  const clickMap: Record<string, { profile_views: number; link_clicks: number }> = {}
-  ;(clicks || []).forEach((c: any) => {
-    if (!clickMap[c.creator_id]) clickMap[c.creator_id] = { profile_views: 0, link_clicks: 0 }
-    if (c.type === 'page_view') clickMap[c.creator_id].profile_views++
-    else if (c.type === 'link_click') clickMap[c.creator_id].link_clicks++
-  })
-
-  // Sum social views across ALL accounts per creator (today vs previous day)
-  const prevDate = new Date(targetDate)
-  prevDate.setDate(prevDate.getDate() - 1)
-  const prevDateStr = prevDate.toISOString().split('T')[0]
-
-  const igAccounts = accounts.filter(a => a.platform === 'instagram')
-  const viewsMap: Record<string, number> = {}
-  for (const acc of igAccounts) {
-    const [todaySnap, prevSnap] = await Promise.all([
-      supabase
-        .from('social_snapshots')
-        .select('total_views')
-        .eq('social_account_id', acc.id)
-        .eq('scrape_date', targetDate)
-        .order('scraped_at', { ascending: false })
-        .limit(1),
-      supabase
-        .from('social_snapshots')
-        .select('total_views')
-        .eq('social_account_id', acc.id)
-        .eq('scrape_date', prevDateStr)
-        .order('scraped_at', { ascending: false })
-        .limit(1),
-    ])
-    const todayViews = todaySnap.data?.[0]?.total_views || 0
-    const prevViews = prevSnap.data?.[0]?.total_views || 0
-    const diff = todayViews - prevViews
-    if (diff > 0) {
-      viewsMap[acc.creator_id] = (viewsMap[acc.creator_id] || 0) + diff
+  const newestByAccount = new Map<string, string>()
+  for (const row of lastSeen || []) {
+    if (!newestByAccount.has(row.social_account_id)) {
+      newestByAccount.set(row.social_account_id, row.scraped_at)
     }
   }
 
-  // Upsert conversion_daily rows
-  let calculated = 0
-  for (const creator of (creators || [])) {
-    const { data: existing } = await supabase
-      .from('conversion_daily')
-      .select('new_subs')
-      .eq('creator_id', creator.id)
-      .eq('date', targetDate)
-      .single()
+  const queue = [...accounts].sort((a, b) => {
+    const ta = newestByAccount.get(a.id)
+    const tb = newestByAccount.get(b.id)
+    if (!ta && !tb) return 0
+    if (!ta) return -1
+    if (!tb) return 1
+    return ta.localeCompare(tb)
+  })
 
-    const { error } = await supabase
-      .from('conversion_daily')
-      .upsert({
-        creator_id: creator.id,
-        date: targetDate,
-        views: viewsMap[creator.id] || 0,
-        profile_views: clickMap[creator.id]?.profile_views || 0,
-        link_clicks: clickMap[creator.id]?.link_clicks || 0,
-        new_subs: existing?.new_subs ?? 0,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'creator_id,date' })
+  const slice = queue.slice(0, MAX_ACCOUNTS_PER_RUN)
 
-    if (!error) calculated++
+  // Walk in chunks and re-check the clock between them, so running out of time
+  // ends the run with everything scraped so far still reported (and saved)
+  // rather than throwing the results away.
+  const CHUNK = 15
+  const results = []
+  let attempted = 0
+  for (let i = 0; i < slice.length; i += CHUNK) {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) break
+    const chunk = slice.slice(i, i + CHUNK)
+    attempted += chunk.length
+    results.push(...(await scrapeAndSaveAll(chunk)))
   }
 
+  const scrapeErrors = results.filter(r => r.status === 'error').length
+
   return NextResponse.json({
-    scraped: results.length,
+    attempted,
+    remaining: Math.max(0, queue.length - attempted),
+    scraped: results.length - scrapeErrors,
     scrapeErrors,
-    calculated,
-    date: targetDate,
+    elapsedMs: Date.now() - startedAt,
     results: results.map(r => ({ username: r.username, status: r.status, error: r.error })),
   })
 }

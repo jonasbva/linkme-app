@@ -181,12 +181,9 @@ export async function requireSuperAdmin(): Promise<GuardResult> {
 // ── Permission helpers ──
 
 export type PermissionType =
-  | 'view_links'
   | 'view_social'
   | 'view_conversions'
-  | 'view_link_analytics'
   | 'edit_settings'
-  | 'edit_links'
   | 'input_conversions'
   | 'edit_social'
 
@@ -324,7 +321,7 @@ export async function requireCreatorAccess(
 // closing IDOR on nested resources. Generalizes the check already used in
 // conversion-accounts/[accountId].
 export async function childBelongsToCreator(
-  table: 'links' | 'conversion_accounts' | 'social_accounts',
+  table: 'conversion_accounts' | 'social_accounts' | 'tracking_links',
   childId: string,
   creatorId: string,
 ): Promise<boolean> {

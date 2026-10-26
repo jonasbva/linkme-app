@@ -18,6 +18,7 @@ export function createServerSupabaseClient() {
 }
 
 // Types matching our DB schema
+
 export interface Creator {
   id: string
   slug: string
@@ -25,42 +26,8 @@ export interface Creator {
   username: string
   bio?: string
   avatar_url?: string
-  background_color?: string
-  background_image_url?: string
-  custom_domain?: string
-  button_style?: string
-  button_color?: string
-  text_color?: string
-  show_verified?: boolean
-  avatar_position?: string
-  hero_height?: string
+  of_handle?: string | null
   is_active: boolean
-  created_at: string
-}
-
-export interface Link {
-  id: string
-  creator_id: string
-  title: string
-  url: string
-  icon: string
-  thumbnail_url?: string
-  thumbnail_position?: string
-  sort_order: number
-  is_active: boolean
-  created_at: string
-}
-
-export interface Click {
-  id: string
-  creator_id: string
-  link_id?: string
-  type: 'page_view' | 'link_click'
-  country?: string
-  country_code?: string
-  city?: string
-  device?: string
-  referrer?: string
   created_at: string
 }
 
@@ -86,7 +53,36 @@ export interface SocialSnapshot {
   raw_data?: Record<string, unknown>
 }
 
-export interface ConversionExpectation {
+export interface SocialPost {
+  id: string
+  social_account_id: string
+  post_short_code: string
+  post_type?: string
+  caption?: string
+  display_url?: string
+  post_timestamp?: string
+  video_view_count: number
+  likes_count: number
+  comments_count: number
+  first_seen_at: string
+  last_seen_at: string
+}
+
+// ── Conversion tracking ─────────────────────────────────────────────────────
+// The creator IS the OF account every IG link funnels into, so subscribers are
+// counted per creator. Traffic is counted per tracking link.
+
+export interface CreatorDaily {
+  id: string
+  creator_id: string
+  date: string
+  new_subs: number
+  note?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CreatorExpectation {
   id: string
   creator_id: string
   daily_sub_target: number
@@ -94,14 +90,25 @@ export interface ConversionExpectation {
   updated_at: string
 }
 
-export interface ConversionDaily {
+export interface TrackingLink {
   id: string
   creator_id: string
+  social_account_id?: string | null
+  label: string
+  url?: string | null
+  sort_order: number
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface LinkDaily {
+  id: string
+  tracking_link_id: string
   date: string
   views: number
   profile_views: number
   link_clicks: number
-  new_subs: number
   created_at: string
   updated_at: string
 }

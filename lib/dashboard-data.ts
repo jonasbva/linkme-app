@@ -10,8 +10,6 @@ export interface CreatorStat {
   display_name: string
   avatar_url?: string
   is_active: boolean
-  custom_domain?: string
-  linkme_enabled?: boolean
   followers: number
   followerGrowth: number
   totalViews: number
@@ -39,7 +37,7 @@ export interface CreatorStatsBundle {
 export async function getCreatorStats(visibleCreatorIds?: string[]): Promise<CreatorStatsBundle> {
   const supabase = createServerSupabaseClient()
   const [creatorsRes, tagsRes, creatorTagsRes, inflowwCacheRes, inflowwMapRes, socialAccountsRes, conversionAccountsRes] = await Promise.all([
-    supabase.from('creators').select('id, slug, display_name, avatar_url, is_active, custom_domain, linkme_enabled, of_handle'),
+    supabase.from('creators').select('id, slug, display_name, avatar_url, is_active, of_handle'),
     supabase.from('tags').select('*').order('name'),
     supabase.from('creator_tags').select('creator_id, tag_id'),
     supabase.from('infloww_creators_cache').select('infloww_id, name, user_name'),
@@ -55,8 +53,10 @@ export async function getCreatorStats(visibleCreatorIds?: string[]): Promise<Cre
   const creatorTags = creatorTagsRes.data || []
   const socialAccounts = socialAccountsRes.data || []
 
-  // Latest + ~7-days-ago snapshot per social account (per-account queries avoid
-  // a truncation bug where one account's snapshots crowd out others).
+  // Latest + ~7-days-ago snapshot per social account, in ONE round trip. This
+  // used to be two queries per account (160 sequential calls at 80 accounts),
+  // which dominated the page load. DISTINCT ON inside the RPC keeps each
+  // account's own newest row, so the old truncation bug stays fixed.
   const accountIds = socialAccounts.map(a => a.id)
   const latestSnapshots: any[] = []
   const prevSnapshots: any[] = []
@@ -65,29 +65,29 @@ export async function getCreatorStats(visibleCreatorIds?: string[]): Promise<Cre
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
     const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0]
 
-    const perAccount = await Promise.all(
-      accountIds.map(async (id) => {
-        const [latestRes, prevRes] = await Promise.all([
-          supabase
-            .from('social_snapshots')
-            .select('social_account_id, followers, following, total_views, total_likes, total_comments, scraped_at')
-            .eq('social_account_id', id)
-            .order('scraped_at', { ascending: false })
-            .limit(1),
-          supabase
-            .from('social_snapshots')
-            .select('social_account_id, followers, total_views, total_likes, total_comments, scraped_at')
-            .eq('social_account_id', id)
-            .lte('scrape_date', sevenDaysAgoStr)
-            .order('scraped_at', { ascending: false })
-            .limit(1),
-        ])
-        return { latest: latestRes.data?.[0] ?? null, prev: prevRes.data?.[0] ?? null }
+    const { data: pairs } = await supabase.rpc('social_snapshot_pairs', {
+      p_account_ids: accountIds,
+      p_cutoff: sevenDaysAgoStr,
+    })
+
+    for (const row of (pairs || []) as any[]) {
+      latestSnapshots.push({
+        social_account_id: row.social_account_id,
+        followers: row.followers,
+        following: row.following,
+        total_views: row.total_views,
+        total_likes: row.total_likes,
+        total_comments: row.total_comments,
+        scraped_at: row.scraped_at,
       })
-    )
-    for (const r of perAccount) {
-      if (r.latest) latestSnapshots.push(r.latest)
-      if (r.prev) prevSnapshots.push(r.prev)
+      if (row.prev_followers !== null || row.prev_total_likes !== null) {
+        prevSnapshots.push({
+          social_account_id: row.social_account_id,
+          followers: row.prev_followers,
+          total_likes: row.prev_total_likes,
+          total_comments: row.prev_total_comments,
+        })
+      }
     }
   }
 
@@ -206,6 +206,12 @@ export interface OverviewData {
   targetMissesToday: number
   staleCreators: number
   unmappedCount: number
+  /** Accounts Instagram is hiding (restricted/private) — fixable by the team. */
+  restrictedAccounts: number
+  /** Accounts Instagram no longer serves at all — need replacing. */
+  removedAccounts: number
+  /** Live accounts carrying no OF tracking link, so their traffic is unattributed. */
+  accountsWithoutLink: number
 }
 
 // Lightweight overview for the command-center dashboard. Reuses getCreatorStats
@@ -222,9 +228,9 @@ export async function getOverviewData(visibleCreatorIds?: string[]): Promise<Ove
   const scopeDaily = (q: any) => (visibleCreatorIds ? q.in('creator_id', visibleCreatorIds) : q)
 
   const [dailyRecentRes, expectationsRes, todayDailyRes, emergencyRes, revCacheRes] = await Promise.all([
-    scopeDaily(supabase.from('conversion_daily').select('new_subs, date, creator_id').gte('date', sevenAgoStr)),
-    scopeDaily(supabase.from('conversion_expectations').select('conversion_account_id, creator_id, daily_sub_target')),
-    scopeDaily(supabase.from('conversion_daily').select('conversion_account_id, creator_id, new_subs, date').eq('date', today)),
+    scopeDaily(supabase.from('creator_daily').select('new_subs, date, creator_id').gte('date', sevenAgoStr)),
+    scopeDaily(supabase.from('creator_expectations').select('creator_id, daily_sub_target')),
+    scopeDaily(supabase.from('creator_daily').select('creator_id, new_subs, date').eq('date', today)),
     scopeDaily(supabase.from('revenue_emergency_status').select('creator_id, emergency_since, notes').not('emergency_since', 'is', null)),
     supabase.from('revenue_cache').select('data, fetched_at').eq('cache_key', 'today').maybeSingle(),
   ])
@@ -233,18 +239,18 @@ export async function getOverviewData(visibleCreatorIds?: string[]): Promise<Ove
   const newSubs7d = dailyRecent.reduce((s: number, r: any) => s + (r.new_subs || 0), 0)
   const newSubsToday = dailyRecent.filter((r: any) => r.date === today).reduce((s: number, r: any) => s + (r.new_subs || 0), 0)
 
-  // Count accounts that have a positive target but are below it today.
-  const targetByAccount: Record<string, number> = {}
+  // Count creators that have a positive target but are below it today.
+  const targetByCreator: Record<string, number> = {}
   for (const e of (expectationsRes.data || [])) {
-    if (e.conversion_account_id && (e.daily_sub_target || 0) > 0) targetByAccount[e.conversion_account_id] = e.daily_sub_target
+    if ((e.daily_sub_target || 0) > 0) targetByCreator[e.creator_id] = e.daily_sub_target
   }
-  const subsTodayByAccount: Record<string, number> = {}
+  const subsTodayByCreator: Record<string, number> = {}
   for (const r of (todayDailyRes.data || [])) {
-    if (r.conversion_account_id) subsTodayByAccount[r.conversion_account_id] = (subsTodayByAccount[r.conversion_account_id] || 0) + (r.new_subs || 0)
+    subsTodayByCreator[r.creator_id] = (subsTodayByCreator[r.creator_id] || 0) + (r.new_subs || 0)
   }
   let targetMissesToday = 0
-  for (const [accId, target] of Object.entries(targetByAccount)) {
-    if ((subsTodayByAccount[accId] || 0) < target) targetMissesToday++
+  for (const [creatorId, target] of Object.entries(targetByCreator)) {
+    if ((subsTodayByCreator[creatorId] || 0) < target) targetMissesToday++
   }
 
   // Emergencies → attach creator names.
@@ -262,6 +268,42 @@ export async function getOverviewData(visibleCreatorIds?: string[]): Promise<Ove
   let revenueToday: number | null = null
   const cacheData = (revCacheRes as any)?.data?.data
   if (cacheData?.totals?.totalTurnover != null) revenueToday = cacheData.totals.totalTurnover
+
+  // Account health, from the last scrape attempt on each active account.
+  let healthQuery = supabase
+    .from('social_accounts')
+    .select('status, creator_id')
+    .eq('is_active', true)
+    .in('status', ['restricted', 'private', 'removed'])
+  if (visibleCreatorIds) healthQuery = healthQuery.in('creator_id', visibleCreatorIds)
+  const { data: unhealthy } = await healthQuery
+  const restrictedAccounts = (unhealthy || []).filter(a => a.status === 'restricted' || a.status === 'private').length
+  const removedAccounts = (unhealthy || []).filter(a => a.status === 'removed').length
+
+  // Accounts with no OF tracking link wired to Infloww. Without one we cannot
+  // tell how much traffic or how many subs that account produced, so it is a
+  // blind spot even while it posts happily. Accounts Instagram has already
+  // removed are left out — they need replacing, not a link.
+  let linkableQuery = supabase
+    .from('social_accounts')
+    .select('id, creator_id')
+    .eq('is_active', true)
+    .neq('status', 'removed')
+  if (visibleCreatorIds) linkableQuery = linkableQuery.in('creator_id', visibleCreatorIds)
+  const { data: linkable } = await linkableQuery
+
+  let accountsWithoutLink = 0
+  const linkableIds = (linkable || []).map(a => a.id)
+  if (linkableIds.length > 0) {
+    const { data: wired } = await supabase
+      .from('tracking_links')
+      .select('social_account_id')
+      .in('social_account_id', linkableIds)
+      .eq('is_active', true)
+      .not('infloww_link_id', 'is', null)
+    const wiredIds = new Set((wired || []).map(l => l.social_account_id))
+    accountsWithoutLink = linkableIds.filter(id => !wiredIds.has(id)).length
+  }
 
   // Stale = active creator with social accounts but no scrape in 3+ days.
   const threeAgo = Date.now() - 3 * 86400000
@@ -283,5 +325,8 @@ export async function getOverviewData(visibleCreatorIds?: string[]): Promise<Ove
     targetMissesToday,
     staleCreators,
     unmappedCount: base.unmappedCreators.length,
+    restrictedAccounts,
+    removedAccounts,
+    accountsWithoutLink,
   }
 }

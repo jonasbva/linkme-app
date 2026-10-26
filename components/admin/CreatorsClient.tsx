@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useTheme } from './ThemeProvider'
+import { avatarSrc } from '@/lib/avatar'
 
 interface Tag {
   id: string
@@ -17,8 +18,6 @@ interface CreatorStat {
   display_name: string
   avatar_url?: string
   is_active: boolean
-  custom_domain?: string
-  linkme_enabled?: boolean
   followers: number
   followerGrowth: number
   totalViews: number
@@ -483,7 +482,7 @@ export default function CreatorsClient({
               {/* Left: Avatar + name */}
               <Link href={`/admin/creators/${c.id}/analysis`} className="flex items-center gap-3 min-w-0 flex-shrink-0" style={{ width: '240px' }}>
                 {c.avatar_url ? (
-                  <img src={c.avatar_url} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-transparent group-hover:ring-white/10 transition-all duration-200" />
+                  <img src={avatarSrc(c.avatar_url)} alt="" className="w-9 h-9 rounded-full object-cover ring-2 ring-transparent group-hover:ring-white/10 transition-all duration-200" />
                 ) : (
                   <div className={`w-9 h-9 rounded-full flex items-center justify-center text-[12px] font-medium transition-all duration-200 ${
                     isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/40'
@@ -508,16 +507,6 @@ export default function CreatorsClient({
                         isLight ? 'bg-amber-500/15 text-amber-600' : 'bg-amber-500/20 text-amber-400'
                       }`}>
                         Inactive
-                      </span>
-                    )}
-                    {c.linkme_enabled && (
-                      <span
-                        title="LinkMe app enabled"
-                        className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                          isLight ? 'bg-blue-500/10 text-blue-600' : 'bg-blue-500/15 text-blue-400'
-                        }`}
-                      >
-                        LinkMe
                       </span>
                     )}
                   </div>
@@ -560,14 +549,14 @@ export default function CreatorsClient({
                     Social Media
                   </Link>
                 )}
-                {hasPermission(c.id, 'view_links') && (
+                {hasPermission(c.id, 'view_conversions') && (
                   <Link
-                    href={`/admin/creators/${c.id}/edit`}
+                    href={`/admin/creators/${c.id}/links`}
                     className={`px-2.5 py-1 text-[11px] rounded-lg transition-all duration-200 ${
                       isLight ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.04]' : 'text-white/35 hover:text-white/70 hover:bg-white/[0.06]'
                     }`}
                   >
-                    LinkMe
+                    Links
                   </Link>
                 )}
                 {hasPermission(c.id, 'view_conversions') && (

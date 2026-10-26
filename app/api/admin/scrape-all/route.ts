@@ -89,64 +89,6 @@ export async function POST(req: NextRequest) {
       },
     )
 
-    // Calculate conversion data for yesterday
-    await supabase.from('scrape_jobs').update({
-      message: 'Calculating conversions...', updated_at: new Date().toISOString(),
-    }).eq('id', jobId)
-
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const targetDate = yesterday.toISOString().split('T')[0]
-    const dateStart = targetDate + 'T00:00:00.000Z'
-    const dateEnd = targetDate + 'T23:59:59.999Z'
-
-    const { data: creators } = await supabase.from('creators').select('id')
-    const { data: clicks } = await supabase
-      .from('clicks')
-      .select('creator_id, type')
-      .gte('created_at', dateStart)
-      .lte('created_at', dateEnd)
-
-    const clickMap: Record<string, { profile_views: number; link_clicks: number }> = {}
-    ;(clicks || []).forEach((c: any) => {
-      if (!clickMap[c.creator_id]) clickMap[c.creator_id] = { profile_views: 0, link_clicks: 0 }
-      if (c.type === 'page_view') clickMap[c.creator_id].profile_views++
-      else if (c.type === 'link_click') clickMap[c.creator_id].link_clicks++
-    })
-
-    const prevDate = new Date(targetDate)
-    prevDate.setDate(prevDate.getDate() - 1)
-    const prevDateStr = prevDate.toISOString().split('T')[0]
-
-    const viewsMap: Record<string, number> = {}
-    for (const acc of igAccounts) {
-      const [todaySnap, prevSnap] = await Promise.all([
-        supabase.from('social_snapshots').select('total_views').eq('social_account_id', acc.id)
-          .eq('scrape_date', targetDate).order('scraped_at', { ascending: false }).limit(1),
-        supabase.from('social_snapshots').select('total_views').eq('social_account_id', acc.id)
-          .eq('scrape_date', prevDateStr).order('scraped_at', { ascending: false }).limit(1),
-      ])
-      const diff = ((todaySnap.data as any)?.[0]?.total_views || 0) - ((prevSnap.data as any)?.[0]?.total_views || 0)
-      if (diff > 0) viewsMap[acc.creator_id] = (viewsMap[acc.creator_id] || 0) + diff
-    }
-
-    for (const creator of (creators || [])) {
-      const { data: existing } = await supabase
-        .from('conversion_daily')
-        .select('new_subs')
-        .eq('creator_id', creator.id)
-        .eq('date', targetDate)
-        .single()
-      await supabase.from('conversion_daily').upsert({
-        creator_id: creator.id, date: targetDate,
-        views: viewsMap[creator.id] || 0,
-        profile_views: clickMap[creator.id]?.profile_views || 0,
-        link_clicks: clickMap[creator.id]?.link_clicks || 0,
-        new_subs: existing?.new_subs ?? 0,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'creator_id,date' })
-    }
-
     // Mark job done
     await supabase.from('scrape_jobs').update({
       status: 'done', success, errors,

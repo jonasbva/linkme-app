@@ -1,11 +1,15 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect, Dispatch, SetStateAction } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { Target, CalendarDays, Link2, Table2, Search, Check, Save } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
+import { Card, Button } from './ui'
 import DateRangePicker from './DateRangePicker'
 import DatePicker from './DatePicker'
+import { avatarSrc } from '@/lib/avatar'
 
+// ── Types ───────────────────────────────────────────────────────────────────
 interface Creator {
   id: string
   slug: string
@@ -14,145 +18,188 @@ interface Creator {
   is_active: boolean
   of_handle?: string | null
 }
-
-interface ConversionAccount {
+interface TrackingLink {
   id: string
   creator_id: string
-  handle: string
-  display_label: string | null
-  sheet_tab_name: string | null
+  social_account_id?: string | null
+  label: string
+  url?: string | null
+  sort_order: number
   is_active: boolean
 }
-
-interface Expectation {
+interface Expectation { id: string; creator_id: string; daily_sub_target: number }
+interface CreatorDailyRow { id: string; creator_id: string; date: string; new_subs: number }
+interface LinkDailyRow {
   id: string
-  creator_id: string
-  conversion_account_id: string | null
-  daily_sub_target: number
-}
-
-interface DailyRow {
-  id: string
-  creator_id: string
-  conversion_account_id: string | null
+  tracking_link_id: string
   date: string
   views: number
   profile_views: number
   link_clicks: number
-  new_subs: number
 }
 
 interface Props {
   creators: Creator[]
-  conversionAccounts: ConversionAccount[]
+  trackingLinks: TrackingLink[]
   expectations: Expectation[]
-  dailyData: DailyRow[]
+  creatorDaily: CreatorDailyRow[]
+  linkDaily: LinkDailyRow[]
+  /** Oldest date present in the initial payload; older rows load on demand. */
+  loadedSince: string
 }
 
-type Tab = 'expectations' | 'input' | 'table'
+type Tab = 'subs' | 'links' | 'table' | 'targets'
 
-/** Shared: account display labels. */
-function formatAccountName(account: ConversionAccount, creator: Creator | undefined): string {
-  const name = creator?.display_name || account.handle
-  if (!account.display_label) return name
-  return `${name} — ${account.display_label}`
+// ── Helpers ─────────────────────────────────────────────────────────────────
+function todayISO(offsetDays = 0): string {
+  const d = new Date()
+  d.setDate(d.getDate() + offsetDays)
+  return d.toISOString().split('T')[0]
+}
+function fmt(n: number): string {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
+  return n.toLocaleString()
+}
+function fmtDate(iso: string): string {
+  const d = new Date(iso + 'T00:00:00')
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
 export default function ConversionsClient({
   creators,
-  conversionAccounts,
+  trackingLinks,
   expectations: initialExpectations,
-  dailyData: initialDaily,
+  creatorDaily: initialCreatorDaily,
+  linkDaily: initialLinkDaily,
+  loadedSince,
 }: Props) {
+  const { resolved } = useTheme()
+  const isLight = resolved === 'light'
   const searchParams = useSearchParams()
-  const preselectedCreator = searchParams.get('creator')
-  const { resolved: themeMode } = useTheme()
-  const isLight = themeMode === 'light'
+  const preselected = searchParams.get('creator')
 
-  const [activeTab, setActiveTab] = useState<Tab>(preselectedCreator ? 'table' : 'expectations')
+  const [tab, setTab] = useState<Tab>('subs')
   const [expectations, setExpectations] = useState(initialExpectations)
-  const [dailyData, setDailyData] = useState(initialDaily)
-  // True when the Daily Input tab has typed-but-unsaved subscriber numbers.
-  const [inputDirty, setInputDirty] = useState(false)
+  const [creatorDaily, setCreatorDaily] = useState(initialCreatorDaily)
+  const [linkDaily, setLinkDaily] = useState(initialLinkDaily)
+  const [earliestLoaded, setEarliestLoaded] = useState(loadedSince)
+  const [loadingHistory, setLoadingHistory] = useState(false)
 
-  // Guard tab switches when the Daily Input has unsaved numbers.
-  function requestTab(tab: Tab) {
-    if (tab === activeTab) return
-    if (activeTab === 'input' && inputDirty) {
-      const leave = window.confirm('You have entered subscriber numbers that haven’t been saved.\n\nClick OK to discard them and continue, or Cancel to stay and press “Save all” first.')
-      if (!leave) return
-      setInputDirty(false)
+  // The first render only carries recent history. If a date range reaches
+  // further back, pull the missing slice once and merge it in.
+  async function ensureLoaded(from: string) {
+    if (from >= earliestLoaded || loadingHistory) return
+    setLoadingHistory(true)
+    try {
+      const to = new Date(new Date(earliestLoaded).getTime() - 86400000).toISOString().split('T')[0]
+      const [subsRes, linksRes] = await Promise.all([
+        fetch(`/api/admin/conversions?action=creator_daily&from=${from}&to=${to}`),
+        fetch(`/api/admin/conversions?action=link_daily&from=${from}&to=${to}`),
+      ])
+      if (subsRes.ok) {
+        const rows: CreatorDailyRow[] = await subsRes.json()
+        setCreatorDaily(prev => {
+          const seen = new Set(prev.map(r => r.creator_id + r.date))
+          return [...prev, ...rows.filter(r => !seen.has(r.creator_id + r.date))]
+        })
+      }
+      if (linksRes.ok) {
+        const rows: LinkDailyRow[] = await linksRes.json()
+        setLinkDaily(prev => {
+          const seen = new Set(prev.map(r => r.tracking_link_id + r.date))
+          return [...prev, ...rows.filter(r => !seen.has(r.tracking_link_id + r.date))]
+        })
+      }
+      setEarliestLoaded(from)
+    } finally {
+      setLoadingHistory(false)
     }
-    setActiveTab(tab)
   }
 
-  const creatorById = useMemo(() => {
-    const map: Record<string, Creator> = {}
-    creators.forEach(c => { map[c.id] = c })
-    return map
-  }, [creators])
+  useEffect(() => { if (preselected) setTab('table') }, [preselected])
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'expectations', label: 'Expectations' },
-    { key: 'input', label: 'Daily Input' },
-    { key: 'table', label: 'Conversion Table' },
+  const text1 = isLight ? 'text-black/90' : 'text-white/90'
+  const text2 = isLight ? 'text-black/50' : 'text-white/50'
+
+  const tabs: { key: Tab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+    { key: 'subs', label: 'Daily subs', icon: CalendarDays },
+    { key: 'links', label: 'Link traffic', icon: Link2 },
+    { key: 'table', label: 'Creator table', icon: Table2 },
+    { key: 'targets', label: 'Targets', icon: Target },
   ]
 
   return (
-    <div className="space-y-6">
-      <h1 className={`text-xl font-semibold tracking-tight ${isLight ? 'text-black/90' : 'text-white/90'}`}>
-        Conversions
-      </h1>
-
-      {/* Tab switcher */}
-      <div className={`flex gap-1 p-1 rounded-lg border w-fit ${
-        isLight ? 'bg-black/[0.02] border-black/[0.06]' : 'bg-white/[0.03] border-white/[0.06]'
-      }`}>
-        {tabs.map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => requestTab(tab.key)}
-            className={`px-4 py-1.5 rounded-md text-[13px] transition-colors ${
-              activeTab === tab.key
-                ? isLight ? 'bg-black/[0.08] text-black/90 font-medium' : 'bg-white/[0.08] text-white/90 font-medium'
-                : isLight ? 'text-black/40 hover:text-black/60' : 'text-white/40 hover:text-white/60'
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+    <div>
+      <div className="mb-6">
+        <h1 className={`text-2xl font-bold ${text1}`}>Conversions</h1>
+        <p className={`text-[13px] mt-1 ${text2}`}>
+          Subscribers are counted per creator — the OF account every IG link funnels into.
+          Views, profile views and link clicks are counted per link.
+        </p>
       </div>
 
-      {activeTab === 'expectations' && (
-        <ExpectationsTab
-          creatorById={creatorById}
-          conversionAccounts={conversionAccounts}
+      {/* ── Tabs ── */}
+      <div className="flex items-center gap-1 mb-6 flex-wrap">
+        {tabs.map(t => {
+          const Icon = t.icon
+          const active = tab === t.key
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-[13px] font-medium transition-all duration-200 ${
+                active
+                  ? 'bg-pink-600 text-white shadow-sm shadow-pink-600/20'
+                  : isLight
+                    ? 'text-black/40 hover:text-black/70 hover:bg-black/[0.03]'
+                    : 'text-white/40 hover:text-white/70 hover:bg-white/[0.04]'
+              }`}
+            >
+              <Icon className="h-[15px] w-[15px]" />
+              {t.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {tab === 'subs' && (
+        <DailySubsTab
+          creators={creators}
+          creatorDaily={creatorDaily}
+          setCreatorDaily={setCreatorDaily}
+          expectations={expectations}
+          isLight={isLight}
+        />
+      )}
+      {tab === 'links' && (
+        <LinkTrafficTab
+          creators={creators}
+          trackingLinks={trackingLinks}
+          linkDaily={linkDaily}
+          setLinkDaily={setLinkDaily}
+          isLight={isLight}
+        />
+      )}
+      {tab === 'table' && (
+        <CreatorTableTab
+          creators={creators}
+          trackingLinks={trackingLinks}
+          creatorDaily={creatorDaily}
+          linkDaily={linkDaily}
+          expectations={expectations}
+          preselected={preselected}
+          onNeedHistory={ensureLoaded}
+          loadingHistory={loadingHistory}
+          isLight={isLight}
+        />
+      )}
+      {tab === 'targets' && (
+        <TargetsTab
+          creators={creators}
           expectations={expectations}
           setExpectations={setExpectations}
-          dailyData={dailyData}
-          isLight={isLight}
-        />
-      )}
-      {activeTab === 'input' && (
-        <DailyInputTab
-          creatorById={creatorById}
-          conversionAccounts={conversionAccounts}
-          expectations={expectations}
-          dailyData={dailyData}
-          setDailyData={setDailyData}
-          setInputDirty={setInputDirty}
-          isLight={isLight}
-        />
-      )}
-      {activeTab === 'table' && (
-        <ConversionTableTab
-          creators={creators}
-          creatorById={creatorById}
-          conversionAccounts={conversionAccounts}
-          expectations={expectations}
-          dailyData={dailyData}
-          setDailyData={setDailyData}
-          initialCreatorId={preselectedCreator || undefined}
           isLight={isLight}
         />
       )}
@@ -160,884 +207,583 @@ export default function ConversionsClient({
   )
 }
 
-/* ============================================================
-   EXPECTATIONS TAB
-   ============================================================ */
-
-function ExpectationsTab({
-  creatorById,
-  conversionAccounts,
-  expectations,
-  setExpectations,
-  dailyData,
-  isLight,
-}: {
-  creatorById: Record<string, Creator>
-  conversionAccounts: ConversionAccount[]
-  expectations: Expectation[]
-  setExpectations: Dispatch<SetStateAction<Expectation[]>>
-  dailyData: DailyRow[]
-  isLight: boolean
+// ═══ Shared bits ════════════════════════════════════════════════════════════
+function SearchBox({ value, onChange, placeholder, isLight }: {
+  value: string; onChange: (v: string) => void; placeholder: string; isLight: boolean
 }) {
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [search, setSearch] = useState('')
-
-  // Map conversion_account_id → target
-  const targetByAccount = useMemo(() => {
-    const map: Record<string, number> = {}
-    expectations.forEach(e => {
-      if (e.conversion_account_id) map[e.conversion_account_id] = e.daily_sub_target
-    })
-    return map
-  }, [expectations])
-
-  // Days-red-in-a-row per conversion_account_id.
-  const daysRedMap = useMemo(() => {
-    const map: Record<string, number> = {}
-    conversionAccounts.forEach(ca => {
-      const target = targetByAccount[ca.id] || 0
-      if (target === 0) { map[ca.id] = 0; return }
-      const dailyForAcc = dailyData
-        .filter(d => d.conversion_account_id === ca.id)
-        .sort((a, b) => b.date.localeCompare(a.date))
-      let streak = 0
-      for (const row of dailyForAcc) {
-        if (row.new_subs < target) streak++
-        else break
-      }
-      map[ca.id] = streak
-    })
-    return map
-  }, [conversionAccounts, targetByAccount, dailyData])
-
-  async function saveExpectation(accountId: string) {
-    const val = parseInt(editValue)
-    if (isNaN(val) || val < 0) return
-    setSaving(true)
-    try {
-      const res = await fetch('/api/admin/conversions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'set_expectation',
-          conversion_account_id: accountId,
-          daily_sub_target: val,
-        }),
-      })
-      if (res.ok) {
-        setExpectations(prev => {
-          const existing = prev.find(e => e.conversion_account_id === accountId)
-          if (existing) {
-            return prev.map(e =>
-              e.conversion_account_id === accountId ? { ...e, daily_sub_target: val } : e
-            )
-          }
-          const acc = conversionAccounts.find(a => a.id === accountId)
-          return [...prev, {
-            id: 'new',
-            creator_id: acc?.creator_id || '',
-            conversion_account_id: accountId,
-            daily_sub_target: val,
-          }]
-        })
-      }
-    } finally {
-      setSaving(false)
-      setEditingId(null)
-    }
-  }
-
-  // Sort: accounts with targets first (desc), then others, filtered by search.
-  const sorted = useMemo(() => {
-    let list = [...conversionAccounts]
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(ca => {
-        const c = creatorById[ca.creator_id]
-        return (
-          ca.handle.toLowerCase().includes(q) ||
-          c?.display_name.toLowerCase().includes(q) ||
-          c?.slug.toLowerCase().includes(q)
-        )
-      })
-    }
-    return list.sort((a, b) => {
-      const aT = targetByAccount[a.id] || 0
-      const bT = targetByAccount[b.id] || 0
-      if (aT && !bT) return -1
-      if (!aT && bT) return 1
-      if (aT !== bT) return bT - aT
-      // Tie-break: creator name, then main first.
-      const aName = creatorById[a.creator_id]?.display_name || a.handle
-      const bName = creatorById[b.creator_id]?.display_name || b.handle
-      if (aName !== bName) return aName.localeCompare(bName)
-      // Main (display_label null) before alts.
-      if (!a.display_label && b.display_label) return -1
-      if (a.display_label && !b.display_label) return 1
-      return a.handle.localeCompare(b.handle)
-    })
-  }, [conversionAccounts, creatorById, targetByAccount, search])
-
   return (
-    <div className="space-y-3">
+    <div className="relative">
+      <Search className={`pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 ${isLight ? 'text-black/30' : 'text-white/30'}`} />
       <input
-        type="text"
-        placeholder="Search creators or handles..."
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-        className={`border rounded-lg px-3 py-1.5 text-[13px] outline-none w-56 ${
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        className={`w-56 rounded-lg pl-8 pr-2.5 py-1.5 text-[12.5px] outline-none transition-colors ${
           isLight
-            ? 'bg-black/[0.03] border-black/[0.1] text-black/80 placeholder-black/25 focus:border-black/20'
-            : 'bg-white/[0.04] border-white/[0.08] text-white/80 placeholder-white/25 focus:border-white/20'
+            ? 'bg-black/[0.03] text-black/80 placeholder:text-black/30 focus:bg-black/[0.05]'
+            : 'bg-white/[0.05] text-white/85 placeholder:text-white/30 focus:bg-white/[0.08]'
         }`}
       />
-      <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-      <table className="w-full">
-        <thead>
-          <tr className={`border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-            <th className={`text-left text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Conversion Account</th>
-            <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Daily Sub Target</th>
-            <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Days Red</th>
-            <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider w-24 ${isLight ? 'text-black/30' : 'text-white/30'}`}>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map(ca => {
-            const creator = creatorById[ca.creator_id]
-            const target = targetByAccount[ca.id] || 0
-            const daysRed = daysRedMap[ca.id] || 0
-            const isEditing = editingId === ca.id
-            return (
-              <tr key={ca.id} className={`border-b transition-colors ${isLight ? 'border-black/[0.03] hover:bg-black/[0.02]' : 'border-white/[0.03] hover:bg-white/[0.02]'}`}>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    {creator?.avatar_url ? (
-                      <img src={creator.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
-                    ) : (
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>
-                        {(creator?.display_name || ca.handle).charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <p className={`text-[13px] font-medium flex items-center gap-2 ${isLight ? 'text-black/80' : 'text-white/80'}`}>
-                        {creator?.display_name || '—'}
-                        {ca.display_label && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-black/[0.05] text-black/50' : 'bg-white/[0.06] text-white/50'}`}>
-                            {ca.display_label}
-                          </span>
-                        )}
-                      </p>
-                      <p className={`text-[11px] font-mono ${isLight ? 'text-black/35' : 'text-white/35'}`}>@{ca.handle}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {isEditing ? (
-                    <input
-                      type="number"
-                      min="0"
-                      value={editValue}
-                      onChange={e => setEditValue(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter') saveExpectation(ca.id); if (e.key === 'Escape') setEditingId(null) }}
-                      autoFocus
-                      className={`w-20 border rounded px-2 py-1 text-[13px] text-right outline-none ${
-                        isLight
-                          ? 'bg-white border-black/[0.15] text-black/80 focus:border-black/30'
-                          : 'bg-white/[0.06] border-white/[0.1] text-white/80 focus:border-white/20'
-                      }`}
-                    />
-                  ) : (
-                    <span className={`text-[13px] tabular-nums ${target > 0 ? (isLight ? 'text-black/80' : 'text-white/80') : (isLight ? 'text-black/20' : 'text-white/20')}`}>
-                      {target > 0 ? target : '—'}
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {target > 0 ? (
-                    <span className={`text-[13px] tabular-nums font-medium px-2 py-0.5 rounded ${
-                      daysRed === 0
-                        ? isLight ? 'text-emerald-600 bg-emerald-500/10' : 'text-emerald-400 bg-emerald-400/10'
-                        : daysRed <= 3
-                        ? isLight ? 'text-amber-600 bg-amber-500/10' : 'text-amber-400 bg-amber-400/10'
-                        : isLight ? 'text-red-600 bg-red-500/10' : 'text-red-400 bg-red-400/10'
-                    }`}>
-                      {daysRed}
-                    </span>
-                  ) : (
-                    <span className={`text-[13px] ${isLight ? 'text-black/20' : 'text-white/20'}`}>—</span>
-                  )}
-                </td>
-                <td className="px-4 py-3 text-right">
-                  {isEditing ? (
-                    <div className="flex gap-1 justify-end">
-                      <button
-                        onClick={() => saveExpectation(ca.id)}
-                        disabled={saving}
-                        className={`px-2.5 py-1 text-[11px] font-medium rounded transition-colors ${
-                          isLight
-                            ? 'bg-black text-white hover:bg-black/90 disabled:opacity-50'
-                            : 'bg-white text-black hover:bg-white/90 disabled:opacity-50'
-                        }`}
-                      >
-                        {saving ? '...' : 'Save'}
-                      </button>
-                      <button
-                        onClick={() => setEditingId(null)}
-                        className={`px-2 py-1 text-[11px] transition-colors ${
-                          isLight ? 'text-black/40 hover:text-black/70' : 'text-white/30 hover:text-white/50'
-                        }`}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => { setEditingId(ca.id); setEditValue(String(target)) }}
-                      className={`px-2 py-1 text-[11px] transition-colors ${
-                        isLight ? 'text-black/40 hover:text-black/80 hover:bg-black/[0.04] rounded' : 'text-white/30 hover:text-white/60'
-                      }`}
-                    >
-                      Edit
-                    </button>
-                  )}
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
-      </div>
     </div>
   )
 }
 
-/* ============================================================
-   DAILY INPUT TAB
-   ============================================================ */
+function numberInputCls(isLight: boolean) {
+  return `w-24 rounded-lg px-2.5 py-1.5 text-[13px] text-right tabular-nums outline-none transition-colors ${
+    isLight
+      ? 'bg-white border border-black/10 text-black/80 focus:border-pink-500/50'
+      : 'bg-white/[0.05] border border-white/10 text-white/90 focus:border-pink-500/50'
+  }`
+}
 
-function DailyInputTab({
-  creatorById,
-  conversionAccounts,
-  expectations,
-  dailyData,
-  setDailyData,
-  setInputDirty,
-  isLight,
-}: {
-  creatorById: Record<string, Creator>
-  conversionAccounts: ConversionAccount[]
+// DatePicker carries its own Today / Yesterday presets, so no extra buttons.
+function DateStepper({ date, onChange, isLight }: { date: string; onChange: (d: string) => void; isLight: boolean }) {
+  return <DatePicker value={date} onChange={onChange} isLight={isLight} />
+}
+
+// ═══ Tab 1 — Daily subs, one row per creator ════════════════════════════════
+function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, isLight }: {
+  creators: Creator[]
+  creatorDaily: CreatorDailyRow[]
+  setCreatorDaily: React.Dispatch<React.SetStateAction<CreatorDailyRow[]>>
   expectations: Expectation[]
-  dailyData: DailyRow[]
-  setDailyData: Dispatch<SetStateAction<DailyRow[]>>
-  setInputDirty: Dispatch<SetStateAction<boolean>>
   isLight: boolean
 }) {
-  const yesterday = useMemo(() => {
-    const d = new Date(); d.setDate(d.getDate() - 1)
-    return d.toISOString().split('T')[0]
-  }, [])
-
-  const [date, setDate] = useState(yesterday)
+  const [date, setDate] = useState(todayISO(-1))
+  const [search, setSearch] = useState('')
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [search, setSearch] = useState('')
 
-  const targetByAccount = useMemo(() => {
-    const map: Record<string, number> = {}
-    expectations.forEach(e => {
-      if (e.conversion_account_id) map[e.conversion_account_id] = e.daily_sub_target
-    })
-    return map
-  }, [expectations])
+  const targetByCreator = useMemo(
+    () => Object.fromEntries(expectations.map(e => [e.creator_id, e.daily_sub_target])),
+    [expectations],
+  )
 
-  // Pre-fill with existing values for the selected date.
-  // (Note: do NOT reset `saved` here — this effect re-runs when `dailyData` updates
-  // right after a successful save, which would instantly wipe the "Saved" confirmation.)
+  // Seed the inputs from whatever is already stored for this date.
   useEffect(() => {
-    const dateRows = dailyData.filter(d => d.date === date)
-    const filled: Record<string, string> = {}
-    dateRows.forEach(row => {
-      if (row.conversion_account_id) filled[row.conversion_account_id] = String(row.new_subs)
-    })
-    setInputs(filled)
-  }, [date, dailyData])
+    const existing: Record<string, string> = {}
+    creatorDaily.filter(r => r.date === date).forEach(r => { existing[r.creator_id] = String(r.new_subs) })
+    setInputs(existing)
+    setSaved(false)
+  }, [date, creatorDaily])
 
-  // The saved (baseline) numbers for this date — drives unsaved-changes detection.
-  const baseline = useMemo(() => {
-    const m: Record<string, string> = {}
-    dailyData.filter(d => d.date === date).forEach(r => {
-      if (r.conversion_account_id) m[r.conversion_account_id] = String(r.new_subs)
-    })
-    return m
-  }, [dailyData, date])
+  const visible = creators.filter(c =>
+    !search.trim() || c.display_name.toLowerCase().includes(search.toLowerCase()),
+  )
 
-  // Dirty = any non-empty input that differs from its saved baseline (mirrors what Save persists).
-  const dirty = useMemo(() =>
-    Object.keys(inputs).some(k => {
-      const v = (inputs[k] ?? '').trim()
-      return v !== '' && v !== (baseline[k] ?? '')
-    }), [inputs, baseline])
-
-  // Report dirty state up (drives the tab-switch guard); clear it when the tab unmounts.
-  useEffect(() => { setInputDirty(dirty) }, [dirty, setInputDirty])
-  useEffect(() => () => setInputDirty(false), [setInputDirty])
-  // Once the user edits again, drop the transient "Saved" confirmation.
-  useEffect(() => { if (dirty) setSaved(false) }, [dirty])
-
-  // Warn before leaving the page (refresh / close / browser back) with unsaved numbers.
-  useEffect(() => {
-    if (!dirty) return
-    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
-    window.addEventListener('beforeunload', handler)
-    return () => window.removeEventListener('beforeunload', handler)
-  }, [dirty])
-
-  // Switching dates discards unsaved numbers for the current date — confirm first.
-  function requestDateChange(next: string) {
-    if (next === date) return
-    if (dirty && !window.confirm('You have unsaved subscriber numbers for this date.\n\nClick OK to discard them and switch dates, or Cancel to stay and press “Save all” first.')) return
-    setDate(next)
-  }
-
-  const sorted = useMemo(() => {
-    let list = [...conversionAccounts]
-    if (search.trim()) {
-      const q = search.toLowerCase()
-      list = list.filter(ca => {
-        const c = creatorById[ca.creator_id]
-        return (
-          ca.handle.toLowerCase().includes(q) ||
-          c?.display_name.toLowerCase().includes(q) ||
-          c?.slug.toLowerCase().includes(q)
-        )
-      })
-    }
-    return list.sort((a, b) => {
-      const aT = targetByAccount[a.id] || 0
-      const bT = targetByAccount[b.id] || 0
-      if (aT && !bT) return -1
-      if (!aT && bT) return 1
-      if (aT !== bT) return bT - aT
-      const aName = creatorById[a.creator_id]?.display_name || a.handle
-      const bName = creatorById[b.creator_id]?.display_name || b.handle
-      if (aName !== bName) return aName.localeCompare(bName)
-      if (!a.display_label && b.display_label) return -1
-      if (a.display_label && !b.display_label) return 1
-      return a.handle.localeCompare(b.handle)
-    })
-  }, [conversionAccounts, creatorById, targetByAccount, search])
+  const total = visible.reduce((sum, c) => sum + (parseInt(inputs[c.id] || '0', 10) || 0), 0)
 
   async function saveAll() {
     setSaving(true)
     try {
-      const entries = Object.entries(inputs)
-        .filter(([, val]) => val !== '' && !isNaN(parseInt(val)))
-        .map(([conversion_account_id, val]) => ({ conversion_account_id, new_subs: parseInt(val) }))
-
-      if (entries.length === 0) return
-
+      const entries = creators
+        .filter(c => inputs[c.id] !== undefined && inputs[c.id] !== '')
+        .map(c => ({ creator_id: c.id, new_subs: parseInt(inputs[c.id], 10) || 0 }))
       const res = await fetch('/api/admin/conversions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_daily_subs', date, entries }),
       })
-
-      if (res.ok) {
-        const newRows = await res.json()
-        setDailyData(prev => {
-          const updated = [...prev]
-          newRows.forEach((nr: DailyRow) => {
-            const idx = updated.findIndex(d =>
-              d.conversion_account_id === nr.conversion_account_id && d.date === nr.date
-            )
-            if (idx >= 0) updated[idx] = nr
-            else updated.push(nr)
-          })
-          return updated
-        })
-        setSaved(true)
-        setTimeout(() => setSaved(false), 2000)
-      }
+      if (!res.ok) throw new Error('save failed')
+      const rows: CreatorDailyRow[] = await res.json()
+      setCreatorDaily(prev => {
+        const without = prev.filter(r => !(r.date === date && rows.some(n => n.creator_id === r.creator_id)))
+        return [...rows, ...without]
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
     } finally {
       setSaving(false)
     }
   }
 
+  const text1 = isLight ? 'text-black/90' : 'text-white/90'
+  const text3 = isLight ? 'text-black/30' : 'text-white/30'
+  const border = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
+
   return (
-    <div className="space-y-4">
-      {/* Date selector + search */}
-      <div className="flex items-center gap-4 flex-wrap">
-        <input
-          type="text"
-          placeholder="Search creators or handles..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className={`border rounded-lg px-3 py-1.5 text-[13px] outline-none w-56 ${
-            isLight
-              ? 'bg-black/[0.03] border-black/[0.1] text-black/80 placeholder-black/25 focus:border-black/20'
-              : 'bg-white/[0.04] border-white/[0.08] text-white/80 placeholder-white/25 focus:border-white/20'
-          }`}
-        />
-        <label className={`text-[12px] ${isLight ? 'text-black/40' : 'text-white/40'}`}>Date:</label>
-        <DatePicker value={date} onChange={requestDateChange} isLight={isLight} />
-        <button
-          onClick={saveAll}
-          disabled={saving}
-          className={`inline-flex items-center gap-2 px-4 py-1.5 rounded-lg text-[12px] font-medium transition-colors disabled:opacity-50 ${
-            saved
-              ? 'bg-emerald-500 text-white'
-              : isLight
-                ? 'bg-black text-white hover:bg-black/90'
-                : 'bg-white text-black hover:bg-white/90'
-          }`}
-        >
-          {saving && (
-            <svg className="w-3.5 h-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="12" cy="12" r="9" opacity="0.25" />
-              <path d="M21 12a9 9 0 0 0-9-9" />
-            </svg>
-          )}
-          {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save all'}
-        </button>
-        {dirty && !saving && !saved && (
-          <span className={`inline-flex items-center gap-1.5 text-[11px] font-medium ${isLight ? 'text-amber-600' : 'text-amber-400'}`}>
-            <span className="text-[8px] leading-none">●</span> Unsaved changes
-          </span>
-        )}
+    <>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <DateStepper date={date} onChange={setDate} isLight={isLight} />
+        <div className="flex items-center gap-2">
+          <SearchBox value={search} onChange={setSearch} placeholder="Search creators…" isLight={isLight} />
+          <Button variant="primary" onClick={saveAll} loading={saving}>
+            {saved ? <><Check className="h-3.5 w-3.5" /> Saved</> : <><Save className="h-3.5 w-3.5" /> Save all</>}
+          </Button>
+        </div>
       </div>
 
-      {/* Accounts input grid */}
-      <div className={`rounded-xl border overflow-hidden ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-        <table className="w-full">
-          <thead>
-            <tr className={`border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-              <th className={`text-left text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Account</th>
-              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Target</th>
-              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider w-32 ${isLight ? 'text-black/30' : 'text-white/30'}`}>New Subs</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map(ca => {
-              const creator = creatorById[ca.creator_id]
-              const target = targetByAccount[ca.id] || 0
-              const val = inputs[ca.id] || ''
-              const numVal = parseInt(val)
-              const isBelowTarget = target > 0 && !isNaN(numVal) && numVal < target
-              return (
-                <tr key={ca.id} className={`border-b transition-colors ${isLight ? 'border-black/[0.03] hover:bg-black/[0.02]' : 'border-white/[0.03] hover:bg-white/[0.02]'}`}>
-                  <td className="px-4 py-2.5">
-                    <div className="flex items-center gap-3">
-                      {creator?.avatar_url ? (
-                        <img src={creator.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
-                      ) : (
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-medium ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>
-                          {(creator?.display_name || ca.handle).charAt(0).toUpperCase()}
-                        </div>
-                      )}
-                      <div>
-                        <p className={`text-[13px] flex items-center gap-2 ${isLight ? 'text-black/80' : 'text-white/80'}`}>
-                          {creator?.display_name || '—'}
-                          {ca.display_label && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-black/[0.05] text-black/50' : 'bg-white/[0.06] text-white/50'}`}>
-                              {ca.display_label}
-                            </span>
-                          )}
-                        </p>
-                        <p className={`text-[11px] font-mono ${isLight ? 'text-black/35' : 'text-white/35'}`}>@{ca.handle}</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className={`text-[13px] tabular-nums ${target > 0 ? (isLight ? 'text-black/50' : 'text-white/50') : (isLight ? 'text-black/15' : 'text-white/15')}`}>
-                      {target > 0 ? target : '—'}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5">
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={val}
-                      onChange={e => setInputs(prev => ({ ...prev, [ca.id]: e.target.value }))}
-                      className={`w-full border rounded px-3 py-1.5 text-[13px] text-right outline-none transition-colors tabular-nums ${
-                        isBelowTarget
-                          ? isLight
-                            ? 'bg-red-500/[0.06] border-red-500/30 text-red-600 focus:border-red-500/50'
-                            : 'bg-red-500/[0.04] border-red-500/30 text-red-400 focus:border-red-500/50'
-                          : isLight
-                            ? 'bg-black/[0.03] border-black/[0.08] text-black/80 focus:border-black/20'
-                            : 'bg-white/[0.04] border-white/[0.08] text-white/80 focus:border-white/20'
-                      }`}
-                    />
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
+      <Card className="overflow-hidden">
+        <div className={`flex items-center px-5 py-2.5 border-b ${border}`}>
+          <span className={`flex-1 text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Creator</span>
+          <span className={`w-24 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Target</span>
+          <span className={`w-28 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>New subs</span>
+        </div>
+
+        {visible.map((c, i) => {
+          const target = targetByCreator[c.id] ?? 0
+          const value = parseInt(inputs[c.id] || '0', 10) || 0
+          const hit = target > 0 && value >= target
+          return (
+            <div key={c.id} className={`flex items-center px-5 py-2.5 ${i > 0 ? `border-t ${border}` : ''}`}>
+              <div className="flex-1 flex items-center gap-2.5 min-w-0">
+                {c.avatar_url
+                  ? <img src={avatarSrc(c.avatar_url)} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
+                  : <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] shrink-0 ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/50'}`}>{c.display_name.charAt(0)}</span>}
+                <div className="min-w-0">
+                  <p className={`text-[13px] truncate ${text1}`}>{c.display_name}</p>
+                  {c.of_handle && <p className={`text-[10px] font-mono truncate ${text3}`}>@{c.of_handle}</p>}
+                </div>
+              </div>
+              <span className={`w-24 text-right text-[12px] tabular-nums ${text3}`}>{target || '—'}</span>
+              <div className="w-28 flex justify-end">
+                <input
+                  type="number"
+                  min={0}
+                  value={inputs[c.id] ?? ''}
+                  onChange={e => setInputs(p => ({ ...p, [c.id]: e.target.value }))}
+                  placeholder="0"
+                  className={`${numberInputCls(isLight)} ${hit ? 'border-emerald-500/40' : ''}`}
+                />
+              </div>
+            </div>
+          )
+        })}
+
+        <div className={`flex items-center px-5 py-2.5 border-t ${border} ${isLight ? 'bg-black/[0.02]' : 'bg-white/[0.02]'}`}>
+          <span className={`flex-1 text-[12px] font-medium ${text1}`}>Total · {fmtDate(date)}</span>
+          <span className="w-28 text-right text-[13px] font-semibold tabular-nums text-pink-500">{fmt(total)}</span>
+        </div>
+      </Card>
+    </>
   )
 }
 
-/* ============================================================
-   CONVERSION TABLE TAB
-   ============================================================ */
-
-function ConversionTableTab({
-  creators,
-  creatorById,
-  conversionAccounts,
-  expectations,
-  dailyData,
-  setDailyData,
-  initialCreatorId,
-  isLight,
-}: {
+// ═══ Tab 2 — Link traffic, one row per link ═════════════════════════════════
+function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLight }: {
   creators: Creator[]
-  creatorById: Record<string, Creator>
-  conversionAccounts: ConversionAccount[]
-  expectations: Expectation[]
-  dailyData: DailyRow[]
-  setDailyData: Dispatch<SetStateAction<DailyRow[]>>
-  initialCreatorId?: string
+  trackingLinks: TrackingLink[]
+  linkDaily: LinkDailyRow[]
+  setLinkDaily: React.Dispatch<React.SetStateAction<LinkDailyRow[]>>
   isLight: boolean
 }) {
-  // Pick default: creator from URL → first main account for that creator, else first account.
-  const firstAccountFor = (cid?: string) => {
-    if (!cid) return conversionAccounts[0]?.id || ''
-    const mains = conversionAccounts.filter(a => a.creator_id === cid && !a.display_label)
-    if (mains.length) return mains[0].id
-    const anyFor = conversionAccounts.find(a => a.creator_id === cid)
-    return anyFor?.id || conversionAccounts[0]?.id || ''
-  }
+  const [date, setDate] = useState(todayISO(-1))
+  const [search, setSearch] = useState('')
+  const [inputs, setInputs] = useState<Record<string, { views: string; profile_views: string; link_clicks: string }>>({})
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
 
-  const [selectedAccountId, setSelectedAccountId] = useState<string>(firstAccountFor(initialCreatorId))
-  const [editingCell, setEditingCell] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [accountSearch, setAccountSearch] = useState('')
-  const [showAccountDropdown, setShowAccountDropdown] = useState(false)
-  const accountDropdownRef = useRef<HTMLDivElement>(null)
+  const creatorById = useMemo(() => Object.fromEntries(creators.map(c => [c.id, c])), [creators])
 
   useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (accountDropdownRef.current && !accountDropdownRef.current.contains(e.target as Node)) {
-        setShowAccountDropdown(false)
+    const existing: Record<string, { views: string; profile_views: string; link_clicks: string }> = {}
+    linkDaily.filter(r => r.date === date).forEach(r => {
+      existing[r.tracking_link_id] = {
+        views: String(r.views),
+        profile_views: String(r.profile_views),
+        link_clicks: String(r.link_clicks),
       }
+    })
+    setInputs(existing)
+    setSaved(false)
+  }, [date, linkDaily])
+
+  const visible = trackingLinks.filter(l => {
+    if (!search.trim()) return true
+    const q = search.toLowerCase()
+    return l.label.toLowerCase().includes(q) || (creatorById[l.creator_id]?.display_name || '').toLowerCase().includes(q)
+  })
+
+  // Group the links under their creator so the OF account they feed is obvious.
+  const grouped = useMemo(() => {
+    const map = new Map<string, TrackingLink[]>()
+    visible.forEach(l => {
+      if (!map.has(l.creator_id)) map.set(l.creator_id, [])
+      map.get(l.creator_id)!.push(l)
+    })
+    return Array.from(map.entries())
+      .map(([creatorId, links]) => ({ creator: creatorById[creatorId], links }))
+      .filter(g => g.creator)
+      .sort((a, b) => a.creator.display_name.localeCompare(b.creator.display_name))
+  }, [visible, creatorById])
+
+  function setField(linkId: string, field: 'views' | 'profile_views' | 'link_clicks', value: string) {
+    setInputs(p => {
+      const current = p[linkId] ?? { views: '', profile_views: '', link_clicks: '' }
+      return { ...p, [linkId]: { ...current, [field]: value } }
+    })
+  }
+
+  async function saveAll() {
+    setSaving(true)
+    try {
+      const entries = Object.entries(inputs)
+        .filter(([, v]) => v.views !== '' || v.profile_views !== '' || v.link_clicks !== '')
+        .map(([tracking_link_id, v]) => ({
+          tracking_link_id,
+          views: parseInt(v.views || '0', 10) || 0,
+          profile_views: parseInt(v.profile_views || '0', 10) || 0,
+          link_clicks: parseInt(v.link_clicks || '0', 10) || 0,
+        }))
+      const res = await fetch('/api/admin/conversions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_link_daily', date, entries }),
+      })
+      if (!res.ok) throw new Error('save failed')
+      const rows: LinkDailyRow[] = await res.json()
+      setLinkDaily(prev => {
+        const without = prev.filter(r => !(r.date === date && rows.some(n => n.tracking_link_id === r.tracking_link_id)))
+        return [...rows, ...without]
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+    } finally {
+      setSaving(false)
     }
-    if (showAccountDropdown) document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showAccountDropdown])
+  }
 
-  // Sort accounts: main first per creator, alphabetical by creator name.
-  const sortedAccounts = useMemo(() => {
-    return [...conversionAccounts].sort((a, b) => {
-      const aName = creatorById[a.creator_id]?.display_name || a.handle
-      const bName = creatorById[b.creator_id]?.display_name || b.handle
-      if (aName !== bName) return aName.localeCompare(bName)
-      if (!a.display_label && b.display_label) return -1
-      if (a.display_label && !b.display_label) return 1
-      return a.handle.localeCompare(b.handle)
-    })
-  }, [conversionAccounts, creatorById])
+  const text1 = isLight ? 'text-black/90' : 'text-white/90'
+  const text2 = isLight ? 'text-black/50' : 'text-white/50'
+  const text3 = isLight ? 'text-black/30' : 'text-white/30'
+  const border = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
 
-  const filteredAccounts = useMemo(() => {
-    if (!accountSearch.trim()) return sortedAccounts
-    const q = accountSearch.toLowerCase()
-    return sortedAccounts.filter(a => {
-      const c = creatorById[a.creator_id]
-      return (
-        a.handle.toLowerCase().includes(q) ||
-        c?.display_name.toLowerCase().includes(q) ||
-        c?.slug.toLowerCase().includes(q)
-      )
-    })
-  }, [sortedAccounts, creatorById, accountSearch])
+  const totals = Object.values(inputs).reduce(
+    (acc, v) => ({
+      views: acc.views + (parseInt(v.views || '0', 10) || 0),
+      profile_views: acc.profile_views + (parseInt(v.profile_views || '0', 10) || 0),
+      link_clicks: acc.link_clicks + (parseInt(v.link_clicks || '0', 10) || 0),
+    }),
+    { views: 0, profile_views: 0, link_clicks: 0 },
+  )
 
-  const selectedAccount = conversionAccounts.find(a => a.id === selectedAccountId)
-  const selectedCreator = selectedAccount ? creatorById[selectedAccount.creator_id] : undefined
+  if (trackingLinks.length === 0) {
+    return (
+      <Card className="py-16 text-center">
+        <Link2 className={`h-6 w-6 mx-auto mb-3 ${text3}`} />
+        <p className={`text-[13px] ${text2}`}>No links yet</p>
+        <p className={`text-[12px] mt-1 ${text3}`}>Add links on a creator&apos;s Links tab and their daily rows appear here.</p>
+      </Card>
+    )
+  }
 
-  // Date range state
+  return (
+    <>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <DateStepper date={date} onChange={setDate} isLight={isLight} />
+        <div className="flex items-center gap-2">
+          <SearchBox value={search} onChange={setSearch} placeholder="Search links or creators…" isLight={isLight} />
+          <Button variant="primary" onClick={saveAll} loading={saving}>
+            {saved ? <><Check className="h-3.5 w-3.5" /> Saved</> : <><Save className="h-3.5 w-3.5" /> Save all</>}
+          </Button>
+        </div>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className={`flex items-center px-5 py-2.5 border-b ${border}`}>
+          <span className={`flex-1 text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Link</span>
+          <span className={`w-28 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Views</span>
+          <span className={`w-28 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Profile views</span>
+          <span className={`w-28 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Link clicks</span>
+        </div>
+
+        {grouped.map(({ creator, links }) => (
+          <div key={creator.id}>
+            <div className={`flex items-center gap-2 px-5 py-2 border-t ${border} ${isLight ? 'bg-black/[0.02]' : 'bg-white/[0.02]'}`}>
+              {creator.avatar_url
+                ? <img src={avatarSrc(creator.avatar_url)} alt="" className="h-5 w-5 rounded-full object-cover" />
+                : <span className={`h-5 w-5 rounded-full flex items-center justify-center text-[9px] ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/50'}`}>{creator.display_name.charAt(0)}</span>}
+              <span className={`text-[12px] font-medium ${text1}`}>{creator.display_name}</span>
+              {creator.of_handle && <span className={`text-[10px] font-mono ${text3}`}>@{creator.of_handle}</span>}
+            </div>
+            {links.map(l => (
+              <div key={l.id} className={`flex items-center px-5 py-2.5 border-t ${border}`}>
+                <div className="flex-1 min-w-0 pl-7">
+                  <p className={`text-[13px] truncate ${text1}`}>{l.label}</p>
+                </div>
+                {(['views', 'profile_views', 'link_clicks'] as const).map(field => (
+                  <div key={field} className="w-28 flex justify-end">
+                    <input
+                      type="number"
+                      min={0}
+                      value={inputs[l.id]?.[field] ?? ''}
+                      onChange={e => setField(l.id, field, e.target.value)}
+                      placeholder="0"
+                      className={numberInputCls(isLight)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+
+        <div className={`flex items-center px-5 py-2.5 border-t ${border} ${isLight ? 'bg-black/[0.02]' : 'bg-white/[0.02]'}`}>
+          <span className={`flex-1 text-[12px] font-medium ${text1}`}>Total · {fmtDate(date)}</span>
+          <span className="w-28 text-right text-[13px] font-semibold tabular-nums text-pink-500">{fmt(totals.views)}</span>
+          <span className="w-28 text-right text-[13px] font-semibold tabular-nums text-pink-500">{fmt(totals.profile_views)}</span>
+          <span className="w-28 text-right text-[13px] font-semibold tabular-nums text-pink-500">{fmt(totals.link_clicks)}</span>
+        </div>
+      </Card>
+    </>
+  )
+}
+
+// ═══ Tab 3 — Per-creator table: subs + funnel from its links ════════════════
+function CreatorTableTab({ creators, trackingLinks, creatorDaily, linkDaily, expectations, preselected, onNeedHistory, loadingHistory, isLight }: {
+  creators: Creator[]
+  trackingLinks: TrackingLink[]
+  creatorDaily: CreatorDailyRow[]
+  linkDaily: LinkDailyRow[]
+  expectations: Expectation[]
+  preselected: string | null
+  onNeedHistory: (from: string) => void
+  loadingHistory: boolean
+  isLight: boolean
+}) {
+  const [creatorId, setCreatorId] = useState<string>(preselected || creators[0]?.id || '')
   const [dateStart, setDateStart] = useState<Date>(() => {
     const d = new Date(); d.setDate(d.getDate() - 30); return d
   })
   const [dateEnd, setDateEnd] = useState<Date>(new Date())
   const [dateLabel, setDateLabel] = useState('Last 30 days')
-  function handleDateApply(label: string, start: Date, end: Date) {
-    setDateStart(start); setDateEnd(end); setDateLabel(label)
-  }
 
-  const target = useMemo(() => {
-    if (!selectedAccountId) return 0
-    const exp = expectations.find(e => e.conversion_account_id === selectedAccountId)
-    return exp?.daily_sub_target || 0
-  }, [expectations, selectedAccountId])
+  const creator = creators.find(c => c.id === creatorId)
+  const target = expectations.find(e => e.creator_id === creatorId)?.daily_sub_target ?? 0
 
-  const filteredData = useMemo(() => {
-    if (!selectedAccountId) return []
-    // Use local date (YYYY-MM-DD) to avoid timezone drift from toISOString().
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const fmt = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-    const startStr = fmt(dateStart)
-    const endStr = fmt(dateEnd)
-    return dailyData
-      .filter(d => d.conversion_account_id === selectedAccountId && d.date >= startStr && d.date <= endStr)
-      .sort((a, b) => b.date.localeCompare(a.date))
-  }, [dailyData, selectedAccountId, dateStart, dateEnd])
+  const linkIds = useMemo(
+    () => new Set(trackingLinks.filter(l => l.creator_id === creatorId).map(l => l.id)),
+    [trackingLinks, creatorId],
+  )
 
-  async function saveCell(accountId: string, date: string, field: string, value: number) {
-    const res = await fetch('/api/admin/conversions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'update_cell',
-        conversion_account_id: accountId,
-        date,
-        field,
-        value,
-      }),
+  const rows = useMemo(() => {
+    const from = dateStart.toISOString().split('T')[0]
+    const to = dateEnd.toISOString().split('T')[0]
+
+    // Traffic for this creator's links, summed per day.
+    const traffic: Record<string, { views: number; profile_views: number; link_clicks: number }> = {}
+    linkDaily.forEach(r => {
+      if (!linkIds.has(r.tracking_link_id)) return
+      if (r.date < from || r.date > to) return
+      if (!traffic[r.date]) traffic[r.date] = { views: 0, profile_views: 0, link_clicks: 0 }
+      traffic[r.date].views += r.views
+      traffic[r.date].profile_views += r.profile_views
+      traffic[r.date].link_clicks += r.link_clicks
     })
-    if (res.ok) {
-      const [updated] = await res.json()
-      setDailyData((prev: DailyRow[]) => {
-        const idx = prev.findIndex(d => d.conversion_account_id === accountId && d.date === date)
-        if (idx >= 0) return prev.map(d => (d.conversion_account_id === accountId && d.date === date) ? updated : d)
-        return [updated, ...prev]
-      })
-    }
-    setEditingCell(null)
-  }
 
-  function fmtNum(n: number): string {
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K'
-    return n.toLocaleString()
-  }
+    const subs: Record<string, number> = {}
+    creatorDaily.forEach(r => {
+      if (r.creator_id !== creatorId) return
+      if (r.date < from || r.date > to) return
+      subs[r.date] = r.new_subs
+    })
 
-  function fmtPct(n: number): string {
-    if (!isFinite(n) || isNaN(n)) return '—'
-    return (n * 100).toFixed(2) + '%'
-  }
+    const dates = Array.from(new Set([...Object.keys(subs), ...Object.keys(traffic)])).sort((a, b) => b.localeCompare(a))
+    return dates.map(date => {
+      const t = traffic[date] || { views: 0, profile_views: 0, link_clicks: 0 }
+      const s = subs[date] ?? 0
+      return {
+        date,
+        ...t,
+        new_subs: s,
+        clickRate: t.profile_views > 0 ? (t.link_clicks / t.profile_views) * 100 : null,
+        subRate: t.link_clicks > 0 ? (s / t.link_clicks) * 100 : null,
+      }
+    })
+  }, [creatorDaily, linkDaily, linkIds, creatorId, dateStart, dateEnd])
 
-  function fmtDate(dateStr: string): string {
-    const d = new Date(dateStr + 'T12:00:00')
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-  }
+  const totals = rows.reduce(
+    (a, r) => ({
+      views: a.views + r.views,
+      profile_views: a.profile_views + r.profile_views,
+      link_clicks: a.link_clicks + r.link_clicks,
+      new_subs: a.new_subs + r.new_subs,
+    }),
+    { views: 0, profile_views: 0, link_clicks: 0, new_subs: 0 },
+  )
+
+  const text1 = isLight ? 'text-black/90' : 'text-white/90'
+  const text2 = isLight ? 'text-black/50' : 'text-white/50'
+  const text3 = isLight ? 'text-black/30' : 'text-white/30'
+  const border = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
+  const selectCls = isLight
+    ? 'bg-white border border-black/10 text-black/80'
+    : 'bg-white/[0.05] border border-white/10 text-white/90'
 
   return (
-    <div className="space-y-4">
-      {/* Controls row */}
-      <div className="flex items-center gap-4 flex-wrap">
-        {/* Account selector with search */}
-        <div className="relative" ref={accountDropdownRef}>
-          <button
-            onClick={() => setShowAccountDropdown(!showAccountDropdown)}
-            className={`flex items-center gap-2 border rounded-lg px-3 py-1.5 text-[13px] transition-colors min-w-[240px] ${
-              isLight
-                ? 'bg-black/[0.03] border-black/[0.1] text-black/80 hover:border-black/[0.2]'
-                : 'bg-white/[0.04] border-white/[0.08] text-white/80 hover:border-white/[0.12]'
-            }`}
-          >
-            {selectedAccount ? (
-              <>
-                {selectedCreator?.avatar_url && (
-                  <img src={selectedCreator.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
-                )}
-                <span className="truncate">{selectedCreator?.display_name || '—'}</span>
-                {selectedAccount.display_label && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-black/[0.05] text-black/50' : 'bg-white/[0.06] text-white/50'}`}>
-                    {selectedAccount.display_label}
-                  </span>
-                )}
-                <span className={`text-[11px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>@{selectedAccount.handle}</span>
-              </>
-            ) : (
-              <span className={isLight ? 'text-black/40' : 'text-white/40'}>Select account...</span>
-            )}
-            <svg className={`w-3 h-3 ml-auto flex-shrink-0 ${isLight ? 'text-black/30' : 'text-white/30'}`} viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 5l3 3 3-3" /></svg>
-          </button>
-          {showAccountDropdown && (
-            <div className={`absolute top-full mt-1 left-0 z-50 border rounded-xl shadow-2xl w-[320px] overflow-hidden ${
-              isLight ? 'bg-white border-black/[0.1]' : 'bg-[#111] border-white/[0.1]'
-            }`}>
-              <div className={`p-2 border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-                <input
-                  type="text"
-                  placeholder="Search accounts..."
-                  value={accountSearch}
-                  onChange={e => setAccountSearch(e.target.value)}
-                  autoFocus
-                  className={`w-full border rounded-lg px-2.5 py-1.5 text-[12px] outline-none ${
-                    isLight
-                      ? 'bg-black/[0.03] border-black/[0.08] text-black/80 placeholder-black/25 focus:border-black/20'
-                      : 'bg-white/[0.04] border-white/[0.08] text-white/80 placeholder-white/25 focus:border-white/20'
-                  }`}
-                />
-              </div>
-              <div className="max-h-[260px] overflow-y-auto">
-                {filteredAccounts.map(a => {
-                  const c = creatorById[a.creator_id]
-                  const active = a.id === selectedAccountId
-                  return (
-                    <button
-                      key={a.id}
-                      onClick={() => { setSelectedAccountId(a.id); setShowAccountDropdown(false); setAccountSearch('') }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-[12px] transition-colors ${
-                        isLight
-                          ? `hover:bg-black/[0.04] ${active ? 'bg-black/[0.05] text-black/90' : 'text-black/70'}`
-                          : `hover:bg-white/[0.06] ${active ? 'bg-white/[0.05] text-white/90' : 'text-white/70'}`
-                      }`}
-                    >
-                      {c?.avatar_url ? (
-                        <img src={c.avatar_url} alt="" className="w-5 h-5 rounded-full object-cover" />
-                      ) : (
-                        <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] ${
-                          isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'
-                        }`}>{(c?.display_name || a.handle).charAt(0).toUpperCase()}</div>
-                      )}
-                      <span className="truncate">{c?.display_name || '—'}</span>
-                      {a.display_label && (
-                        <span className={`text-[10px] px-1 py-px rounded ${isLight ? 'bg-black/[0.05] text-black/40' : 'bg-white/[0.06] text-white/40'}`}>
-                          {a.display_label}
-                        </span>
-                      )}
-                      <span className={`text-[10px] font-mono ml-auto ${isLight ? 'text-black/30' : 'text-white/30'}`}>@{a.handle}</span>
-                    </button>
-                  )
-                })}
-                {filteredAccounts.length === 0 && (
-                  <p className={`text-center py-4 text-[12px] ${isLight ? 'text-black/30' : 'text-white/20'}`}>No match</p>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Date range picker */}
+    <>
+      <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+        <select
+          value={creatorId}
+          onChange={e => setCreatorId(e.target.value)}
+          className={`rounded-lg px-3 py-1.5 text-[13px] outline-none ${selectCls}`}
+        >
+          {creators.map(c => <option key={c.id} value={c.id}>{c.display_name}</option>)}
+        </select>
         <DateRangePicker
           dateStart={dateStart}
           dateEnd={dateEnd}
           dateLabel={dateLabel}
-          onApply={handleDateApply}
           isLight={isLight}
+          onApply={(label, start, end) => {
+            setDateLabel(label); setDateStart(start); setDateEnd(end)
+            onNeedHistory(start.toISOString().split('T')[0])
+          }}
         />
-
-        {target > 0 && (
-          <span className={`text-[12px] ${isLight ? 'text-black/40' : 'text-white/30'}`}>Target: <span className={`font-medium ${isLight ? 'text-black/70' : 'text-white/60'}`}>{target} subs/day</span></span>
-        )}
       </div>
 
-      {/* Data table */}
-      <div className={`rounded-xl border overflow-x-auto ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-        <table className="w-full min-w-[900px]">
-          <thead>
-            <tr className={`border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-              <th className={`text-left text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Date</th>
-              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Views</th>
-              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Profile Views</th>
-              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Views→Profile</th>
-              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Link Clicks</th>
-              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Views→Clicks</th>
-              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Profile→Clicks</th>
-              <th className={`text-right text-[11px] font-medium px-4 py-3 uppercase tracking-wider ${isLight ? 'text-black/30' : 'text-white/30'}`}>Subs</th>
-              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Clicks→Subs</th>
-              <th className={`text-right text-[11px] font-medium px-3 py-3 uppercase tracking-wider text-[10px] ${isLight ? 'text-black/30' : 'text-white/30'}`}>Subs→Views</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredData.length === 0 ? (
-              <tr>
-                <td colSpan={10} className={`text-center py-12 text-[13px] ${isLight ? 'text-black/30' : 'text-white/20'}`}>
-                  No data for this period. Enter subs in the Daily Input tab.
-                </td>
-              </tr>
-            ) : (
-              filteredData.map(row => {
-                const views = row.views
-                const pv = row.profile_views
-                const lc = row.link_clicks
-                const subs = row.new_subs
-                const isBelowTarget = target > 0 && subs < target
-                const rowKey = `${row.conversion_account_id}-${row.date}`
+      {/* Totals strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        {[
+          { label: 'Views', value: fmt(totals.views) },
+          { label: 'Profile views', value: fmt(totals.profile_views) },
+          { label: 'Link clicks', value: fmt(totals.link_clicks) },
+          { label: 'New subs', value: fmt(totals.new_subs) },
+          { label: 'Daily target', value: target ? String(target) : '—' },
+        ].map(s => (
+          <Card key={s.label} className="px-4 py-3">
+            <p className={`text-[10px] uppercase tracking-wider font-semibold ${text3}`}>{s.label}</p>
+            <p className={`text-[18px] font-bold mt-1 tabular-nums ${text1}`}>{s.value}</p>
+          </Card>
+        ))}
+      </div>
 
-                const viewsToProfile = views > 0 ? pv / views : 0
-                const viewsToClicks = views > 0 ? lc / views : 0
-                const profileToClicks = pv > 0 ? lc / pv : 0
-                const clicksToSubs = lc > 0 ? subs / lc : 0
-                const subsToViews = views > 0 ? subs / views : 0
+      {linkIds.size === 0 && (
+        <Card className={`px-4 py-3 mb-4 ${isLight ? 'bg-amber-50 border-amber-200' : 'bg-yellow-900/15 border-yellow-700/30'}`}>
+          <p className={`text-[12px] ${isLight ? 'text-amber-700' : 'text-yellow-300'}`}>
+            {creator?.display_name} has no links yet, so only subscribers show here. Add them on the Links tab.
+          </p>
+        </Card>
+      )}
 
-                const EditableCell = ({ field, value, highlight }: { field: string; value: number; highlight?: boolean }) => {
-                  const cellKey = `${rowKey}-${field}`
-                  const isEditingThis = editingCell === cellKey
-                  if (isEditingThis) {
-                    return (
-                      <input
-                        type="number"
-                        min="0"
-                        value={editValue}
-                        onChange={e => setEditValue(e.target.value)}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') saveCell(row.conversion_account_id!, row.date, field, parseInt(editValue) || 0)
-                          if (e.key === 'Escape') setEditingCell(null)
-                        }}
-                        onBlur={() => saveCell(row.conversion_account_id!, row.date, field, parseInt(editValue) || 0)}
-                        autoFocus
-                        className={`w-16 border rounded px-2 py-0.5 text-[13px] text-right outline-none tabular-nums ${
-                          isLight
-                            ? 'bg-white border-black/[0.15] text-black/80 focus:border-black/30'
-                            : 'bg-white/[0.06] border-white/[0.15] text-white/80 focus:border-white/30'
-                        }`}
-                      />
-                    )
-                  }
-                  return (
-                    <button
-                      onClick={() => { setEditingCell(cellKey); setEditValue(String(value)) }}
-                      className={`text-[13px] tabular-nums cursor-pointer transition-all duration-150 rounded px-1 -mx-1 ${
-                        highlight
-                          ? isLight
-                            ? 'text-red-600 font-medium hover:bg-red-500/10'
-                            : 'text-red-400 font-medium hover:bg-red-500/10'
-                          : isLight
-                            ? 'text-black/70 hover:text-black/90 hover:bg-black/[0.04]'
-                            : 'text-white/70 hover:text-white/90 hover:bg-white/[0.04]'
-                      }`}
-                      title="Click to edit"
-                    >
-                      {value > 0 ? fmtNum(value) : '—'}
-                    </button>
-                  )
-                }
+      <Card className="overflow-hidden">
+        <div className={`flex items-center px-5 py-2.5 border-b ${border}`}>
+          <span className={`w-24 text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Date</span>
+          <span className={`flex-1 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Views</span>
+          <span className={`flex-1 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Profile views</span>
+          <span className={`flex-1 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Link clicks</span>
+          <span className={`flex-1 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>CTR</span>
+          <span className={`flex-1 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>New subs</span>
+          <span className={`flex-1 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Sub rate</span>
+        </div>
 
-                return (
-                  <tr
-                    key={rowKey}
-                    className={`border-b transition-colors ${isLight ? 'border-black/[0.03]' : 'border-white/[0.03]'} ${
-                      isBelowTarget
-                        ? isLight ? 'bg-red-500/[0.04] hover:bg-red-500/[0.08]' : 'bg-red-500/[0.06] hover:bg-red-500/[0.1]'
-                        : isLight ? 'hover:bg-black/[0.02]' : 'hover:bg-white/[0.02]'
+        {rows.length === 0 ? (
+          <p className={`text-[13px] text-center py-14 ${text2}`}>No data in this range</p>
+        ) : (
+          rows.map((r, i) => {
+            const hit = target > 0 && r.new_subs >= target
+            return (
+              <div key={r.date} className={`flex items-center px-5 py-2 ${i > 0 ? `border-t ${border}` : ''}`}>
+                <span className={`w-24 text-[12px] ${text2}`}>{fmtDate(r.date)}</span>
+                <span className={`flex-1 text-right text-[12.5px] tabular-nums ${text1}`}>{r.views ? fmt(r.views) : <span className={text3}>—</span>}</span>
+                <span className={`flex-1 text-right text-[12.5px] tabular-nums ${text1}`}>{r.profile_views ? fmt(r.profile_views) : <span className={text3}>—</span>}</span>
+                <span className={`flex-1 text-right text-[12.5px] tabular-nums ${text1}`}>{r.link_clicks ? fmt(r.link_clicks) : <span className={text3}>—</span>}</span>
+                <span className={`flex-1 text-right text-[12.5px] tabular-nums ${text2}`}>{r.clickRate !== null ? r.clickRate.toFixed(1) + '%' : <span className={text3}>—</span>}</span>
+                <span className={`flex-1 text-right text-[12.5px] font-medium tabular-nums ${hit ? 'text-emerald-500' : text1}`}>{r.new_subs || <span className={text3}>—</span>}</span>
+                <span className={`flex-1 text-right text-[12.5px] tabular-nums ${text2}`}>{r.subRate !== null ? r.subRate.toFixed(1) + '%' : <span className={text3}>—</span>}</span>
+              </div>
+            )
+          })
+        )}
+      </Card>
+    </>
+  )
+}
+
+// ═══ Tab 4 — Daily sub target per creator ═══════════════════════════════════
+function TargetsTab({ creators, expectations, setExpectations, isLight }: {
+  creators: Creator[]
+  expectations: Expectation[]
+  setExpectations: React.Dispatch<React.SetStateAction<Expectation[]>>
+  isLight: boolean
+}) {
+  const [search, setSearch] = useState('')
+  const [editing, setEditing] = useState<string | null>(null)
+  const [value, setValue] = useState('')
+  const [savingId, setSavingId] = useState<string | null>(null)
+
+  const byCreator = useMemo(
+    () => Object.fromEntries(expectations.map(e => [e.creator_id, e])),
+    [expectations],
+  )
+
+  async function save(creatorId: string) {
+    setSavingId(creatorId)
+    try {
+      const res = await fetch('/api/admin/conversions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_expectation', creator_id: creatorId, daily_sub_target: parseInt(value, 10) || 0 }),
+      })
+      if (!res.ok) throw new Error('save failed')
+      const [row]: Expectation[] = await res.json()
+      setExpectations(prev => {
+        const without = prev.filter(e => e.creator_id !== creatorId)
+        return row ? [...without, row] : without
+      })
+      setEditing(null)
+    } finally {
+      setSavingId(null)
+    }
+  }
+
+  const visible = creators.filter(c => !search.trim() || c.display_name.toLowerCase().includes(search.toLowerCase()))
+
+  const text1 = isLight ? 'text-black/90' : 'text-white/90'
+  const text3 = isLight ? 'text-black/30' : 'text-white/30'
+  const border = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
+
+  return (
+    <>
+      <div className="flex justify-end mb-4">
+        <SearchBox value={search} onChange={setSearch} placeholder="Search creators…" isLight={isLight} />
+      </div>
+      <Card className="overflow-hidden">
+        <div className={`flex items-center px-5 py-2.5 border-b ${border}`}>
+          <span className={`flex-1 text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Creator</span>
+          <span className={`w-40 text-right text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Daily sub target</span>
+        </div>
+        {visible.map((c, i) => {
+          const current = byCreator[c.id]?.daily_sub_target ?? 0
+          const isEditing = editing === c.id
+          return (
+            <div key={c.id} className={`flex items-center px-5 py-2.5 ${i > 0 ? `border-t ${border}` : ''}`}>
+              <div className="flex-1 flex items-center gap-2.5 min-w-0">
+                {c.avatar_url
+                  ? <img src={avatarSrc(c.avatar_url)} alt="" className="h-6 w-6 rounded-full object-cover shrink-0" />
+                  : <span className={`h-6 w-6 rounded-full flex items-center justify-center text-[10px] shrink-0 ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/50'}`}>{c.display_name.charAt(0)}</span>}
+                <p className={`text-[13px] truncate ${text1}`}>{c.display_name}</p>
+              </div>
+              <div className="w-40 flex justify-end items-center gap-2">
+                {isEditing ? (
+                  <>
+                    <input
+                      autoFocus
+                      type="number"
+                      min={0}
+                      value={value}
+                      onChange={e => setValue(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') save(c.id); if (e.key === 'Escape') setEditing(null) }}
+                      className={numberInputCls(isLight)}
+                    />
+                    <Button variant="primary" onClick={() => save(c.id)} loading={savingId === c.id}>Save</Button>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => { setEditing(c.id); setValue(String(current)) }}
+                    className={`text-[13px] tabular-nums px-3 py-1 rounded-lg transition-colors ${
+                      isLight ? 'text-black/70 hover:bg-black/[0.05]' : 'text-white/80 hover:bg-white/[0.06]'
                     }`}
                   >
-                    <td className={`px-4 py-2.5 text-[13px] ${isLight ? 'text-black/60' : 'text-white/60'}`}>{fmtDate(row.date)}</td>
-                    <td className="px-4 py-2.5 text-right"><EditableCell field="views" value={views} /></td>
-                    <td className="px-4 py-2.5 text-right"><EditableCell field="profile_views" value={pv} /></td>
-                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(viewsToProfile) : '—'}</td>
-                    <td className="px-4 py-2.5 text-right"><EditableCell field="link_clicks" value={lc} /></td>
-                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(viewsToClicks) : '—'}</td>
-                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{pv > 0 ? fmtPct(profileToClicks) : '—'}</td>
-                    <td className="px-4 py-2.5 text-right"><EditableCell field="new_subs" value={subs} highlight={isBelowTarget} /></td>
-                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{lc > 0 ? fmtPct(clicksToSubs) : '—'}</td>
-                    <td className={`px-3 py-2.5 text-right text-[12px] tabular-nums ${isLight ? 'text-black/35' : 'text-white/35'}`}>{views > 0 ? fmtPct(subsToViews) : '—'}</td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+                    {current || <span className={text3}>Set target</span>}
+                  </button>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </Card>
+    </>
   )
 }

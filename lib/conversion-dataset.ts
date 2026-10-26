@@ -116,16 +116,30 @@ export async function fetchConversionDataset(opts: {
   const from = (opts.from || ymdInTz(defFrom)).slice(0, 10)
   const to = (opts.to || today()).slice(0, 10)
 
-  const [creatorsRes, accountsRes, expsRes] = await Promise.all([
+  // Subscribers live on the creator layer now. The MCP tools still speak the
+  // per-account shape, so project each creator as a single account whose id IS
+  // the creator id (conversion_account_id === creator_id throughout).
+  const [creatorsRes, expsRes] = await Promise.all([
     supabase.from('creators').select('id, display_name, slug, of_handle, is_active'),
-    supabase.from('conversion_accounts').select('id, creator_id, handle, display_label, is_active'),
-    supabase
-      .from('conversion_expectations')
-      .select('conversion_account_id, creator_id, daily_sub_target'),
+    supabase.from('creator_expectations').select('creator_id, daily_sub_target'),
   ])
 
-  const metaErr = creatorsRes.error || accountsRes.error || expsRes.error
+  const metaErr = creatorsRes.error || expsRes.error
   if (metaErr) throw new Error(metaErr.message)
+
+  const accounts: DsAccount[] = (creatorsRes.data || []).map(c => ({
+    id: c.id,
+    creator_id: c.id,
+    handle: c.of_handle || c.slug,
+    display_label: null,
+    is_active: c.is_active,
+  })) as DsAccount[]
+
+  const expectations: DsExpectation[] = (expsRes.data || []).map(e => ({
+    conversion_account_id: e.creator_id,
+    creator_id: e.creator_id,
+    daily_sub_target: e.daily_sub_target,
+  })) as DsExpectation[]
 
   // Supabase caps a single response at 1000 rows — page through.
   const daily: DsDaily[] = []
@@ -134,14 +148,18 @@ export async function fetchConversionDataset(opts: {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     let q = supabase
-      .from('conversion_daily')
-      .select('conversion_account_id, creator_id, date, new_subs')
-      .not('conversion_account_id', 'is', null)
+      .from('creator_daily')
+      .select('creator_id, date, new_subs')
       .order('date', { ascending: true })
     if (!opts.all) q = q.gte('date', from).lte('date', to)
     const { data, error } = await q.range(offset, offset + PAGE - 1)
     if (error) throw new Error(error.message)
-    daily.push(...((data || []) as DsDaily[]))
+    daily.push(...((data || []).map(r => ({
+      conversion_account_id: r.creator_id,
+      creator_id: r.creator_id,
+      date: r.date,
+      new_subs: r.new_subs,
+    })) as DsDaily[]))
     if (!data || data.length < PAGE) break
     offset += PAGE
   }
@@ -150,8 +168,8 @@ export async function fetchConversionDataset(opts: {
     generated_at: new Date().toISOString(),
     range: opts.all ? { from: null, to: null } : { from, to },
     creators: (creatorsRes.data || []) as DsCreator[],
-    accounts: (accountsRes.data || []) as DsAccount[],
-    expectations: (expsRes.data || []) as DsExpectation[],
+    accounts,
+    expectations,
     daily,
   }
 }

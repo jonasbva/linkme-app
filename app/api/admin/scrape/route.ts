@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { requireUser, requireCreatorAccess, guardResponse } from '@/lib/auth'
-import { scrapeSingleInstagram, scrapeAndSaveAll } from '@/lib/scraper'
+import { scrapeAndSaveAll } from '@/lib/scraper'
 
 // POST /api/admin/scrape
 // Body: { social_account_id: string } — scrapes that one account
@@ -55,67 +55,10 @@ export async function POST(req: NextRequest) {
 
   if (fetchError) return NextResponse.json({ error: fetchError.message }, { status: 400 })
 
-  // Single account = use retry logic; multiple = use batched scraping
-  if (accounts.length === 1 && accounts[0].platform === 'instagram') {
-    const account = accounts[0]
-    try {
-      const metrics = await scrapeSingleInstagram(account.username)
-      const today = new Date().toISOString().split('T')[0]
-      const { data: snapshot, error: insertError } = await supabase
-        .from('social_snapshots')
-        .insert({
-          social_account_id: account.id,
-          followers: metrics.followers,
-          following: metrics.following,
-          post_count: metrics.post_count,
-          total_views: metrics.total_views,
-          total_likes: metrics.total_likes,
-          total_comments: metrics.total_comments,
-          raw_data: metrics.raw_data,
-          scrape_date: today,
-        })
-        .select()
-        .single()
-
-      if (insertError) {
-        return NextResponse.json({ results: [{ account_id: account.id, username: account.username, error: insertError.message }] })
-      }
-
-      // Upsert posts
-      const posts: any[] = metrics.raw_data?.latestPosts ?? []
-      for (const post of posts) {
-        if (!post.shortCode) continue
-        await supabase.from('social_posts').upsert({
-          social_account_id: account.id,
-          post_short_code: post.shortCode,
-          post_type: post.type ?? null,
-          caption: (post.caption ?? '').slice(0, 2000),
-          display_url: post.displayUrl ?? null,
-          post_timestamp: post.timestamp && typeof post.timestamp === 'number' && !isNaN(new Date(post.timestamp * 1000).getTime()) ? new Date(post.timestamp * 1000).toISOString() : null,
-          video_view_count: post.videoViewCount ?? 0,
-          likes_count: post.likesCount ?? 0,
-          comments_count: post.commentsCount ?? 0,
-          last_seen_at: new Date().toISOString(),
-          last_views: post.videoViewCount ?? 0,
-          last_likes: post.likesCount ?? 0,
-          last_comments: post.commentsCount ?? 0,
-        }, { onConflict: 'social_account_id,post_short_code' })
-      }
-
-      return NextResponse.json({ results: [{ account_id: account.id, username: account.username, snapshot }] })
-    } catch (err: any) {
-      return NextResponse.json({ results: [{
-        account_id: account.id,
-        username: account.username,
-        error: err.message,
-        hint: err.message.includes('private') ? 'Account may be private — verify the username is correct and public'
-            : err.message.includes('No data') ? 'No data returned — check if the Instagram handle exists'
-            : 'Scraping failed — try again or verify the username',
-      }] })
-    }
-  }
-
-  // Multiple accounts: use batched scraping
+  // One path for one account or many: the batch walk already records account
+  // status, caches avatars (including for restricted profiles) and saves posts.
+  // The old single-account branch retried three times with backoff, which just
+  // spent 45s re-confirming that a restricted profile is still restricted.
   const results = await scrapeAndSaveAll(accounts)
   return NextResponse.json({
     results: results.map(r => ({

@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   let accountsQuery = supabase
     .from('social_accounts')
-    .select('id, creator_id, platform, username, is_active, created_at, creators(display_name)')
+    .select('id, creator_id, platform, username, is_active, created_at, status, status_detail, status_checked_at, consecutive_failures, creators(display_name)')
     .order('created_at', { ascending: true })
 
   // Non-super-admins only see accounts for creators they can access.
@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
   const accountIds = (accounts || []).map((a: any) => a.id)
   const lastScrapedMap: Record<string, string> = {}
   const followersMap: Record<string, number | null> = {}
+  const linkMap: Record<string, { id: string; label: string; infloww_link_id: string | null }> = {}
 
   if (accountIds.length > 0) {
     // Fetch recent snapshots — one per account is enough
@@ -65,6 +66,23 @@ export async function GET(req: NextRequest) {
         }
       }
     }
+
+    // The OF tracking link each account carries in its bio. An account with no
+    // active link, or one not yet bound to Infloww, is dark to conversions.
+    const { data: links } = await supabase
+      .from('tracking_links')
+      .select('id, social_account_id, label, infloww_link_id')
+      .in('social_account_id', accountIds)
+      .eq('is_active', true)
+
+    for (const l of links || []) {
+      if (!l.social_account_id) continue
+      const current = linkMap[l.social_account_id]
+      // Prefer a link that is actually wired to Infloww.
+      if (!current || (!current.infloww_link_id && l.infloww_link_id)) {
+        linkMap[l.social_account_id] = { id: l.id, label: l.label, infloww_link_id: l.infloww_link_id }
+      }
+    }
   }
 
   const result = (accounts || []).map((a: any) => ({
@@ -77,14 +95,24 @@ export async function GET(req: NextRequest) {
     created_at: a.created_at,
     last_scraped: lastScrapedMap[a.id] || null,
     followers: followersMap[a.id] ?? null,
+    status: a.status || 'never_seen',
+    status_detail: a.status_detail || null,
+    status_checked_at: a.status_checked_at || null,
+    consecutive_failures: a.consecutive_failures ?? 0,
+    tracking_link: linkMap[a.id] || null,
   }))
 
   return NextResponse.json(result)
 }
 
 // POST /api/admin/social-accounts — add a social account to track
+//
+// Body: { creator_id, platform, username, tracking_link? }
+// tracking_link is the OF link that account carries in its bio. It is optional
+// so a handle can still be added before its link exists, but an account without
+// one is reported on the Overview until it is connected.
 export async function POST(req: NextRequest) {
-  const { creator_id, platform, username } = await req.json()
+  const { creator_id, platform, username, tracking_link } = await req.json()
 
   if (!creator_id || !platform || !username) {
     return NextResponse.json({ error: 'creator_id, platform, and username are required' }, { status: 400 })
@@ -94,14 +122,65 @@ export async function POST(req: NextRequest) {
   if (!gate.ok) return guardResponse(gate)
 
   const supabase = createServerSupabaseClient()
+  const handle = username.replace('@', '').trim()
   const { data, error } = await supabase
     .from('social_accounts')
-    .insert({ creator_id, platform, username: username.replace('@', '').trim() })
+    .insert({ creator_id, platform, username: handle })
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  return NextResponse.json(data)
+
+  let link = null
+  if (tracking_link && (tracking_link.infloww_link_id || tracking_link.url || tracking_link.label)) {
+    // Another account must not already claim this Infloww link.
+    if (tracking_link.infloww_link_id) {
+      const { data: taken } = await supabase
+        .from('tracking_links')
+        .select('id, label')
+        .eq('infloww_link_id', String(tracking_link.infloww_link_id))
+        .maybeSingle()
+      if (taken) {
+        return NextResponse.json({
+          account: data,
+          link: null,
+          warning: `@${handle} was added, but that Infloww link is already used by "${taken.label}".`,
+        })
+      }
+    }
+
+    const { count } = await supabase
+      .from('tracking_links')
+      .select('id', { count: 'exact', head: true })
+      .eq('creator_id', creator_id)
+
+    const { data: created, error: linkError } = await supabase
+      .from('tracking_links')
+      .insert({
+        creator_id,
+        social_account_id: data.id,
+        label: (tracking_link.label || `@${handle} bio`).trim(),
+        url: (tracking_link.url || '').trim() || null,
+        infloww_link_id: tracking_link.infloww_link_id ? String(tracking_link.infloww_link_id) : null,
+        infloww_link_name: tracking_link.infloww_link_name || null,
+        infloww_code: tracking_link.infloww_code || null,
+        infloww_synced_at: tracking_link.infloww_link_id ? new Date().toISOString() : null,
+        sort_order: count ?? 0,
+      })
+      .select()
+      .single()
+
+    if (linkError) {
+      return NextResponse.json({
+        account: data,
+        link: null,
+        warning: `@${handle} was added, but its tracking link could not be saved: ${linkError.message}`,
+      })
+    }
+    link = created
+  }
+
+  return NextResponse.json({ account: data, link })
 }
 
 // PATCH /api/admin/social-accounts — bulk update accounts

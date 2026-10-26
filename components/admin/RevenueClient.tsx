@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTheme } from './ThemeProvider'
 import DatePicker from './DateRangePicker'
+import SingleDatePicker from './DatePicker'
+import { avatarSrc } from '@/lib/avatar'
 
 // ─── Types ───────────────────────────────────────────────────────────
 interface CreatorRevenue {
@@ -659,8 +661,8 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
   const handleSort = (f: string) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('desc') } }
   const handleTrackSort = (f: string) => { if (trackSortField === f) setTrackSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setTrackSortField(f); setTrackSortDir('asc') } }
 
-  // Only show mapped creators (those linked to a LinkMe profile) in Revenue lists
-  // Split creators into linked (mapped to a LinkMe creator) and unlinked Infloww accounts
+  // Only show mapped creators (those linked to a creator) in Revenue lists
+  // Split creators into linked (mapped to a creator) and unlinked Infloww accounts
   const linkedCreators = useMemo(() => {
     if (!data?.creators) return []
     return data.creators.filter(c => c.supabase_creator_id !== null)
@@ -758,7 +760,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
       })
   }
 
-  // Unlinked Infloww creators (no LinkMe mapping). Surfaced in Revenue
+  // Unlinked Infloww creators (no creator mapping). Surfaced in Revenue
   // Tracking so nothing the API returns gets swallowed — per requirement
   // that any stat-producing creator shows up even if it's not wired into
   // the dashboard yet.
@@ -784,7 +786,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
     }`
 
   return (
-    <div className="max-w-7xl mx-auto px-6 py-8">
+    <div>
       {/* Toasts */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
 
@@ -905,13 +907,13 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                 </tr>
               </thead>
               <tbody>
-                {/* ── Linked Creators (mapped to a LinkMe profile) ── */}
+                {/* ── Linked Creators (mapped to a creator) ── */}
                 {sortedLinked.map(c => (
                   <tr key={c.infloww_id} className={`border-b ${tableBorder} ${tableRowHover}`}>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2.5">
                         {c.avatar_url
-                          ? <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                          ? <img src={avatarSrc(c.avatar_url)} alt="" className="w-7 h-7 rounded-full object-cover" />
                           : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/50'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
                         <span className={`font-medium ${text1}`}>{c.display_name || c.name}</span>
                       </div>
@@ -940,13 +942,13 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                   </tr>
                 )}
 
-                {/* ── Unlinked Infloww accounts (not mapped to any LinkMe creator) ── */}
+                {/* ── Unlinked Infloww accounts (not mapped to any creator) ── */}
                 {sortedUnlinked.map(c => (
                   <tr key={c.infloww_id} className={`border-b ${tableBorder} ${tableRowHover} ${isLight ? 'bg-black/[0.015]' : 'bg-white/[0.015]'}`}>
                     <td className="px-3 py-3">
                       <div className="flex items-center gap-2.5">
                         {c.avatar_url
-                          ? <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover opacity-60" />
+                          ? <img src={avatarSrc(c.avatar_url)} alt="" className="w-7 h-7 rounded-full object-cover opacity-60" />
                           : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
                         <span className={`font-medium ${text2}`}>{c.display_name || c.name}</span>
                         <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-900/30 text-amber-400'}`}>Unlinked</span>
@@ -1009,7 +1011,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                             <td className="px-3 py-3">
                               <div className="flex items-center gap-2">
                                 {c.avatar_url
-                                  ? <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                                  ? <img src={avatarSrc(c.avatar_url)} alt="" className="w-7 h-7 rounded-full object-cover" />
                                   : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/50'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
                                 <span className={`font-medium ${text1}`}>{c.display_name || c.name}</span>
                               </div>
@@ -1069,7 +1071,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                 <h2 className={`text-lg font-bold ${text1}`}>Unlinked Infloww Accounts</h2>
                 <span className={`text-sm ${text3}`}>{trackingUnlinked.length} creators</span>
                 <span className={`text-[10px] px-2 py-0.5 rounded-full ${isLight ? 'bg-amber-100 text-amber-700' : 'bg-amber-900/30 text-amber-400'}`}>
-                  Not mapped to a LinkMe profile
+                  Not mapped to a creator
                 </span>
               </div>
               <div className={`${card} rounded-xl overflow-x-auto`}>
@@ -1090,7 +1092,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-2">
                             {c.avatar_url
-                              ? <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover opacity-60" />
+                              ? <img src={avatarSrc(c.avatar_url)} alt="" className="w-7 h-7 rounded-full object-cover opacity-60" />
                               : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.06] text-white/30'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
                             <span className={`font-medium ${text2}`}>{c.display_name || c.name}</span>
                           </div>
@@ -1138,7 +1140,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-3">
                             {c.avatar_url
-                              ? <img src={c.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover" />
+                              ? <img src={avatarSrc(c.avatar_url)} alt="" className="w-7 h-7 rounded-full object-cover" />
                               : <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs ${isLight ? 'bg-black/[0.06] text-black/40' : 'bg-white/[0.08] text-white/50'}`}>{c.display_name?.charAt(0) || c.name?.charAt(0) || "?"}</div>}
                             <span className={`font-medium ${text1}`}>{c.display_name || c.name}</span>
                           </div>
@@ -1281,9 +1283,12 @@ function EmergencyDropdown({ creatorId, currentDate, onSave, isLight, inputCls }
   if (!creatorId) return <span className={isLight ? 'text-black/20' : 'text-white/20'}>—</span>
   return (
     <div className="flex items-center gap-1">
-      <input type="date" value={value}
-        onChange={e => { setValue(e.target.value); onSave(e.target.value || null) }}
-        className={`${inputCls} rounded px-2 py-1 text-xs outline-none w-32`} />
+      <SingleDatePicker
+        value={value}
+        onChange={v => { setValue(v); onSave(v || null) }}
+        isLight={isLight}
+        placeholder="Set date"
+      />
       {value && <button onClick={() => { setValue(''); onSave(null) }}
         className={`text-xs ${isLight ? 'text-black/30 hover:text-red-500' : 'text-white/30 hover:text-red-400'}`}>✕</button>}
     </div>

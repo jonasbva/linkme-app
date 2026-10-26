@@ -24,9 +24,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
 
   return (
     <ThemeProvider>
-      {/* Keep min-h-screen + bg-* + text-white on the root so the existing
-          [data-theme="light"] overrides in globals.css still repaint. */}
-      <div className="flex min-h-screen bg-[#060606] text-white">
+      {/* admin-shell paints the charcoal base + edge glows (globals.css); the
+          [data-theme="light"] overrides there repaint it for light mode. */}
+      <div className="admin-shell flex min-h-screen text-white">
         <Sidebar isSuperAdmin={user.is_super_admin} displayName={user.display_name} userPermissions={userPermissions} />
         <div className="flex-1 min-w-0 h-screen overflow-y-auto">
           <main className="max-w-7xl mx-auto px-6 py-8">

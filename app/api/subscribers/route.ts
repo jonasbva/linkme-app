@@ -9,9 +9,10 @@ import { verifySubscriberToken } from '@/lib/auth'
  * Query: ?from=YYYY-MM-DD&to=YYYY-MM-DD   (defaults: last 180 days)
  *        ?all=1                            (ignore the window, return every daily row)
  *
- * Returns the raw conversion working set (creators, accounts, expectations, daily
- * rows). All aggregation — totals, streaks, missing-data — is done client-side in
- * the MCP server, so tools can evolve without redeploying the app.
+ * Subscribers now live on the creator layer — one row per creator per day — but
+ * the MCP server still speaks the older per-account shape. Rather than redeploy
+ * it, we project each creator as a single account whose id IS the creator id, so
+ * `conversion_account_id === creator_id` throughout. Aggregation stays in the MCP.
  */
 
 export const dynamic = 'force-dynamic'
@@ -34,14 +35,30 @@ export async function GET(req: NextRequest) {
   const from = (searchParams.get('from') || ymd(defFrom)).slice(0, 10)
   const to = (searchParams.get('to') || ymd(new Date())).slice(0, 10)
 
-  const [creatorsRes, accountsRes, expsRes] = await Promise.all([
+  const [creatorsRes, expsRes] = await Promise.all([
     supabase.from('creators').select('id, display_name, slug, of_handle, is_active'),
-    supabase.from('conversion_accounts').select('id, creator_id, handle, display_label, is_active'),
-    supabase.from('conversion_expectations').select('conversion_account_id, creator_id, daily_sub_target'),
+    supabase.from('creator_expectations').select('creator_id, daily_sub_target'),
   ])
 
-  const metaErr = creatorsRes.error || accountsRes.error || expsRes.error
+  const metaErr = creatorsRes.error || expsRes.error
   if (metaErr) return NextResponse.json({ error: metaErr.message }, { status: 500 })
+
+  const creators = creatorsRes.data || []
+
+  // One synthetic account per creator, keyed by the creator id.
+  const accounts = creators.map(c => ({
+    id: c.id,
+    creator_id: c.id,
+    handle: c.of_handle || c.slug,
+    display_label: null,
+    is_active: c.is_active,
+  }))
+
+  const expectations = (expsRes.data || []).map(e => ({
+    conversion_account_id: e.creator_id,
+    creator_id: e.creator_id,
+    daily_sub_target: e.daily_sub_target,
+  }))
 
   // Supabase caps a single response at 1000 rows — page through.
   const daily: Array<Record<string, unknown>> = []
@@ -50,14 +67,20 @@ export async function GET(req: NextRequest) {
   // eslint-disable-next-line no-constant-condition
   while (true) {
     let q = supabase
-      .from('conversion_daily')
-      .select('conversion_account_id, creator_id, date, new_subs')
-      .not('conversion_account_id', 'is', null)
+      .from('creator_daily')
+      .select('creator_id, date, new_subs')
       .order('date', { ascending: true })
     if (!all) q = q.gte('date', from).lte('date', to)
     const { data, error } = await q.range(offset, offset + PAGE - 1)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-    daily.push(...(data || []))
+    daily.push(
+      ...(data || []).map(r => ({
+        conversion_account_id: r.creator_id,
+        creator_id: r.creator_id,
+        date: r.date,
+        new_subs: r.new_subs,
+      })),
+    )
     if (!data || data.length < PAGE) break
     offset += PAGE
   }
@@ -65,9 +88,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     generated_at: new Date().toISOString(),
     range: all ? { from: null, to: null } : { from, to },
-    creators: creatorsRes.data || [],
-    accounts: accountsRes.data || [],
-    expectations: expsRes.data || [],
+    creators,
+    accounts,
+    expectations,
     daily,
   })
 }

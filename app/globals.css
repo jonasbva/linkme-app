@@ -253,3 +253,48 @@ input:focus, select:focus, textarea:focus {
 [data-theme="light"] input[type="color"] {
   border-color: rgba(0,0,0,0.12) !important;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Admin shell — charcoal base with a magenta glow at the left edge and a
+   violet one at the right, matching the reference. Fixed so it stays put
+   while the main column scrolls; pointer-events:none keeps it inert.
+   ───────────────────────────────────────────────────────────────────────── */
+.admin-shell {
+  position: relative;
+  background-color: #0b0a0b;
+}
+.admin-shell::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(62% 52% at 0% 42%, rgba(236, 72, 153, 0.13), transparent 68%),
+    radial-gradient(58% 48% at 100% 38%, rgba(139, 92, 246, 0.11), transparent 68%),
+    radial-gradient(90% 70% at 50% 0%, rgba(255, 255, 255, 0.025), transparent 60%);
+}
+.admin-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+[data-theme="light"] .admin-shell {
+  background-color: #fbfafb;
+}
+[data-theme="light"] .admin-shell::before {
+  background:
+    radial-gradient(62% 52% at 0% 42%, rgba(236, 72, 153, 0.055), transparent 68%),
+    radial-gradient(58% 48% at 100% 38%, rgba(139, 92, 246, 0.05), transparent 68%);
+}
+
+/* Sidebar sits on the glow rather than hiding it. */
+.admin-sidebar {
+  background-color: rgba(10, 9, 10, 0.72);
+  backdrop-filter: blur(14px);
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+[data-theme="light"] .admin-sidebar {
+  background-color: rgba(255, 255, 255, 0.78);
+  border-right-color: rgba(0, 0, 0, 0.07);
+}

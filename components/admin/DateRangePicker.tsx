@@ -297,7 +297,7 @@ export default function DateRangePicker({ dateStart, dateEnd, dateLabel, onApply
     : 'hover:bg-white/[0.06] text-white/70'
   const dayOutside = isLight ? 'text-black/15' : 'text-white/15'
   const dayInRange = isLight ? 'bg-blue-500/10' : 'bg-blue-500/10'
-  const daySelected = 'bg-blue-500 text-white hover:bg-blue-600'
+  const daySelected = 'bg-pink-600 text-white hover:bg-pink-500'
   const dayToday = isLight ? 'ring-1 ring-blue-400/40' : 'ring-1 ring-blue-400/30'
   const timeInput = isLight
     ? 'bg-white border border-black/10 text-black/80 focus:border-black/30'

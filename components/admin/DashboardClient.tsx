@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import {
-  Users, TrendingUp, DollarSign, UserPlus, Globe, BarChart3, RefreshCw,
+  Users, TrendingUp, DollarSign, UserPlus, BarChart3, RefreshCw,
   AlertTriangle, Link2, ChevronRight, CheckCircle2,
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
@@ -26,6 +26,9 @@ interface Props {
   targetMissesToday: number
   staleCreators: number
   unmappedCount: number
+  restrictedAccounts: number
+  removedAccounts: number
+  accountsWithoutLink: number
   displayName?: string
   isSuperAdmin?: boolean
 }
@@ -45,7 +48,7 @@ export default function DashboardClient(props: Props) {
     totalFollowers, followerGrowth7d, totalEngagement, engagementGrowth7d,
     activeCreators, creatorsWithSocial, newSubs7d, newSubsToday, revenueToday,
     emergencies, targetMissesToday, staleCreators, unmappedCount,
-    displayName, isSuperAdmin,
+    restrictedAccounts, removedAccounts, accountsWithoutLink, displayName, isSuperAdmin,
   } = props
 
   const router = useRouter()
@@ -115,6 +118,15 @@ export default function DashboardClient(props: Props) {
   if (unmappedCount > 0) {
     attention.push({ key: 'unmapped', severity: 'amber', icon: Link2, label: `${unmappedCount} unmapped Infloww creator${unmappedCount > 1 ? 's' : ''}`, detail: 'Link them to a profile', href: '/admin/creators' })
   }
+  if (removedAccounts > 0) {
+    attention.push({ key: 'removed-accounts', severity: 'red', icon: AlertTriangle, label: `${removedAccounts} IG account${removedAccounts > 1 ? 's are' : ' is'} gone from Instagram`, detail: 'Removed or banned — they need replacing', href: '/admin/social-accounts' })
+  }
+  if (restrictedAccounts > 0) {
+    attention.push({ key: 'restricted-accounts', severity: 'amber', icon: AlertTriangle, label: `${restrictedAccounts} IG account${restrictedAccounts > 1 ? 's are' : ' is'} restricted`, detail: 'Hidden from logged-out visitors — and from your traffic', href: '/admin/social-accounts' })
+  }
+  if (accountsWithoutLink > 0) {
+    attention.push({ key: 'no-tracking-link', severity: 'amber', icon: Link2, label: `${accountsWithoutLink} IG account${accountsWithoutLink > 1 ? 's have' : ' has'} no OF tracking link`, detail: 'Their clicks and subs cannot be attributed — connect a link', href: '/admin/social-accounts' })
+  }
   if (staleCreators > 0) {
     attention.push({ key: 'stale', severity: 'neutral', icon: RefreshCw, label: `${staleCreators} creator${staleCreators > 1 ? 's' : ''} not scraped in 3+ days`, detail: 'Run a scrape to refresh', href: '/admin/creators' })
   }
@@ -129,7 +141,6 @@ export default function DashboardClient(props: Props) {
     { label: 'Conversions', icon: TrendingUp, href: '/admin/conversions' },
     { label: 'Revenue', icon: DollarSign, href: '/admin/revenue' },
     ...(isSuperAdmin ? [{ label: 'Social Accounts', icon: BarChart3, href: '/admin/social-accounts' }] : []),
-    { label: 'Domains', icon: Globe, href: '/admin/domains' },
   ]
 
   return (

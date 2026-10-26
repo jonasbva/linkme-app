@@ -9,6 +9,8 @@ interface DatePickerProps {
   isLight: boolean
   /** If true, days after today can't be selected (default true). */
   disableFuture?: boolean
+  /** Trigger label when `value` is empty (e.g. an optional date). */
+  placeholder?: string
 }
 
 function pad(n: number) { return String(n).padStart(2, '0') }
@@ -22,11 +24,13 @@ function isSameDay(a: Date, b: Date) {
 }
 function startOfDay(d: Date) { const r = new Date(d); r.setHours(0, 0, 0, 0); return r }
 
-export default function DatePicker({ value, onChange, isLight, disableFuture = true }: DatePickerProps) {
+export default function DatePicker({ value, onChange, isLight, disableFuture = true, placeholder }: DatePickerProps) {
   const [show, setShow] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
-  const selected = useMemo(() => parseYMD(value), [value])
+  // An empty value means "not set"; fall back to today so the calendar still
+  // opens on a sensible month, but label the trigger with the placeholder.
+  const selected = useMemo(() => (value ? parseYMD(value) : startOfDay(new Date())), [value])
   const [viewYear, setViewYear] = useState(selected.getFullYear())
   const [viewMonth, setViewMonth] = useState(selected.getMonth())
 
@@ -61,7 +65,9 @@ export default function DatePicker({ value, onChange, isLight, disableFuture = t
   }, [viewYear, viewMonth])
 
   const monthLabel = new Date(viewYear, viewMonth).toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
-  const triggerLabel = selected.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+  const triggerLabel = value
+    ? selected.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+    : placeholder || 'Select date'
 
   function prevMonth() {
     if (viewMonth === 0) { setViewMonth(11); setViewYear(y => y - 1) } else setViewMonth(m => m - 1)
@@ -90,7 +96,7 @@ export default function DatePicker({ value, onChange, isLight, disableFuture = t
   const divider = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
   const dayBase = isLight ? 'hover:bg-black/[0.06] text-black/70' : 'hover:bg-white/[0.06] text-white/70'
   const dayOutside = isLight ? 'text-black/15' : 'text-white/15'
-  const daySelected = 'bg-blue-500 text-white hover:bg-blue-600'
+  const daySelected = 'bg-pink-600 text-white hover:bg-pink-500'
   const dayToday = isLight ? 'ring-1 ring-blue-400/40' : 'ring-1 ring-blue-400/30'
   const presetBtn = isLight ? 'text-black/60 hover:bg-black/[0.05] hover:text-black/90' : 'text-white/50 hover:bg-white/[0.06] hover:text-white/90'
 

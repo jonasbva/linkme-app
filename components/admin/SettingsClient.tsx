@@ -30,8 +30,6 @@ interface Creator {
   slug: string
   display_name: string
   avatar_url?: string
-  custom_domain?: string
-  linkme_enabled?: boolean
   of_handle?: string | null
   is_active: boolean
 }
@@ -86,10 +84,6 @@ export default function SettingsClient({
   const [ofHandleDraft, setOfHandleDraft] = useState<string>(creator.of_handle || '')
   const [ofHandleSaving, setOfHandleSaving] = useState(false)
 
-  // ─── LinkMe toggle ────────────────────────────────────────────
-  const [linkmeEnabled, setLinkmeEnabled] = useState(!!creator.linkme_enabled)
-  const [linkmeSaving, setLinkmeSaving] = useState(false)
-
   // ─── Conversion Accounts (N per creator) ──────────────────────
   const [conversionAccounts, setConversionAccounts] = useState<ConversionAccount[]>(initialConversionAccounts)
   const [newConvHandle, setNewConvHandle] = useState('')
@@ -132,28 +126,6 @@ export default function SettingsClient({
       showToast(e.message || 'Failed to save handle', 'error')
     } finally {
       setOfHandleSaving(false)
-    }
-  }
-
-  // ─── LinkMe toggle ────────────────────────────────────────────
-  async function toggleLinkMe() {
-    const next = !linkmeEnabled
-    setLinkmeSaving(true)
-    setLinkmeEnabled(next)
-    try {
-      const res = await fetch(`/api/admin/creators/${creator.id}/linkme-enabled`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ linkme_enabled: next }),
-      })
-      if (!res.ok) throw new Error('failed')
-      showToast(`LinkMe ${next ? 'enabled' : 'disabled'}`, 'success')
-      router.refresh()
-    } catch {
-      setLinkmeEnabled(!next)
-      showToast('Failed to update LinkMe setting', 'error')
-    } finally {
-      setLinkmeSaving(false)
     }
   }
 
@@ -304,12 +276,12 @@ export default function SettingsClient({
             Social & Analytics
           </a>
           <a
-            href={`/admin/creators/${creator.id}/edit`}
+            href={`/admin/creators/${creator.id}/links`}
             className={`px-4 py-1.5 text-[12px] border rounded-lg transition-all duration-200 ${
               isLight ? 'text-black/50 border-black/[0.08] hover:bg-black/[0.05]' : 'text-white/50 border-white/[0.08] hover:bg-white/[0.05]'
             }`}
           >
-            LinkMe Page
+            Links
           </a>
           <a
             href={`/admin/conversions?creator=${creator.id}`}
@@ -592,43 +564,6 @@ export default function SettingsClient({
               )}
             </>
           )}
-        </div>
-      </section>
-
-      {/* ─── LinkMe App Access ─── */}
-      <section className={`rounded-xl border ${cardCls} overflow-hidden`}>
-        <div className={`px-5 py-4 border-b ${isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'}`}>
-          <h2 className={`text-[13px] font-semibold ${textPrimary}`}>LinkMe App</h2>
-          <p className={`text-[11px] mt-0.5 ${textTertiary}`}>
-            Controls whether this creator has a public LinkMe page and link routing enabled.
-          </p>
-        </div>
-        <div className="px-5 py-4 flex items-center justify-between">
-          <div>
-            <p className={`text-[13px] font-medium ${textPrimary}`}>
-              LinkMe {linkmeEnabled ? 'enabled' : 'disabled'}
-            </p>
-            <p className={`text-[11px] mt-0.5 ${textTertiary}`}>
-              {linkmeEnabled
-                ? `Active at /${creator.slug}${creator.custom_domain ? ` · ${creator.custom_domain}` : ''}`
-                : 'Public page and short-link routing are off.'}
-            </p>
-          </div>
-          <button
-            onClick={toggleLinkMe}
-            disabled={linkmeSaving}
-            className={`w-11 h-6 rounded-full transition-colors relative disabled:opacity-50 ${
-              linkmeEnabled
-                ? isLight ? 'bg-black/85' : 'bg-white/85'
-                : isLight ? 'bg-black/10' : 'bg-white/10'
-            }`}
-          >
-            <div className={`w-5 h-5 rounded-full absolute top-[2px] transition-all ${
-              linkmeEnabled
-                ? isLight ? 'left-[22px] bg-white' : 'left-[22px] bg-black'
-                : isLight ? 'left-[2px] bg-black/40' : 'left-[2px] bg-white/40'
-            }`} />
-          </button>
         </div>
       </section>
 

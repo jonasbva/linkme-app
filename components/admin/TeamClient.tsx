@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useTheme } from './ThemeProvider'
+import { avatarSrc } from '@/lib/avatar'
 
 interface Creator {
   id: string
@@ -553,7 +554,7 @@ export default function TeamClient() {
                         />
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           {creator.avatar_url ? (
-                            <img src={creator.avatar_url} alt="" className="w-6 h-6 rounded-full object-cover" />
+                            <img src={avatarSrc(creator.avatar_url)} alt="" className="w-6 h-6 rounded-full object-cover" />
                           ) : (
                             <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-medium ${
                               isLight ? 'bg-black/[0.06] text-black/30' : 'bg-white/[0.08] text-white/30'
