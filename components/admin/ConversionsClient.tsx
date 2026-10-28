@@ -8,6 +8,7 @@ import { Card, Button } from './ui'
 import DateRangePicker from './DateRangePicker'
 import DatePicker from './DatePicker'
 import { avatarSrc } from '@/lib/avatar'
+import { savedRows } from '@/lib/conversion-save'
 
 // ── Types ───────────────────────────────────────────────────────────────────
 interface Creator {
@@ -64,6 +65,12 @@ function fmt(n: number): string {
 function fmtDate(iso: string): string {
   const d = new Date(iso + 'T00:00:00')
   return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+}
+
+function SaveFeedback({ saved, error }: { saved: boolean; error: string | null }) {
+  if (error) return <p role="alert" className="mb-4 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-500">{error}</p>
+  if (saved) return <p role="status" className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-500">Changes saved successfully.</p>
+  return null
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -254,6 +261,7 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
   const [inputs, setInputs] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const targetByCreator = useMemo(
     () => Object.fromEntries(expectations.map(e => [e.creator_id, e.daily_sub_target])),
@@ -265,8 +273,9 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
     const existing: Record<string, string> = {}
     creatorDaily.filter(r => r.date === date).forEach(r => { existing[r.creator_id] = String(r.new_subs) })
     setInputs(existing)
-    setSaved(false)
   }, [date, creatorDaily])
+
+  useEffect(() => { setSaved(false); setSaveError(null) }, [date])
 
   const visible = creators.filter(c =>
     !search.trim() || c.display_name.toLowerCase().includes(search.toLowerCase()),
@@ -276,6 +285,8 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
 
   async function saveAll() {
     setSaving(true)
+    setSaved(false)
+    setSaveError(null)
     try {
       const entries = creators
         .filter(c => inputs[c.id] !== undefined && inputs[c.id] !== '')
@@ -285,14 +296,14 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_daily_subs', date, entries }),
       })
-      if (!res.ok) throw new Error('save failed')
-      const rows: CreatorDailyRow[] = await res.json()
+      const rows = await savedRows<CreatorDailyRow>(res)
       setCreatorDaily(prev => {
         const without = prev.filter(r => !(r.date === date && rows.some(n => n.creator_id === r.creator_id)))
         return [...rows, ...without]
       })
       setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
+    } catch (error) {
+      setSaveError(error instanceof TypeError ? 'Connection lost. Please check your internet and try again. Your inputs are still here.' : error instanceof Error ? error.message : 'Could not save. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -303,7 +314,7 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
   const border = isLight ? 'border-black/[0.06]' : 'border-white/[0.06]'
 
   return (
-    <>
+    <fieldset disabled={saving} className="min-w-0">
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <DateStepper date={date} onChange={setDate} isLight={isLight} />
         <div className="flex items-center gap-2">
@@ -314,6 +325,7 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
         </div>
       </div>
 
+      <SaveFeedback saved={saved} error={saveError} />
       <Card className="overflow-hidden">
         <div className={`flex items-center px-5 py-2.5 border-b ${border}`}>
           <span className={`flex-1 text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Creator</span>
@@ -342,7 +354,8 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
                   type="number"
                   min={0}
                   value={inputs[c.id] ?? ''}
-                  onChange={e => setInputs(p => ({ ...p, [c.id]: e.target.value }))}
+                  disabled={saving}
+                  onChange={e => { setSaved(false); setSaveError(null); setInputs(p => ({ ...p, [c.id]: e.target.value })) }}
                   placeholder="0"
                   className={`${numberInputCls(isLight)} ${hit ? 'border-emerald-500/40' : ''}`}
                 />
@@ -356,7 +369,7 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
           <span className="w-28 text-right text-[13px] font-semibold tabular-nums text-pink-500">{fmt(total)}</span>
         </div>
       </Card>
-    </>
+    </fieldset>
   )
 }
 
@@ -373,6 +386,7 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
   const [inputs, setInputs] = useState<Record<string, { views: string; profile_views: string; link_clicks: string }>>({})
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const creatorById = useMemo(() => Object.fromEntries(creators.map(c => [c.id, c])), [creators])
 
@@ -386,8 +400,9 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
       }
     })
     setInputs(existing)
-    setSaved(false)
   }, [date, linkDaily])
+
+  useEffect(() => { setSaved(false); setSaveError(null) }, [date])
 
   const visible = trackingLinks.filter(l => {
     if (!search.trim()) return true
@@ -409,6 +424,8 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
   }, [visible, creatorById])
 
   function setField(linkId: string, field: 'views' | 'profile_views' | 'link_clicks', value: string) {
+    setSaved(false)
+    setSaveError(null)
     setInputs(p => {
       const current = p[linkId] ?? { views: '', profile_views: '', link_clicks: '' }
       return { ...p, [linkId]: { ...current, [field]: value } }
@@ -417,6 +434,8 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
 
   async function saveAll() {
     setSaving(true)
+    setSaved(false)
+    setSaveError(null)
     try {
       const entries = Object.entries(inputs)
         .filter(([, v]) => v.views !== '' || v.profile_views !== '' || v.link_clicks !== '')
@@ -431,14 +450,14 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_link_daily', date, entries }),
       })
-      if (!res.ok) throw new Error('save failed')
-      const rows: LinkDailyRow[] = await res.json()
+      const rows = await savedRows<LinkDailyRow>(res)
       setLinkDaily(prev => {
         const without = prev.filter(r => !(r.date === date && rows.some(n => n.tracking_link_id === r.tracking_link_id)))
         return [...rows, ...without]
       })
       setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
+    } catch (error) {
+      setSaveError(error instanceof TypeError ? 'Connection lost. Please check your internet and try again. Your inputs are still here.' : error instanceof Error ? error.message : 'Could not save. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -469,7 +488,7 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
   }
 
   return (
-    <>
+    <fieldset disabled={saving} className="min-w-0">
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
         <DateStepper date={date} onChange={setDate} isLight={isLight} />
         <div className="flex items-center gap-2">
@@ -480,6 +499,7 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
         </div>
       </div>
 
+      <SaveFeedback saved={saved} error={saveError} />
       <Card className="overflow-hidden">
         <div className={`flex items-center px-5 py-2.5 border-b ${border}`}>
           <span className={`flex-1 text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Link</span>
@@ -526,7 +546,7 @@ function LinkTrafficTab({ creators, trackingLinks, linkDaily, setLinkDaily, isLi
           <span className="w-28 text-right text-[13px] font-semibold tabular-nums text-pink-500">{fmt(totals.link_clicks)}</span>
         </div>
       </Card>
-    </>
+    </fieldset>
   )
 }
 
@@ -702,6 +722,8 @@ function TargetsTab({ creators, expectations, setExpectations, isLight }: {
   const [editing, setEditing] = useState<string | null>(null)
   const [value, setValue] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
+  const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const byCreator = useMemo(
     () => Object.fromEntries(expectations.map(e => [e.creator_id, e])),
@@ -710,19 +732,23 @@ function TargetsTab({ creators, expectations, setExpectations, isLight }: {
 
   async function save(creatorId: string) {
     setSavingId(creatorId)
+    setSaved(false)
+    setSaveError(null)
     try {
       const res = await fetch('/api/admin/conversions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'set_expectation', creator_id: creatorId, daily_sub_target: parseInt(value, 10) || 0 }),
       })
-      if (!res.ok) throw new Error('save failed')
-      const [row]: Expectation[] = await res.json()
+      const [row] = await savedRows<Expectation>(res)
       setExpectations(prev => {
         const without = prev.filter(e => e.creator_id !== creatorId)
         return row ? [...without, row] : without
       })
       setEditing(null)
+      setSaved(true)
+    } catch (error) {
+      setSaveError(error instanceof TypeError ? 'Connection lost. Please check your internet and try again.' : error instanceof Error ? error.message : 'Could not save. Please try again.')
     } finally {
       setSavingId(null)
     }
@@ -739,6 +765,7 @@ function TargetsTab({ creators, expectations, setExpectations, isLight }: {
       <div className="flex justify-end mb-4">
         <SearchBox value={search} onChange={setSearch} placeholder="Search creators…" isLight={isLight} />
       </div>
+      <SaveFeedback saved={saved} error={saveError} />
       <Card className="overflow-hidden">
         <div className={`flex items-center px-5 py-2.5 border-b ${border}`}>
           <span className={`flex-1 text-[10px] uppercase tracking-wider font-semibold ${text3}`}>Creator</span>
