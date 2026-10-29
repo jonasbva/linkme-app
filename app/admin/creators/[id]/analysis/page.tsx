@@ -1,5 +1,5 @@
 import { createServerSupabaseClient } from '@/lib/supabase'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import SocialClient from '@/components/admin/SocialClient'
 import { canViewCreator } from '@/lib/auth'
 
@@ -10,6 +10,8 @@ interface Props {
 const WINDOW_DAYS = 30
 
 export default async function CreatorAnalysisPage({ params }: Props) {
+  // Recover the old broken Add creator URL, including already-open tabs.
+  if (params.id === 'new') redirect('/admin/creators/new')
   if (!(await canViewCreator(params.id))) notFound()
 
   const supabase = createServerSupabaseClient()
