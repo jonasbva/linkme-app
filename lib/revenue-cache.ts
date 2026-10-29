@@ -101,20 +101,12 @@ function calculateBreakdown(transactions: InflowwTransaction[]) {
 
 // ─── Cache key resolution (must match the admin cache route) ────────
 const LIVE_WINDOW_MS = 2 * 60 * 1000 // 2 minutes
-const LIVE_BUCKET_MS = 60 * 1000     // 1 minute
-
-function floorToMinute(ms: number): number {
-  return Math.floor(ms / LIVE_BUCKET_MS) * LIVE_BUCKET_MS
-}
-
 export function isLiveRange(toMs: number, nowMs: number): boolean {
   return Math.abs(nowMs - toMs) <= LIVE_WINDOW_MS
 }
 
-export function buildCacheKey(fromMs: number, toMs: number, nowMs: number): string {
-  if (isLiveRange(toMs, nowMs)) {
-    return `live:${fromMs}-${floorToMinute(toMs)}`
-  }
+export function buildCacheKey(fromMs: number, toMs: number, _nowMs: number): string {
+  // A range must keep its identity even when a slow refresh crosses the live window.
   return `rng:${fromMs}-${toMs}`
 }
 
@@ -222,7 +214,7 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
     // Fetch Supabase creator profiles for display_name + avatar
     const { data: supabaseCreators } = await supabase
       .from('creators')
-      .select('id, slug, display_name, avatar_url')
+      .select('id, slug, display_name, avatar_url, of_handle')
 
     // Build infloww_id -> supabase creator mapping
     const { data: creatorMappings } = await supabase
@@ -238,7 +230,7 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
     const creatorBySlug: Record<string, any> = {}
     for (const sc of supabaseCreators || []) {
       if ((sc as any).slug) creatorBySlug[(sc as any).slug.toLowerCase()] = sc
-      if ((sc as any).display_name) creatorBySlug[(sc as any).display_name.toLowerCase()] = sc
+      if (sc.of_handle) creatorBySlug[sc.of_handle.toLowerCase()] = sc
     }
 
     console.log(`[revenue-cache] Fetching transactions for ${creators.length} creators...`)
@@ -254,7 +246,7 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
 
       const at = (t: InflowwTransaction) => Number(t.createdTime)
       const periodTransactions = allTransactions.filter((t) => at(t) >= Number(startTime))
-      const transactions14d = allTransactions.filter((t) => at(t) >= Number(startTime14d))
+      const transactions14d = allTransactions.filter((t) => at(t) >= Number(startTime14d) && at(t) < fromMs)
 
       const breakdown = calculateBreakdown(periodTransactions)
       const newSubs14d = transactions14d.filter((t) => t.type === 'Subscription')
@@ -275,7 +267,7 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
       let sbCreator = sbCreatorId ? (supabaseCreators || []).find((sc: any) => sc.id === sbCreatorId) : null
       // Fallback: match by username or name if no explicit mapping
       if (!sbCreator) {
-        sbCreator = creatorBySlug[creator.userName?.toLowerCase()] || creatorBySlug[creator.name?.toLowerCase()] || null
+        sbCreator = creatorBySlug[creator.userName?.toLowerCase()] || null
       }
 
       return {
@@ -284,7 +276,7 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
         userName: creator.userName,
         display_name: (sbCreator as any)?.display_name || creator.name,
         avatar_url: (sbCreator as any)?.avatar_url || null,
-        supabase_creator_id: sbCreatorId,
+        supabase_creator_id: sbCreator?.id || null,
         totalRevenue: breakdown.totalNet,
         totalGross: breakdown.totalGross,
         subscriptionRevenue: breakdown.subscriptionNet,
@@ -360,7 +352,9 @@ export async function rebuildRevenueCache(fromMs: number, toMs: number): Promise
         )
       )
     }
-    await Promise.all(upserts)
+    const writeResults = await Promise.all(upserts)
+    const failedWrite = writeResults.find(result => result.error)
+    if (failedWrite?.error) throw new Error(`Could not save revenue data: ${failedWrite.error.message}`)
 
     console.log(`[revenue-cache] Cache updated (${rangeKey}). Total revenue: $${totals.totalTurnover}`)
     return {

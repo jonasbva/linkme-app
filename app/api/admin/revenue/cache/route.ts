@@ -1,29 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { requireUser, guardResponse } from '@/lib/auth'
-import { rebuildRevenueCache, resolveRevenueRange } from '@/lib/revenue-cache'
+import { rebuildRevenueCache, resolveRevenueRange, buildCacheKey } from '@/lib/revenue-cache'
 
-// ─── Cache key logic ────────────────────────────────────────────────
-// Historical: rng:${fromMs}-${toMs}
-// Live  (end within 2 min of now): live:${fromMs}-${toBucketedMs}  (to floored to minute)
-//
-// Backward-compat keys still supported: 'today' and 'YYYY-MM-DD'
+// Stable range keys are shared with the rebuild; freshness is tracked separately.
+export const maxDuration = 300
+
 const LIVE_WINDOW_MS = 2 * 60 * 1000
-const LIVE_BUCKET_MS = 60 * 1000
 const LIVE_STALE_MS = 10 * 60 * 1000 // auto-rebuild live cache if older than this
-
-function floorToMinute(ms: number): number {
-  return Math.floor(ms / LIVE_BUCKET_MS) * LIVE_BUCKET_MS
-}
 
 function isLiveRange(toMs: number, nowMs: number): boolean {
   return Math.abs(nowMs - toMs) <= LIVE_WINDOW_MS
 }
 
-function buildCacheKey(fromMs: number, toMs: number, nowMs: number): string {
-  if (isLiveRange(toMs, nowMs)) return `live:${fromMs}-${floorToMinute(toMs)}`
-  return `rng:${fromMs}-${toMs}`
-}
 
 function parseMaybeMs(v: string | null): number | null {
   if (!v) return null
@@ -81,16 +70,27 @@ export async function GET(req: NextRequest) {
 
   const supabase = createServerSupabaseClient()
 
-  const readCache = async () => {
+  const readCache = async (key = resolved.cacheKey) => {
     const { data } = await supabase
       .from('revenue_cache')
       .select('data, fetched_at')
-      .eq('cache_key', resolved.cacheKey)
+      .eq('cache_key', key)
       .single()
     return data
   }
 
   let cached = await readCache()
+  // Reuse a recent live snapshot for the same start instead of pulling the
+  // agency's entire transaction history every time the clock advances a minute.
+  if (!cached && resolved.isLive) {
+    const { data: recent } = await supabase.from('revenue_cache').select('data, fetched_at')
+      .gte('fetched_at', new Date(Date.now() - LIVE_STALE_MS).toISOString())
+      .order('fetched_at', { ascending: false }).limit(30)
+    cached = (recent || []).find(row => row.data?.period?.fromMs === resolved.fromMs
+      && row.data?.period?.toMs <= resolved.toMs
+      && resolved.toMs - row.data.period.toMs <= LIVE_STALE_MS) || null
+  }
+
 
   const nowMs = Date.now()
   const cachedAgeMs = cached?.fetched_at ? nowMs - new Date(cached.fetched_at).getTime() : Infinity
@@ -100,7 +100,8 @@ export async function GET(req: NextRequest) {
     // Rebuild in-process (no internal HTTP hop / shared secret).
     const rebuild = await rebuildRevenueCache(resolved.fromMs, resolved.toMs)
     if (rebuild.ok) {
-      cached = await readCache()
+      if ('skipped' in rebuild && !cached) return NextResponse.json({ error: 'Revenue fetching is disabled in Settings.' }, { status: 409 })
+      if ('cacheKey' in rebuild) cached = await readCache(rebuild.cacheKey)
     } else if (!cached) {
       return NextResponse.json(
         { error: rebuild.error, totals: null, fetchedAt: null },
@@ -135,5 +136,9 @@ export async function POST(req: NextRequest) {
   if (!result.ok) {
     return NextResponse.json({ error: result.error }, { status: result.status })
   }
-  return NextResponse.json(result)
+  if ('skipped' in result) return NextResponse.json({ error: 'Revenue fetching is disabled in Settings.' }, { status: 409 })
+  const { data, error } = await createServerSupabaseClient().from('revenue_cache')
+    .select('data, fetched_at').eq('cache_key', result.cacheKey).single()
+  if (error || !data) return NextResponse.json({ error: 'Revenue was fetched but could not be loaded. Please try again.' }, { status: 502 })
+  return NextResponse.json({ ...data.data, fetchedAt: data.fetched_at, cacheKey: result.cacheKey })
 }

@@ -40,6 +40,7 @@ interface CreatorRevenue {
 }
 
 interface RevenueData {
+  fetchedAt?: string
   creators: CreatorRevenue[]
   totals: {
     totalTurnover: number
@@ -398,7 +399,8 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
     : ['overview', 'tracking']
 
   const [activeTab, setActiveTab] = useState<SubTab>('overview')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [data, setData] = useState<RevenueData | null>(null)
 
   // Date picker state — minute-precise range. "Today" defaults to
@@ -474,7 +476,8 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
   // ─── Refresh: trigger cache rebuild then load fresh cache ────────
   const refreshCache = useCallback(async () => {
     setLoading(true)
-    setProgressMsg('Refreshing cache...')
+    setLoadError(null)
+    setProgressMsg('Loading revenue from Infloww…')
     setProgressCurrent(0)
     setProgressTotal(0)
 
@@ -490,9 +493,8 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
         throw new Error(json.error || `HTTP ${res.status}`)
       }
 
-      // Read the freshly updated cache.
-      const cacheRes = await fetch(`/api/admin/revenue/cache${qs}`)
-      const cached = await cacheRes.json()
+      // The refresh returns the exact result; a second GET could start another rebuild.
+      const cached = await res.json()
       if (cached?.totals && cached?.creators) {
         setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
         addToast('success', `Data refreshed — ${cached.creators?.length || 0} creators`)
@@ -501,6 +503,7 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
+      setLoadError(msg)
       addToast('error', msg)
     } finally {
       setLoading(false)
@@ -518,27 +521,9 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
       // Guard: the range might have changed to historical mid-interval.
       if (!liveRef.current) return
 
-      // Roll the end forward to "now minus 1 min" so the cache key
-      // reflects the new live bucket.
       const newEnd = new Date(Date.now() - 60 * 1000); newEnd.setSeconds(0, 0)
-      const fromMs = rangeRef.current.fromMs
-      const toMs = newEnd.getTime()
-      const qs = `?from=${fromMs}&to=${toMs}`
+      setDateEnd(newEnd) // the range-loading effect performs one request
 
-      fetch(`/api/admin/revenue/cache${qs}`, { method: 'POST' })
-        .then(res => { if (!res.ok) throw new Error('refresh failed'); return res })
-        .then(() => fetch(`/api/admin/revenue/cache${qs}`))
-        .then(r => r.json())
-        .then(cached => {
-          if (cached?.totals && cached?.creators) {
-            setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
-            setDateEnd(newEnd)
-            addToast('info', 'Revenue data auto-refreshed')
-          }
-        })
-        .catch(() => {
-          // Silent failure — user can click refresh manually
-        })
     }, THIRTY_MINUTES)
 
     return () => clearInterval(interval)
@@ -557,69 +542,35 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
     finally { setConfigLoading(false) }
   }, [addToast])
 
-  // Load from cache on mount (silent, no loading indicator). Instant display from Supabase cache.
-  const cacheLoadedRef = useRef(false)
+  // Load the selected range on mount and whenever it changes. Ignore late
+  // responses from a previous range so they cannot overwrite the current one.
   useEffect(() => {
-    if ((activeTab === 'overview' || activeTab === 'tracking') && !cacheLoadedRef.current && !data) {
-      cacheLoadedRef.current = true
-      const fromMs = dateStart.getTime()
-      const toMs = dateEnd.getTime()
-      fetch(`/api/admin/revenue/cache?from=${fromMs}&to=${toMs}`)
-        .then(r => r.json())
-        .then(cached => {
-          if (cached?.totals && cached?.creators) {
-            setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
-            const ago = cached.fetchedAt ? new Date(cached.fetchedAt) : null
-            const mins = ago ? Math.round((Date.now() - ago.getTime()) / 60000) : null
-            const isLiveNow = Math.abs(Date.now() - toMs) <= LIVE_WINDOW_MS
-            addToast(
-              'info',
-              mins !== null
-                ? `Cached data (${mins}m ago).${isLiveNow ? ' Auto-refreshes every 30 min.' : ''}`
-                : 'Showing cached data.'
-            )
-          }
-          // No cache? Show empty state — user can click refresh
-        })
-        .catch(() => {
-          // Cache fetch failed silently — user can click refresh
-        })
-    }
-  }, [activeTab, data, addToast, dateStart, dateEnd])
-  useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
-
-  // ─── Load cached data for the selected [start, end] range ──────
-  const loadCacheForDate = useCallback(async (start: Date, end: Date) => {
-    const fromMs = start.getTime()
-    const toMs = end.getTime()
+    let cancelled = false
     setLoading(true)
-    try {
-      const res = await fetch(`/api/admin/revenue/cache?from=${fromMs}&to=${toMs}`)
-      const cached = await res.json()
-      if (cached?.totals && cached?.creators) {
-        setData({ ...cached, creators: (cached.creators || []).map(normalizeCreator) } as RevenueData)
-        const ago = cached.fetchedAt ? new Date(cached.fetchedAt) : null
-        const mins = ago ? Math.round((Date.now() - ago.getTime()) / 60000) : null
-        addToast('info', mins !== null ? `Cached data (${mins}m ago)` : 'Showing cached data.')
-      } else {
-        setData(null as unknown as RevenueData)
-        addToast('info', 'No cached data for this range. Click refresh to fetch.')
-      }
-    } catch {
-      addToast('error', 'Failed to load cached data')
-    } finally {
-      setLoading(false)
-    }
-  }, [addToast])
+    setLoadError(null)
+    setData(null)
+    setProgressMsg('Loading revenue from Infloww…')
+    fetch(`/api/admin/revenue/cache?from=${dateStart.getTime()}&to=${dateEnd.getTime()}`)
+      .then(async res => {
+        const cached = await res.json().catch(() => null)
+        if (!res.ok || !cached?.totals || !Array.isArray(cached.creators)) {
+          throw new Error(cached?.error || 'Revenue could not be loaded. Please try again.')
+        }
+        if (!cancelled) setData({ ...cached, creators: cached.creators.map(normalizeCreator) } as RevenueData)
+      })
+      .catch(err => { if (!cancelled) setLoadError(err instanceof TypeError ? 'Connection lost. Please check your internet and try again.' : err.message) })
+      .finally(() => { if (!cancelled) { setLoading(false); setProgressMsg('') } })
+    return () => { cancelled = true }
+  }, [dateStart, dateEnd])
+  useEffect(() => { if (activeTab === 'settings') fetchConfig() }, [activeTab, fetchConfig])
 
   // ─── Date picker handler ────────────────────────────────────────
   const handleDateApply = useCallback((label: string, start: Date, end: Date) => {
     setDateLabel(label)
     setDateStart(start)
     setDateEnd(end)
-    // Auto-load cached data for the new date
-    loadCacheForDate(start, end)
-  }, [loadCacheForDate])
+    // The range-loading effect fetches the newly selected period.
+  }, [])
 
   // ─── Sort handlers ───────────────────────────────────────────────
   const handleSort = (f: string) => { if (sortField === f) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortField(f); setSortDir('desc') } }
@@ -739,14 +690,14 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
 
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
-        <h1 className={`text-2xl font-bold ${text1}`}>Revenue</h1>
+        <div><h1 className={`text-2xl font-bold ${text1}`}>Revenue</h1>{data?.fetchedAt && <p className={`mt-1 text-xs ${text3}`}>Updated {new Date(data.fetchedAt).toLocaleString()}</p>}</div>
         {(activeTab === 'overview' || activeTab === 'tracking') && (
           <div className="flex items-center gap-3">
             {loading && (
               <InlineProgress message={progressMsg} current={progressCurrent} total={progressTotal} isLight={isLight} />
             )}
-            <DatePicker dateStart={dateStart} dateEnd={dateEnd} dateLabel={dateLabel} onApply={handleDateApply} isLight={isLight} />
-            <button onClick={refreshCache} disabled={loading}
+            <fieldset disabled={loading}><DatePicker dateStart={dateStart} dateEnd={dateEnd} dateLabel={dateLabel} onApply={handleDateApply} isLight={isLight} /></fieldset>
+            <button onClick={refreshCache} disabled={loading} aria-label="Refresh revenue"
               className={`p-2 rounded-lg transition-all ${isLight ? 'hover:bg-black/[0.04] text-black/40' : 'hover:bg-white/[0.06] text-white/40'} disabled:opacity-50`}>
               <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -775,6 +726,9 @@ export default function RevenueClient({ isSuperAdmin = false }: { isSuperAdmin?:
           </button>
         </div>
       )}
+
+      {loadError && (activeTab === 'overview' || activeTab === 'tracking') && <p role="alert" className="mb-5 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-500">{loadError}</p>}
+      {loading && !data && (activeTab === 'overview' || activeTab === 'tracking') && <p role="status" className={`py-12 text-center text-sm ${text2}`}>Loading revenue from Infloww… This can take a few minutes.</p>}
 
       {/* ─── OVERVIEW ──────────────────────────────────────────── */}
       {activeTab === 'overview' && data && (
