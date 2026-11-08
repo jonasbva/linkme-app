@@ -256,4 +256,6 @@ supabase/                  schema + migrations (creator_link_layers_2026-10-26.s
 - Report selector supports cutoffs 08.11., 15.11., 22.11., 30.11. using current corrected entries (not immutable historical archives). Felix's estimated baseline/target and Jolena's separate minimum targets are explicit. No additional Jolena bonus lock is defined.
 - Verification: calculation, API authorization, redaction, save/correction/delete tests in `tests/lib/challenge*.test.ts`, `tests/api/challenge.test.ts`, `tests/api/conversions-daily.test.ts`; production build + separate TypeScript check, desktop/mobile browser QA with live read-only data. No production test values inserted.
 
-The Challenge rules panel and participant details use the five rules verbatim from `Challenge_November_intern_v3.pdf` (document dated 2026-11-05), with a shared renderer and source/date label. The internal planning assessments from the PDF are not included.
+The central Challenge rules panel uses the five rules verbatim from `Challenge_November_intern_v3.pdf` (document dated 2026-11-05), with a shared renderer and source/date label. The internal planning assessments from the PDF are not included.
+
+Employee detail drawers show personal progress, pace/chart and creator breakdown only. Per Jonas’s UI cleanup, the separate data-status section, target derivation / repeated rules accordion and estimated-target notice have been removed for every participant. Target configuration, calculations, header data date and central Rules button remain intact.

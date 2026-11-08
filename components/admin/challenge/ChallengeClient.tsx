@@ -73,7 +73,6 @@ function RacerDetails({ racer: r, race }: { racer: Racer; race: Race }) {
         <div><dt>Zielstatus</dt><dd>{r.reached ? 'Ziel erreicht' : r.total === null ? 'Noch nicht auswertbar' : 'Ziel noch offen'}</dd></div>
       </dl>
       {r.reached && <p className={styles.note}>Das persönliche Gesamtziel für den Bonus ist erreicht{!r.complete ? ' · erfasster Zwischenstand mit Datenlücken' : ''}.</p>}
-      {r.provisional && <p className={styles.note}>Vorläufiges Monatsziel · Maxes’ Oktoberwert ist geschätzt.</p>}
     </section>
     <section className={styles.section}>
       <h3>Tempo & Entwicklung</h3>
@@ -94,21 +93,6 @@ function RacerDetails({ racer: r, race }: { racer: Racer; race: Race }) {
       {r.breakdown.some(c => !c.access) && <p className={styles.note}>Gesamtstände und Ränge sind für alle Challenge-Teilnehmer sichtbar. Creator-Einzeldaten bleiben auf deine Zugriffsrechte beschränkt.</p>}
       <p className={styles.caption}>{r.name === 'Jolena' ? 'Beide Creator-Mindestziele werden getrennt ausgewiesen. Eine zusätzliche Bonus-Sperrregel ist nicht bestätigt.' : 'Creator-Ziele dienen zur Orientierung. Maßgeblich ist das persönliche Gesamtziel.'}</p>
     </section>
-    <section className={styles.section}>
-      <h3>Datenstand</h3>
-      <p className={styles.caption}>Berichtsstand: {dateLabel(race.asOf)} · letzte erfasste Daten: {dateLabel(r.latestDate)} · Europe/Berlin</p>
-      {r.breakdown.map(c => <div key={c.id} className={styles.dataGap}><strong>{c.name}</strong><span>{!c.access ? 'Creator-Einzeldaten sind durch die bisherigen Zugriffsrechte geschützt.' : !c.exists ? 'Konfigurierter Creator fehlt in der Datenbank.' : <>
-        Daten bis {dateLabel(c.latestDate)}.
-        {c.missingDates.length > 0 && <> Fehlende Tage ({c.missingDates.length}): {c.missingDates.map(d => d.slice(8) + '.11.').join(', ')}.</>}
-        {c.invalidDates.length > 0 && <> Ungültige Werte: {c.invalidDates.map(d => d.slice(8) + '.11.').join(', ')}.</>}
-        {!c.missingDates.length && !c.invalidDates.length && race.elapsedDays > 0 && ' Vollständig erfasst.'}
-      </>}</span></div>)}
-      <p className={styles.caption}>Eine erfasste 0 ist ein gültiger Eintrag. Ein fehlender Tag bleibt unbekannt.</p>
-    </section>
-    <details className={styles.more}><summary>Zielherleitung & Regeln</summary>
-      <p>Basis: {number(r.baseline)} neue Subs. {r.basis}</p><p>Quelle: Expectations / Conversions → täglich gespeicherte neue Subs je Creator. Letzte Änderung: {race.updatedAt ? new Date(race.updatedAt).toLocaleString('de-DE', { timeZone: CHALLENGE.timeZone }) : '—'}.</p>
-      <ChallengeRules />
-    </details>
   </>
 }
 

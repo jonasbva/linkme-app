@@ -92,6 +92,7 @@
 .dialogHeader h2 { font-size: 17px; font-weight: 600; }
 .dialogBody { padding: 28px; overflow-y: auto; overscroll-behavior: contain; }
 .section { padding-bottom: 26px; margin-bottom: 26px; border-bottom: 1px solid var(--line); }
+.section:last-child { padding-bottom: 0; margin-bottom: 0; border-bottom: 0; }
 .section h3 { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
 .detailEyebrow { color: var(--muted); font-size: 11px; }
 .detailPercent { font-size: 44px; letter-spacing: -.05em; font-weight: 500; margin: 12px 0 4px; }
@@ -111,15 +112,8 @@
 .tableWrap :is(th,td):first-child { padding-left: 0; }
 .tableWrap tbody th { color: var(--ink); font-size: 11px; }
 .asterisk { color: var(--faint); }
-.dataGap { display: flex; flex-direction: column; gap: 4px; font-size: 11px; line-height: 1.8; padding: 10px 0; }
-.dataGap strong { font-weight: 500; }
-.dataGap > span { color: var(--muted); }
-.more { color: var(--muted); font-size: 11px; line-height: 1.8; }
-.more summary { cursor: pointer; color: var(--ink); font-size: 12px; padding: 5px 0 15px; }
-.more p { margin: 10px 0; }
-.more ol, .rules { padding-left: 18px; }
-.more li, .rules li { padding-left: 3px; margin-bottom: 16px; }
-.rules { color: var(--muted); font-size: 12px; line-height: 1.9; margin-top: 16px; }
+.rules { padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.9; margin-top: 16px; }
+.rules li { padding-left: 3px; margin-bottom: 16px; }
 .chart { margin-top: 16px; }
 .chart svg { width: 100%; height: auto; overflow: visible; }
 .chart text { fill: var(--faint); font-size: 9px; }
