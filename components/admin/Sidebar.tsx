@@ -12,7 +12,6 @@ import { useTheme } from './ThemeProvider'
 import { avatarSrc } from '@/lib/avatar'
 
 interface SidebarProps {
-  canViewChallenge?: boolean
   isSuperAdmin?: boolean
   displayName?: string
   userPermissions?: Record<string, string[]>
@@ -24,7 +23,7 @@ type CreatorLite = { id: string; display_name: string; avatar_url?: string }
 
 let creatorsCache: CreatorLite[] | null = null
 
-export default function Sidebar({ canViewChallenge = false, isSuperAdmin, displayName, userPermissions }: SidebarProps) {
+export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: SidebarProps) {
   const path = usePathname()
   const router = useRouter()
   const { theme, setTheme, resolved } = useTheme()
@@ -115,7 +114,7 @@ export default function Sidebar({ canViewChallenge = false, isSuperAdmin, displa
       { href: '/admin/creators', label: 'All Creators', icon: Users },
       { href: '/admin/conversions', label: 'Conversions', icon: TrendingUp },
       { href: '/admin/revenue', label: 'Revenue', icon: DollarSign },
-      ...(canViewChallenge ? [{ href: '/admin/challenge', label: 'November Challenge', icon: Flag }] : []),
+      { href: '/admin/challenge', label: 'November Challenge', icon: Flag },
       ...(isSuperAdmin ? [{ href: '/admin/social-accounts', label: 'Social Accounts', icon: BarChart3 }] : []),
     ],
   }

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { CHALLENGE_VIEWER_IDS, isChallengeViewer } from '@/lib/challenge/access-policy'
 import { PARTICIPANTS } from '@/lib/challenge/config'
 
 const maxId = 'f0579a4d-dd34-4787-88aa-baa5b0c9ce75'
@@ -18,35 +17,30 @@ beforeEach(() => {
   mock.gate = { ok: true, user: { id: maxId, display_name: 'Max', is_super_admin: true } }
   mock.account = { data: { is_active: true, is_super_admin: true }, error: null }
 })
-describe('Private challenge release: Max only', () => {
-  it('contains exactly the approved stable account ID', () => {
-    expect(CHALLENGE_VIEWER_IDS).toEqual([maxId])
-    expect(isChallengeViewer(maxId)).toBe(true)
-    expect(isChallengeViewer('Max')).toBe(false)
-    for (const participant of PARTICIPANTS) expect(isChallengeViewer(participant.id)).toBe(false)
-  })
-  it('allows active Max and rechecks current account privileges', async () => {
+describe('Challenge release to all active dashboard users', () => {
+  it('continues to allow Max and refreshes current account privileges', async () => {
     mock.account.data.is_super_admin = false
     const result = await requireChallengeAccess()
     expect(result.ok).toBe(true)
     if (result.ok) expect(result.user.is_super_admin).toBe(false)
     expect(mock.lookup).toHaveBeenCalledWith('id', maxId)
   })
-  it('has no super-admin or display-name bypass for Jonas or other accounts', async () => {
-    mock.gate.user = { id: 'cbad9d09-e4b4-4198-ac4f-b167ef765792', display_name: 'Max', is_super_admin: true }
-    expect(await requireChallengeAccess()).toMatchObject({ ok: false, status: 403 })
-    expect(mock.lookup).not.toHaveBeenCalled()
+  it.each([
+    ['Jonas', 'cbad9d09-e4b4-4198-ac4f-b167ef765792'],
+    ...PARTICIPANTS.map(p => [p.name, p.id]),
+    ['Richard', 'c0f13e81-43e3-478d-b607-bf56306c6d50'],
+  ])('allows active %s without requiring super-admin privileges or enrollment', async (name, id) => {
+    mock.gate.user = { id, display_name: name, is_super_admin: false }
+    mock.account.data.is_super_admin = false
+    expect(await requireChallengeAccess()).toMatchObject({ ok: true, user: { id, is_super_admin: false } })
+    expect(mock.lookup).toHaveBeenCalledWith('id', id)
   })
-  it.each(PARTICIPANTS.map(p => [p.name, p.id]))('denies %s even with a valid active session', async (_name, id) => {
-    mock.gate.user.id = id
-    expect(await requireChallengeAccess()).toMatchObject({ ok: false, status: 403 })
-    expect(mock.lookup).not.toHaveBeenCalled()
-  })
-  it('requires authentication', async () => {
+  it('still requires authentication', async () => {
     mock.gate = { ok: false, status: 401, error: 'Unauthorized' }
     expect(await requireChallengeAccess()).toMatchObject({ ok: false, status: 401 })
+    expect(mock.lookup).not.toHaveBeenCalled()
   })
-  it('denies deactivated Max even with an unexpired signed session', async () => {
+  it('denies a deactivated account even with an unexpired signed super-admin session', async () => {
     mock.account.data.is_active = false
     expect(await requireChallengeAccess()).toMatchObject({ ok: false, status: 403 })
   })

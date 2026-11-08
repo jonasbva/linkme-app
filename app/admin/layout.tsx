@@ -1,4 +1,3 @@
-import { isChallengeViewer } from '@/lib/challenge/access-policy'
 import { redirect } from 'next/navigation'
 import Sidebar from '@/components/admin/Sidebar'
 import ThemeProvider from '@/components/admin/ThemeProvider'
@@ -28,7 +27,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
       {/* admin-shell paints the charcoal base + edge glows (globals.css); the
           [data-theme="light"] overrides there repaint it for light mode. */}
       <div className="admin-shell flex min-h-screen text-white">
-        <Sidebar canViewChallenge={isChallengeViewer(user.id)} isSuperAdmin={user.is_super_admin} displayName={user.display_name} userPermissions={userPermissions} />
+        <Sidebar isSuperAdmin={user.is_super_admin} displayName={user.display_name} userPermissions={userPermissions} />
         <div className="admin-main-column flex-1 min-w-0 h-screen overflow-y-auto">
           <main className="max-w-7xl mx-auto px-6 py-8">
             <ErrorBoundary context="admin">

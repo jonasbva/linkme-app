@@ -42,7 +42,6 @@ interface LinkDailyRow {
 }
 
 interface Props {
-  canViewChallenge?: boolean
   creators: Creator[]
   trackingLinks: TrackingLink[]
   expectations: Expectation[]
@@ -82,7 +81,6 @@ export default function ConversionsClient({
   creatorDaily: initialCreatorDaily,
   linkDaily: initialLinkDaily,
   loadedSince,
-  canViewChallenge = false,
 }: Props) {
   const { resolved } = useTheme()
   const isLight = resolved === 'light'
@@ -142,7 +140,7 @@ export default function ConversionsClient({
   return (
     <div>
       <div className="mb-6">
-        {canViewChallenge && <Link href="/admin/challenge" className={`float-right inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-500 ${text2}`}><Flag className="h-4 w-4" />November Challenge</Link>}
+        <Link href="/admin/challenge" className={`float-right inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-500 ${text2}`}><Flag className="h-4 w-4" />November Challenge</Link>
         <h1 className={`text-2xl font-bold ${text1}`}>Conversions</h1>
         <p className={`text-[13px] mt-1 ${text2}`}>
           Subscribers are counted per creator — the OF account every IG link funnels into.
