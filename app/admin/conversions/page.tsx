@@ -1,3 +1,4 @@
+import { isChallengeViewer } from '@/lib/challenge/access-policy'
 import { Suspense } from 'react'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import ConversionsClient from '@/components/admin/ConversionsClient'
@@ -91,6 +92,7 @@ export default async function ConversionsPage() {
         creatorDaily={creatorDaily}
         linkDaily={linkDaily}
         loadedSince={since}
+        canViewChallenge={user ? isChallengeViewer(user.id) : false}
       />
     </Suspense>
   )

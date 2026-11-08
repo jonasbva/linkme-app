@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import Link from 'next/link'
+import { businessDate, offsetDate } from '@/lib/challenge/dates'
 import { useSearchParams } from 'next/navigation'
-import { Target, CalendarDays, Link2, Table2, Search, Check, Save } from 'lucide-react'
+import { Target, CalendarDays, Link2, Table2, Search, Check, Save, Flag, Trash2 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { Card, Button } from './ui'
 import DateRangePicker from './DateRangePicker'
@@ -40,6 +42,7 @@ interface LinkDailyRow {
 }
 
 interface Props {
+  canViewChallenge?: boolean
   creators: Creator[]
   trackingLinks: TrackingLink[]
   expectations: Expectation[]
@@ -53,9 +56,7 @@ type Tab = 'subs' | 'links' | 'table' | 'targets'
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function todayISO(offsetDays = 0): string {
-  const d = new Date()
-  d.setDate(d.getDate() + offsetDays)
-  return d.toISOString().split('T')[0]
+  return offsetDate(businessDate(), offsetDays)
 }
 function fmt(n: number): string {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
@@ -81,6 +82,7 @@ export default function ConversionsClient({
   creatorDaily: initialCreatorDaily,
   linkDaily: initialLinkDaily,
   loadedSince,
+  canViewChallenge = false,
 }: Props) {
   const { resolved } = useTheme()
   const isLight = resolved === 'light'
@@ -140,6 +142,7 @@ export default function ConversionsClient({
   return (
     <div>
       <div className="mb-6">
+        {canViewChallenge && <Link href="/admin/challenge" className={`float-right inline-flex items-center gap-2 rounded-lg px-3 py-2 text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-500 ${text2}`}><Flag className="h-4 w-4" />November Challenge</Link>}
         <h1 className={`text-2xl font-bold ${text1}`}>Conversions</h1>
         <p className={`text-[13px] mt-1 ${text2}`}>
           Subscribers are counted per creator — the OF account every IG link funnels into.
@@ -262,6 +265,7 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const preserveDraftsAfterDelete = useRef(false)
 
   const targetByCreator = useMemo(
     () => Object.fromEntries(expectations.map(e => [e.creator_id, e.daily_sub_target])),
@@ -270,6 +274,7 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
 
   // Seed the inputs from whatever is already stored for this date.
   useEffect(() => {
+    if (preserveDraftsAfterDelete.current) { preserveDraftsAfterDelete.current = false; return }
     const existing: Record<string, string> = {}
     creatorDaily.filter(r => r.date === date).forEach(r => { existing[r.creator_id] = String(r.new_subs) })
     setInputs(existing)
@@ -288,9 +293,15 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
     setSaved(false)
     setSaveError(null)
     try {
+      if (creators.some(c => inputs[c.id] === '' && creatorDaily.some(r => r.creator_id === c.id && r.date === date))) {
+        throw new Error('To remove a saved entry, use its delete button. Enter 0 to record an actual zero.')
+      }
       const entries = creators
         .filter(c => inputs[c.id] !== undefined && inputs[c.id] !== '')
-        .map(c => ({ creator_id: c.id, new_subs: parseInt(inputs[c.id], 10) || 0 }))
+        .map(c => ({ creator_id: c.id, new_subs: Number(inputs[c.id]) }))
+      if (entries.some(e => !Number.isInteger(e.new_subs) || e.new_subs < 0 || e.new_subs > 2147483647)) {
+        throw new Error('New subs must be non-negative whole numbers.')
+      }
       const res = await fetch('/api/admin/conversions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -307,6 +318,23 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
     } finally {
       setSaving(false)
     }
+  }
+
+  async function deleteEntry(creatorId: string) {
+    setSaving(true); setSaved(false); setSaveError(null)
+    try {
+      const res = await fetch('/api/admin/conversions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_creator_cell', creator_id: creatorId, date, value: null }),
+      })
+      await savedRows<CreatorDailyRow>(res)
+      preserveDraftsAfterDelete.current = true
+      setInputs(prev => { const next = { ...prev }; delete next[creatorId]; return next })
+      setCreatorDaily(prev => prev.filter(r => !(r.creator_id === creatorId && r.date === date)))
+      setSaved(true)
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Could not delete. Please try again.')
+    } finally { setSaving(false) }
   }
 
   const text1 = isLight ? 'text-black/90' : 'text-white/90'
@@ -349,14 +377,18 @@ function DailySubsTab({ creators, creatorDaily, setCreatorDaily, expectations, i
                 </div>
               </div>
               <span className={`w-24 text-right text-[12px] tabular-nums ${text3}`}>{target || '—'}</span>
-              <div className="w-28 flex justify-end">
+              <div className="w-28 flex justify-end items-center gap-1">
+                {creatorDaily.some(r => r.creator_id === c.id && r.date === date) && (
+                  <button type="button" aria-label={`Delete saved entry for ${c.display_name} on ${date}`} title="Delete saved entry (missing, not zero)" onClick={() => deleteEntry(c.id)} className="p-1.5 rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-pink-500"><Trash2 className={`w-3.5 h-3.5 ${text3}`} /></button>
+                )}
                 <input
                   type="number"
                   min={0}
                   value={inputs[c.id] ?? ''}
                   disabled={saving}
                   onChange={e => { setSaved(false); setSaveError(null); setInputs(p => ({ ...p, [c.id]: e.target.value })) }}
-                  placeholder="0"
+                  aria-label={`New subs for ${c.display_name}`}
+                  placeholder="—"
                   className={`${numberInputCls(isLight)} ${hit ? 'border-emerald-500/40' : ''}`}
                 />
               </div>

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
+import { validDate } from '@/lib/challenge/dates'
 import { requireUser, requireCreatorAccess, canAccessCreator, guardResponse, getUserPermissions } from '@/lib/auth'
 
 /**
@@ -98,6 +99,10 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 })
 }
 
+function validSubs(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 2147483647
+}
+
 export async function POST(req: NextRequest) {
   const gate = await requireUser()
   if (!gate.ok) return guardResponse(gate)
@@ -136,6 +141,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'date and entries are required' }, { status: 400 })
     }
 
+    if (!validDate(date) || entries.some(e => !e || typeof e.creator_id !== 'string' || !validSubs(e.new_subs)) || new Set(entries.map(e => e.creator_id)).size !== entries.length) {
+      return NextResponse.json({ error: 'A valid date and non-negative whole new-sub counts are required; duplicate creators are not allowed.' }, { status: 400 })
+    }
     const creatorIds = Array.from(new Set(entries.map(e => e.creator_id)))
     if (!gate.user.is_super_admin) {
       for (const cid of creatorIds) {
@@ -148,7 +156,7 @@ export async function POST(req: NextRequest) {
     const upserts = entries.map(e => ({
       creator_id: e.creator_id,
       date,
-      new_subs: Number(e.new_subs) || 0,
+      new_subs: e.new_subs,
       updated_at: new Date().toISOString(),
     }))
     if (upserts.length === 0) return NextResponse.json([])
@@ -174,10 +182,19 @@ export async function POST(req: NextRequest) {
     const access = await requireCreatorAccess(creator_id, 'input_conversions')
     if (!access.ok) return guardResponse(access)
 
+    if (!validDate(date) || (value !== null && !validSubs(value))) {
+      return NextResponse.json({ error: 'A valid date and non-negative whole new-sub count (or null to delete) are required.' }, { status: 400 })
+    }
+    if (value === null) {
+      const { data, error } = await supabase.from('creator_daily').delete()
+        .eq('creator_id', creator_id).eq('date', date).select()
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json(data)
+    }
     const { data, error } = await supabase
       .from('creator_daily')
       .upsert(
-        { creator_id, date, new_subs: Number(value) || 0, updated_at: new Date().toISOString() },
+        { creator_id, date, new_subs: value, updated_at: new Date().toISOString() },
         { onConflict: 'creator_id,date' }
       )
       .select()

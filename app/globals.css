@@ -274,7 +274,7 @@ input:focus, select:focus, textarea:focus {
     radial-gradient(58% 48% at 100% 38%, rgba(139, 92, 246, 0.11), transparent 68%),
     radial-gradient(90% 70% at 50% 0%, rgba(255, 255, 255, 0.025), transparent 60%);
 }
-.admin-shell > * {
+.admin-shell > .admin-main-column {
   position: relative;
   z-index: 1;
 }

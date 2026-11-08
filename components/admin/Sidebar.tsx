@@ -6,12 +6,13 @@ import { useEffect, useRef, useState } from 'react'
 import {
   LayoutDashboard, Users, TrendingUp, DollarSign, BarChart3, Shield,
   Instagram, Link2, Settings, LogOut, Menu, X, Sun, Moon, Monitor,
-  ChevronsUpDown, Search,
+  ChevronsUpDown, Search, Flag,
 } from 'lucide-react'
 import { useTheme } from './ThemeProvider'
 import { avatarSrc } from '@/lib/avatar'
 
 interface SidebarProps {
+  canViewChallenge?: boolean
   isSuperAdmin?: boolean
   displayName?: string
   userPermissions?: Record<string, string[]>
@@ -23,7 +24,7 @@ type CreatorLite = { id: string; display_name: string; avatar_url?: string }
 
 let creatorsCache: CreatorLite[] | null = null
 
-export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: SidebarProps) {
+export default function Sidebar({ canViewChallenge = false, isSuperAdmin, displayName, userPermissions }: SidebarProps) {
   const path = usePathname()
   const router = useRouter()
   const { theme, setTheme, resolved } = useTheme()
@@ -114,6 +115,7 @@ export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: 
       { href: '/admin/creators', label: 'All Creators', icon: Users },
       { href: '/admin/conversions', label: 'Conversions', icon: TrendingUp },
       { href: '/admin/revenue', label: 'Revenue', icon: DollarSign },
+      ...(canViewChallenge ? [{ href: '/admin/challenge', label: 'November Challenge', icon: Flag }] : []),
       ...(isSuperAdmin ? [{ href: '/admin/social-accounts', label: 'Social Accounts', icon: BarChart3 }] : []),
     ],
   }
@@ -165,7 +167,7 @@ export default function Sidebar({ isSuperAdmin, displayName, userPermissions }: 
 
       {mobileOpen && <div className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden" onClick={() => setMobileOpen(false)} aria-hidden />}
 
-      <aside className={`admin-sidebar fixed inset-y-0 left-0 z-50 flex h-screen w-60 shrink-0 flex-col transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}>
+      <aside className={`admin-sidebar fixed inset-y-0 left-0 z-50 flex h-screen w-60 shrink-0 flex-col transition-transform duration-200 lg:static lg:z-auto lg:translate-x-0 ${mobileOpen ? 'translate-x-0' : '-translate-x-full invisible lg:visible lg:translate-x-0'}`}>
         {/* Logo */}
         <div className="flex h-14 shrink-0 items-center justify-between px-4">
           <Link href="/admin" className="group flex items-center gap-2.5">

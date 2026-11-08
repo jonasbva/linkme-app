@@ -1,3 +1,5 @@
+import { notifyConversionsUpdated } from './conversion-events'
+
 // Keep transport/server failures visible without exposing database internals.
 export async function savedRows<T>(res: Response): Promise<T[]> {
   if (!res.ok) {
@@ -7,6 +9,7 @@ export async function savedRows<T>(res: Response): Promise<T[]> {
   }
   const rows: unknown = await res.json()
   if (!Array.isArray(rows)) throw new Error('Could not confirm the save. Please try again.')
+  if (typeof window !== 'undefined') notifyConversionsUpdated()
   return rows as T[]
 }
 
