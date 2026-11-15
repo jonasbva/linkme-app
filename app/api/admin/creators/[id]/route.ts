@@ -20,6 +20,7 @@ export async function DELETE(req: NextRequest, { params }: { params: { id: strin
   const gate = await requireSuperAdmin()
   if (!gate.ok) return guardResponse(gate)
   const supabase = createServerSupabaseClient()
-  await supabase.from('creators').delete().eq('id', params.id)
+  const { error } = await supabase.from('creators').delete().eq('id', params.id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json({ ok: true })
 }

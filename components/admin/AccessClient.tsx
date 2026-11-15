@@ -4,8 +4,9 @@ import { useState } from 'react'
 import { useTheme } from './ThemeProvider'
 import TeamClient from './TeamClient'
 import RolesClient from './RolesClient'
+import ApiKeysClient from './ApiKeysClient'
 
-type AccessTab = 'team' | 'roles'
+type AccessTab = 'team' | 'roles' | 'api-keys'
 
 export default function AccessClient() {
   const { resolved } = useTheme()
@@ -15,12 +16,13 @@ export default function AccessClient() {
   const tabs: { key: AccessTab; label: string }[] = [
     { key: 'team', label: 'Team' },
     { key: 'roles', label: 'Roles' },
+    { key: 'api-keys', label: 'API keys' },
   ]
 
   return (
     <div className="space-y-6">
       {/* Page header + tab bar */}
-      <div className="flex items-center gap-6">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
         <h1 className={`text-xl font-semibold tracking-tight ${isLight ? 'text-black/90' : 'text-white/95'}`}>
           Access
         </h1>
@@ -48,6 +50,7 @@ export default function AccessClient() {
       {/* Tab content */}
       {tab === 'team' && <TeamClient />}
       {tab === 'roles' && <RolesClient />}
+      {tab === 'api-keys' && <ApiKeysClient />}
     </div>
   )
 }

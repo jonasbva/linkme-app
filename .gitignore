@@ -33,3 +33,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 *.old
+
+# Private API handover (may contain a live credential)
+/docs/MARLON-PROMPT.md

@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { createServerSupabaseClient } from './supabase'
+import { getApiPrincipal } from './api-principal'
 
 // ── Password hashing using Web Crypto (no external deps) ──
 
@@ -91,6 +92,8 @@ export interface SessionUser {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
+  const apiPrincipal = getApiPrincipal()
+  if (apiPrincipal) return apiPrincipal.user
   const cookieStore = cookies()
   const token = cookieStore.get('admin_session')?.value
   if (!token) return null
