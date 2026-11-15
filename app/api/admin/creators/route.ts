@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient } from '@/lib/supabase'
 import { requireUser, requireSuperAdmin, guardResponse, getUserPermissions } from '@/lib/auth'
+import { parseNewCreator } from '@/lib/creator-input'
 
 // GET /api/admin/creators — list creators (scoped to what the user may see)
 //
@@ -39,9 +40,22 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const gate = await requireSuperAdmin()
   if (!gate.ok) return guardResponse(gate)
-  const body = await req.json()
+  let body: unknown
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Could not read the creator details. Please try again.' }, { status: 400 })
+  }
+  const parsed = parseNewCreator(body)
+  if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
   const supabase = createServerSupabaseClient()
-  const { data, error } = await supabase.from('creators').insert(body).select().single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  const { data, error } = await supabase.from('creators').insert(parsed.data).select().single()
+  if (error?.code === '23505') {
+    return NextResponse.json({ error: 'A creator with this name or OnlyFans handle already exists. Open their existing profile, or use a different name or handle.' }, { status: 409 })
+  }
+  if (error) {
+    console.error('[creators.create] Save failed:', error.code)
+    return NextResponse.json({ error: 'Could not save the creator. Please try again. If this continues, contact an administrator.' }, { status: 500 })
+  }
   return NextResponse.json(data)
 }

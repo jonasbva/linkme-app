@@ -40,7 +40,7 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
 
   const { data, error } = await supabase
     .from('creators')
-    .update({ of_handle: next, updated_at: new Date().toISOString() })
+    .update({ of_handle: next })
     .eq('id', params.id)
     .select('id, of_handle')
     .single()
