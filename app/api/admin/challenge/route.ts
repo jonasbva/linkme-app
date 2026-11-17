@@ -4,8 +4,10 @@ import { requireChallengeAccess } from '@/lib/challenge/access'
 import { loadRace } from '@/lib/challenge/load'
 import { CHALLENGE } from '@/lib/challenge/config'
 import { businessDate, validDate } from '@/lib/challenge/dates'
+import { patchChallenge } from '@/lib/challenge/update'
 
 export const dynamic = 'force-dynamic'
+export async function PATCH(req: NextRequest) { return patchChallenge(req) }
 export async function GET(req: NextRequest) {
   const gate = await requireChallengeAccess()
   if (!gate.ok) return guardResponse(gate)

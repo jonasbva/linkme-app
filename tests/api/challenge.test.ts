@@ -10,6 +10,7 @@ vi.mock('@/lib/auth', () => ({
 }))
 vi.mock('@/lib/challenge/access', () => ({ requireChallengeAccess: async () => mock.gate }))
 vi.mock('@/lib/challenge/load', () => ({ loadRace: mock.load }))
+vi.mock('@/lib/challenge/update', () => ({ patchChallenge: vi.fn() }))
 import { GET } from '@/app/api/admin/challenge/route'
 const request = (query = '') => new NextRequest(`http://localhost/api/admin/challenge${query}`)
 

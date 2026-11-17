@@ -7,14 +7,14 @@ const creators = PARTICIPANTS.flatMap(p => p.creators)
 const now = new Date('2026-11-09T09:00:00Z')
 const day = (creator_id: string, date: string, new_subs: number): DailySub => ({ creator_id, date, new_subs })
 const run = (rows: DailySub[], options: Partial<Parameters<typeof calculateRace>[0]> = {}) => calculateRace({ creators, rows, now, ...options })
-const zerosThrough = (through: string) => creators.flatMap(c => challengeDates(through).map(date => day(c.id, date, 0)))
+const zerosThrough = (through: string) => creators.flatMap(c => challengeDates(through).filter(date => date >= (c.startDate || CHALLENGE.start)).map(date => day(c.id, date, 0)))
 
 describe('November Challenge', () => {
-  it('uses six stable employee IDs and sixteen unique creator IDs, fixed lane order and explicit employee targets', () => {
+  it('uses six stable employee IDs and seventeen unique creator IDs, fixed lane order and explicit employee targets', () => {
     expect(PARTICIPANTS.map(p => p.name)).toEqual(['Felix', 'Tom', 'Jano', 'Luka', 'Devyn', 'Jolena'])
     expect(new Set(PARTICIPANTS.map(p => p.id)).size).toBe(6)
-    expect(new Set(creators.map(c => c.id)).size).toBe(16)
-    expect(PARTICIPANTS.map(p => p.target)).toEqual([21802, 12265, 12177, 11214, 2986, 7500])
+    expect(new Set(creators.map(c => c.id)).size).toBe(17)
+    expect(PARTICIPANTS.map(p => p.target)).toEqual([21802, 12265, 17895, 7096, 2986, 7500])
     expect(PARTICIPANTS[0].creators.reduce((s, c) => s + c.target, 0)).toBe(21803)
     expect(creators.find(c => c.name === 'Daisy')?.id).toBe('e18c08da-8925-42db-834e-1fd8d0ee0467')
     expect(PARTICIPANTS[0].provisional).toBe(true)
@@ -105,6 +105,87 @@ describe('November Challenge', () => {
     const rows = [day(creators[0].id, '2026-11-08', 100), day(creators[0].id, '2026-11-09', 500)]
     expect(run(rows, { now: new Date('2026-11-17'), cutoff: '2026-11-08' }).racers[0].total).toBe(100)
     expect(CHALLENGE.reports.map(r => r.cutoff)).toEqual(['2026-11-08', '2026-11-15', '2026-11-22', '2026-11-30'])
+  })
+  it('assigns Lily Brown to Jano for the full November history and adds Fernanda to Luka from November 15', () => {
+    const jano = PARTICIPANTS.find(p => p.name === 'Jano')!
+    const luka = PARTICIPANTS.find(p => p.name === 'Luka')!
+    const lily = creators.find(c => c.name === 'Lily Brown')!
+    const fernanda = creators.find(c => c.name === 'Fernanda')!
+    expect(jano).toMatchObject({ baseline: 14912, target: 17895,
+      basis: '14.912 neue Subs im Oktober (inkl. Lily Brown, im November von Luka übernommen), ca. +20 %.' })
+    expect(luka).toMatchObject({ baseline: 4580, target: 7096,
+      basis: '4.580 neue Subs im Oktober (ohne Lily Brown), ca. +20 %, plus Fernanda (neu): 100 Subs/Tag vom 15.–30.11. = 1.600.' })
+    expect(jano.creators).toContainEqual(expect.objectContaining({ id: lily.id, target: 5718 }))
+    expect(luka.creators.some(c => c.id === lily.id)).toBe(false)
+    expect(fernanda).toMatchObject({ target: 1600, startDate: '2026-11-15' })
+
+    const rows = zerosThrough('2026-11-14')
+    rows.find(r => r.creator_id === lily.id && r.date === '2026-11-01')!.new_subs = 100
+    rows.push(day(fernanda.id, '2026-11-14', 999))
+    const race = run(rows, { now: new Date('2026-11-17'), cutoff: '2026-11-14' })
+    expect(race.racers.find(p => p.id === jano.id)).toMatchObject({ total: 100, complete: true })
+    const beforeStart = race.racers.find(p => p.id === luka.id)!
+    expect(beforeStart).toMatchObject({ total: 0, complete: true })
+    expect(beforeStart.history.every(h => h.actual === 0)).toBe(true)
+    expect(beforeStart.breakdown.find(c => c.id === fernanda.id)).toMatchObject({ total: 0, missingDates: [], invalidDates: [], latestDate: null })
+    expect(run([], { now: new Date('2026-11-17'), cutoff: '2026-11-14' }).racers.find(p => p.id === luka.id)?.total).toBeNull()
+  })
+  it.each([
+    ['2026-11-14', 5496 * 14 / 30],
+    ['2026-11-15', 5496 * 15 / 30 + 100],
+    ['2026-11-16', 5496 * 16 / 30 + 200],
+    ['2026-11-30', 7096],
+  ])('starts Fernanda’s expected contribution on November 15 at cutoff %s', (cutoff, expected) => {
+    const race = run(zerosThrough(cutoff as string), { now: new Date('2026-12-01'), cutoff: cutoff as string })
+    const luka = race.racers.find(p => p.name === 'Luka')!
+    expect(luka.expected).toBeCloseTo(expected as number)
+    expect(luka.history.at(-1)?.expected).toBeCloseTo(expected as number)
+    expect(luka.expectedHistory).toHaveLength(30)
+    expect(luka.expectedHistory.find(h => h.date === cutoff)?.expected).toBeCloseTo(expected as number)
+    expect(luka.expectedHistory.at(-1)?.expected).toBe(7096)
+  })
+  it('requires Fernanda observations only from her start date and keeps earlier history continuous', () => {
+    const fernanda = creators.find(c => c.name === 'Fernanda')!
+    const rows = zerosThrough('2026-11-16').filter(r => !(r.creator_id === fernanda.id && r.date === '2026-11-15'))
+    const luka = run(rows, { now: new Date('2026-11-17'), cutoff: '2026-11-16' }).racers.find(p => p.name === 'Luka')!
+    expect(luka.complete).toBe(false)
+    expect(luka.breakdown.find(c => c.id === fernanda.id)?.missingDates).toEqual(['2026-11-15'])
+    expect(luka.history[13].actual).toBe(0)
+    expect(luka.history[14].actual).toBeNull()
+    expect(luka.history[15].actual).toBeNull()
+  })
+  it('reproduces the document’s November 16 control totals and ranks from a synthetic fixture', () => {
+    const rows = zerosThrough('2026-11-16')
+    const setTotal = (name: string, total: number, date: string = CHALLENGE.start) => {
+      const creator = creators.find(c => c.name === name)!
+      rows.find(r => r.creator_id === creator.id && r.date === date)!.new_subs = total
+    }
+    setTotal('Amber', Math.round(21802 * 0.412))
+    setTotal('Hailey', Math.round(12265 * 0.408))
+    setTotal('Chloe', 5032)
+    setTotal('Lily Brown', 1970)
+    setTotal('Jessy', 3949 - 1970)
+    setTotal('Fernanda', 169, '2026-11-16')
+    setTotal('Jade', Math.round(2986 * 0.387))
+    setTotal('Sasha', Math.round(7500 * 0.435))
+    const race = run(rows, { now: new Date('2026-11-17'), cutoff: '2026-11-16' })
+    expect([...race.racers].sort((a, b) => a.rank! - b.rank!).map(p => p.name)).toEqual(['Jolena', 'Felix', 'Tom', 'Jano', 'Devyn', 'Luka'])
+    const jano = race.racers.find(p => p.name === 'Jano')!
+    const luka = race.racers.find(p => p.name === 'Luka')!
+    expect(jano).toMatchObject({ total: 7002, target: 17895, rank: 4, complete: true })
+    expect(jano.percent?.toFixed(1)).toBe('39.1')
+    expect(luka).toMatchObject({ total: 2148, target: 7096, rank: 6, complete: true })
+    expect(luka.percent?.toFixed(1)).toBe('30.3')
+    expect(luka.delta).toBeCloseTo(2148 - (5496 * 16 / 30 + 200))
+  })
+  it('uses explicitly supplied participant configuration for assignments, targets and expected history', () => {
+    const lily = creators.find(c => c.name === 'Lily Brown')!
+    const participants = [{ ...PARTICIPANTS[2], target: 1000, creators: [{ ...lily, target: 1000 }] }]
+    const race = run([day(lily.id, '2026-11-01', 500)], { participants })
+    expect(race.racers).toHaveLength(1)
+    expect(race.racers[0]).toMatchObject({ total: 500, target: 1000, percent: 50, rank: 1 })
+    expect(race.racers[0].expected).toBeCloseTo(1000 * 8 / 30)
+    expect(race.racers[0].expectedHistory.at(-1)?.expected).toBe(1000)
   })
   it('never exposes partial totals as full totals or counts inaccessible rows', () => {
     const race = run(zerosThrough('2026-11-08'), { visibleIds: [creators[0].id] })

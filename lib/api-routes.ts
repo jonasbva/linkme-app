@@ -3,6 +3,7 @@ import { requireCreatorAccess, guardResponse } from './auth'
 import { createServerSupabaseClient } from './supabase'
 import { validDate } from './challenge/dates'
 import { parseNewCreator } from './creator-input'
+import { parseChallengePatch } from './challenge/input'
 
 export type ApiMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
 type RouteModule = Record<string, unknown>
@@ -43,7 +44,8 @@ export const API_ROUTES: ApiRoute[] = [
   { path: 'scrape', methods: { GET: 'view_social', POST: 'edit_social' }, description: 'Read snapshot history or scrape a social account/creator.', warning: 'POST runs the configured paid scraping service.', load: () => import('@/app/api/admin/scrape/route') },
   { path: 'scrape-all', methods: { GET: fullAdmin, POST: fullAdmin }, superAdminMethods: ['GET'], description: 'Start/continue bulk scraping and read job progress.', warning: 'POST runs the configured paid scraping service for active accounts.', load: () => import('@/app/api/admin/scrape-all/route') },
   { path: 'upload', methods: { POST: fullAdmin }, superAdminMethods: ['POST'], description: 'Upload a PNG/JPEG/WebP/GIF image (maximum 10 MB) to creators or images storage.', load: () => import('@/app/api/admin/upload/route') },
-  { path: 'challenge', methods: { GET: 'Active dashboard user; creator details retain existing visibility' }, description: 'Read challenge standings with optional asOf cutoff.', load: () => import('@/app/api/admin/challenge/route') },
+  { path: 'challenge', methods: { GET: 'Active dashboard user; creator details retain existing visibility', PATCH: fullAdmin }, superAdminMethods: ['PATCH'], description: 'Read challenge standings or atomically update multiple managers, including creator reassignments.', load: () => import('@/app/api/admin/challenge/route') },
+  { path: 'challenge/:id', methods: { GET: fullAdmin, PATCH: fullAdmin }, superAdminMethods: ['GET', 'PATCH'], description: 'Read or update one enrolled manager’s challenge configuration. Use PATCH /challenge for cross-manager moves.', load: () => import('@/app/api/admin/challenge/[id]/route') },
 ]
 
 // Discovery includes payload examples so a client handed only its URL and key
@@ -69,7 +71,8 @@ export const API_REQUEST_EXAMPLES: Record<string, unknown[]> = {
   'scrape-all': [{ method: 'POST', body: { jobId: 'NEW_CLIENT_GENERATED_UUID' } }, { method: 'GET', query: { jobId: 'SAME_UUID' } }],
   'infloww/sync-links': [{ method: 'POST', body: { creator_id: 'CREATOR_UUID' }, note: 'Optional. Omit to sync all creators (super admin). Can take several minutes.' }],
   upload: [{ method: 'POST', multipart: { file: 'PNG/JPEG/WebP/GIF image; maximum10MB', bucket: 'creators' }, note: 'bucket optional:creators(default) or images. Returns public url; assign avatar_url separately.' }],
-  challenge: [{ method: 'GET', query: { asOf: '2026-11-14' }, note: 'Optional; must fall in configured challenge dates, no later than today.' }],
+  challenge: [{ method: 'GET', query: { asOf: '2026-11-14' }, note: 'Optional; must fall in configured challenge dates, no later than today.' }, { method: 'PATCH', body: { expectedRevision: 0, participants: [{ id: 'cadead42-1762-44f5-b3fb-e2119b1cff64', target: 17895, baseline: 14912 }] }, note: 'Atomic batch of 1–6 manager patches. For moves supply both managers and their complete resulting creators lists together. Read revision via GET /challenge/:id first; stale revision returns 409.' }],
+  'challenge/:id': [{ method: 'GET', note: 'Returns revision and participant configuration. id is the enrolled manager UUID.' }, { method: 'PATCH', body: { expectedRevision: 0, target: 7096, baseline: 4580, basis: 'October baseline plus a new creator from November 15.', provisional: false, creators: [{ id: '137283ec-fb49-445f-80f5-79a3129e62f8', target: 2987 }, { id: '067d31ec-e949-452f-bda7-ea6c09abb61f', target: 2510 }, { id: 'd4de03f2-f28a-4afb-bb8f-3843ded32756', target: 1600, startDate: '2026-11-15' }] }, note: 'Any subset of target, baseline, basis, provisional, creators; expectedRevision is required. creators replaces the complete list; omit name (resolved from DB). startDate defaults to November 1; delayed targets accrue only from that date through November 30. Positive integer targets; nonnegative baseline. Bonuses/enrollment are fixed; max 30 creators across the challenge. Changes apply to historical November cutoffs too. Conversion daily targets remain separate.' }],
 }
 
 export function findApiRoute(segments: string[]) {
@@ -95,6 +98,10 @@ const creatorFields = ['display_name', 'slug', 'username', 'bio', 'avatar_url', 
 /** API-only validation complements the reused dashboard handlers. */
 export function validateApiRequest(path: string, method: string, params: Record<string, string>, query: URLSearchParams, body?: Record<string, any>): string | null {
   if (Object.values(params).some(value => !uuid(value))) return 'Path IDs must be UUIDs.'
+  if ((path === 'challenge' || path === 'challenge/:id') && method === 'PATCH') {
+    const parsed = parseChallengePatch(body, path === 'challenge/:id' ? params.id : undefined)
+    return parsed.ok ? null : parsed.error
+  }
   for (const key of ['creator_id', 'social_account_id', 'tracking_link_id', 'id', 'jobId']) {
     const value = query.get(key)
     if (value !== null && !uuid(value)) return `${key} must be a UUID.`

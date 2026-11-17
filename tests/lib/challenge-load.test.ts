@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { PARTICIPANTS } from '@/lib/challenge/config'
+vi.mock('@/lib/challenge/store', () => ({ loadChallengeConfiguration: async () => ({ revision: 0, participants: PARTICIPANTS }) }))
 const mock = vi.hoisted(() => ({ permissions: {} as any, calls: [] as any[], fail: false }))
 vi.mock('@/lib/auth', () => ({ getUserPermissions: async () => mock.permissions }))
 vi.mock('@/lib/supabase', () => ({ createServerSupabaseClient: () => ({ from: (table: string) => {
@@ -44,7 +45,7 @@ describe('Challenge data scope', () => {
     mock.permissions.visibleCreatorIds = [allowed]
     mock.permissions.permissions = { [allowed]: new Set(['view_conversions']) }
     const race = await loadRace({ ...user, id: employee.id })
-    expect(mock.calls[1].filters.find((f: any) => f.column === 'creator_id').values).toHaveLength(16)
+    expect(mock.calls[1].filters.find((f: any) => f.column === 'creator_id').values).toHaveLength(17)
     expect(race.restricted).toBe(false)
     expect(race.racers[0].breakdown[0].access).toBe(true)
     const redacted = race.racers[0].breakdown[1]

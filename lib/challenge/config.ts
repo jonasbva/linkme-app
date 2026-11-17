@@ -1,6 +1,6 @@
 // Verified against MAHO's creators/admin_users on 2026-11-08. UUIDs, never
 // mutable display names or active flags, bind this historical competition.
-export interface ChallengeCreator { id: string; name: string; target: number; minimum?: boolean }
+export interface ChallengeCreator { id: string; name: string; target: number; minimum?: boolean; startDate?: string }
 export interface Participant {
   id: string; name: string; target: number; bonus: number; currency: 'EUR' | 'USD'
   baseline: number; basis: string; provisional?: boolean; creators: ChallengeCreator[]
@@ -31,17 +31,18 @@ export const PARTICIPANTS: Participant[] = [
       { id: 'e18c08da-8925-42db-834e-1fd8d0ee0467', name: 'Daisy', target: 3809 },
       { id: 'e3afdb3a-8547-4c54-a83c-8f18386a015d', name: 'Emma', target: 322 },
     ] },
-  { id: 'cadead42-1762-44f5-b3fb-e2119b1cff64', name: 'Jano', target: 12177, bonus: 250, currency: 'EUR', baseline: 10147,
-    basis: '10.147 neue Subs im Oktober, ca. +20 %.', creators: [
+  { id: 'cadead42-1762-44f5-b3fb-e2119b1cff64', name: 'Jano', target: 17895, bonus: 250, currency: 'EUR', baseline: 14912,
+    basis: '14.912 neue Subs im Oktober (inkl. Lily Brown, im November von Luka übernommen), ca. +20 %.', creators: [
       { id: '82f93dd7-ae62-472a-8408-cf97baa769ae', name: 'Chloe', target: 6326 },
       { id: 'aed89dd5-bdc3-498b-ac3f-6bcedc2eea6b', name: 'Alice', target: 3712 },
       { id: '002c91dc-db52-4b68-9940-1f8f1b9c1f60', name: 'Mila', target: 2140 },
-    ] },
-  { id: 'e60f3529-eb53-4635-aa75-4ed1db089c4f', name: 'Luka', target: 11214, bonus: 250, currency: 'EUR', baseline: 9345,
-    basis: '9.345 neue Subs im Oktober, ca. +20 %.', creators: [
       { id: '845047d1-7708-4a23-b47e-142219502964', name: 'Lily Brown', target: 5718 },
+    ] },
+  { id: 'e60f3529-eb53-4635-aa75-4ed1db089c4f', name: 'Luka', target: 7096, bonus: 250, currency: 'EUR', baseline: 4580,
+    basis: '4.580 neue Subs im Oktober (ohne Lily Brown), ca. +20 %, plus Fernanda (neu): 100 Subs/Tag vom 15.–30.11. = 1.600.', creators: [
       { id: '137283ec-fb49-445f-80f5-79a3129e62f8', name: 'Jessy', target: 2987 },
       { id: '067d31ec-e949-452f-bda7-ea6c09abb61f', name: 'Celine', target: 2510 },
+      { id: 'd4de03f2-f28a-4afb-bb8f-3843ded32756', name: 'Fernanda', target: 1600, startDate: '2026-11-15' },
     ] },
   { id: '4e4276a5-fea4-4fb7-bf48-2b8fc872860f', name: 'Devyn', target: 2986, bonus: 250, currency: 'USD', baseline: 2488,
     basis: '2.488 neue Subs im Oktober, ca. +20 %.', creators: [

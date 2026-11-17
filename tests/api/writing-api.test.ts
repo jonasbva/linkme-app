@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 const mock = vi.hoisted(() => ({
   authenticate: vi.fn(), context: vi.fn(), audit: vi.fn(), admin: vi.fn(), access: vi.fn(),
-  creators: vi.fn(), conversions: vi.fn(), emergency: vi.fn(), upload: vi.fn(), from: vi.fn(),
+  creators: vi.fn(), conversions: vi.fn(), emergency: vi.fn(), upload: vi.fn(), from: vi.fn(), challenge: vi.fn(),
 }))
 vi.mock('@/lib/api-access', () => ({ authenticateApiRequest: mock.authenticate, runWithApiPrincipal: mock.context, recordApiRequest: mock.audit }))
 vi.mock('@/lib/auth', () => ({
@@ -15,6 +15,8 @@ vi.mock('@/app/api/admin/creators/route', () => ({ POST: mock.creators, GET: moc
 vi.mock('@/app/api/admin/conversions/route', () => ({ POST: mock.conversions, GET: mock.conversions }))
 vi.mock('@/app/api/admin/revenue/emergency/route', () => ({ POST: mock.emergency, GET: mock.emergency }))
 vi.mock('@/app/api/admin/upload/route', () => ({ POST: mock.upload }))
+vi.mock('@/app/api/admin/challenge/[id]/route', () => ({ GET: mock.challenge, PATCH: mock.challenge }))
+vi.mock('@/app/api/admin/challenge/route', () => ({ PATCH: mock.challenge }))
 
 import { GET, POST, PATCH, DELETE } from '@/app/api/v1/[[...path]]/route'
 
@@ -36,10 +38,26 @@ beforeEach(() => {
   mock.audit.mockResolvedValue(undefined)
   mock.admin.mockResolvedValue({ ok: true, user: { ...principal.user, is_super_admin: true } })
   mock.access.mockResolvedValue({ ok: true, user: principal.user })
-  for (const handler of [mock.creators, mock.conversions, mock.emergency, mock.upload]) handler.mockResolvedValue(NextResponse.json({ saved: true }))
+  for (const handler of [mock.creators, mock.conversions, mock.emergency, mock.upload, mock.challenge]) handler.mockResolvedValue(NextResponse.json({ saved: true }))
 })
 
 describe('Versioned dashboard writing API boundary', () => {
+  it('discovers challenge writes and gates them with current super-admin permissions', async () => {
+    const discovery = await (await GET(request(''), context(''))).json()
+    expect(discovery.routes.find((r: any) => r.path === '/api/v1/challenge/:id').methods).toContainEqual({ method: 'PATCH', requiredPermissions: 'Active super admin' })
+    mock.admin.mockResolvedValue({ ok: false, status: 403, error: 'Forbidden' })
+    const path = 'challenge/cadead42-1762-44f5-b3fb-e2119b1cff64'
+    expect((await PATCH(request(path, 'PATCH', { expectedRevision: 0, target: 17895 }), context(path))).status).toBe(403)
+    expect(mock.challenge).not.toHaveBeenCalled()
+  })
+  it('validates challenge edits before dispatch and audits successful writes', async () => {
+    const path = 'challenge/cadead42-1762-44f5-b3fb-e2119b1cff64'
+    expect((await PATCH(request(path, 'PATCH', { target: 17895 }), context(path))).status).toBe(400)
+    expect(mock.challenge).not.toHaveBeenCalled()
+    expect((await PATCH(request(path, 'PATCH', { expectedRevision: 0, target: 17895 }), context(path))).status).toBe(200)
+    expect(mock.challenge).toHaveBeenCalledOnce()
+    expect(mock.audit).toHaveBeenLastCalledWith(principal, expect.objectContaining({ method: 'PATCH', path: '/api/v1/challenge/:id', status: 200 }))
+  })
   it('authenticates before revealing routes or loading handlers', async () => {
     mock.authenticate.mockResolvedValue({ ok: false, status: 401, error: 'Invalid API key' })
     const result = await GET(request(''), context(''))

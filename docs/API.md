@@ -2,7 +2,7 @@
 
 The operational dashboard API lives at `/api/v1` on the same origin as the dashboard. It supports reading and changing creators, social accounts, tracking links, daily subscriber/traffic counts, targets, tags, emergency status, Infloww mappings, scraping and synchronization. Changes go through the dashboard's existing handlers and appear in the dashboard.
 
-Deploy this code and apply `supabase/migrations/20261115130800_dashboard_api_access.sql` before using these endpoints in production. The code does not itself create a key or grant Marlon new permissions.
+Deploy this code and apply `supabase/migrations/20261115130800_dashboard_api_access.sql` and `supabase/migrations/20261117144725_challenge_configuration.sql` before using these endpoints in production. The code does not itself create a key or grant Marlon new permissions.
 
 ## Give Marlon access
 
@@ -134,7 +134,32 @@ The API applies a super-admin gate to global revenue responses because those exi
 | `POST /infloww/sync-links` | Optional `{ "creator_id": "UUID" }`; omitted means all creators | `input_conversions` on creator, or super admin for all |
 | `POST /upload` | Multipart `file`; optional `bucket` (`creators`, default, or `images`) | Super admin |
 | `GET /challenge` | Optional `asOf=YYYY-MM-DD` within the configured challenge | Active dashboard user; creator details remain scoped |
+| `GET /challenge/:id` | Manager UUID; returns `{ revision, participant }` | Super admin |
+| `PATCH /challenge/:id` | `expectedRevision` plus any of `target`, `baseline`, `basis`, `provisional`, `creators` | Super admin |
+| `PATCH /challenge` | `{ "expectedRevision": 0, "participants": [{ "id": "MANAGER_UUID", ...changes }] }` | Super admin |
 
 Scrapes invoke the configured paid service. Sync writes bindings, snapshots and daily Infloww deltas. Cache reads can also trigger a stale-cache refresh. Those operations can take several minutes; use a suitable timeout and inspect the resulting data before retrying. Bulk scrape runs until completion within the server budget; GET reads its progress while POST is running.
 
 Uploads accept PNG, JPEG, WebP and GIF images up to 10 MB, with matching file signatures. HTML, SVG and arbitrary bucket access are rejected. The response is `{ "url": "PUBLIC_STORAGE_URL" }`; uploading alone does not assign the image to a creator. Set the creator's `avatar_url` separately. All JSON request bodies have a 1 MB limit.
+
+## Editing the November challenge
+
+Apply `supabase/migrations/20261117144725_challenge_configuration.sql` before deploying the challenge write endpoints. Challenge settings are stored separately from conversion daily targets. `GET /challenge/:id` returns the enrolled manager's current settings and a challenge-wide `revision`. Every PATCH requires that revision as `expectedRevision`; an outdated revision returns HTTP 409. Reload, inspect the intervening change and prepare a new request instead of blindly retrying. A successful PATCH returns `{ "configuration": { "revision", "participants" } }`; read the affected manager and `GET /challenge?asOf=YYYY-MM-DD` back to verify settings and standings.
+
+Targets are positive JSON integers up to 2147483647. Baselines are nonnegative integers in the same range, basis text contains 1–2000 characters, and provisional is boolean. Enrollment, manager names and bonuses are fixed. Unknown fields and duplicate IDs are rejected.
+
+When supplied, `creators` replaces that manager's entire creator list. Each entry accepts only `id`, positive `target`, optional boolean `minimum`, and optional `startDate` within November 2026. Names are resolved from the creator database. Omitting `startDate` means November 1. A later start excludes earlier subscriber rows and accrues that creator's target only from its start date through November 30. The rest of the manager's explicit target accrues across all 30 days. Later-starting creator targets cannot exceed the manager target. There may be at most 30 distinct creators across the challenge.
+
+For a transfer, use a single `PATCH /challenge` containing both affected managers and their complete resulting creator lists. The configuration is saved atomically; a creator may never appear under two managers. Up to six manager patches are supported in one request. Manager targets are independent of the sum of creator orientation targets; preserve their approved rounding. Assignments and target changes apply retrospectively to every November report cutoff.
+
+Example: update Luka's baseline and explanatory text without changing his creators or goal (replace the revision with the current read result):
+
+```json
+{
+  "expectedRevision": 0,
+  "baseline": 4580,
+  "basis": "4.580 neue Subs im Oktober (ohne Lily Brown), ca. +20 %, plus Fernanda (neu): 100 Subs/Tag vom 15.–30.11. = 1.600."
+}
+```
+
+Send to `PATCH /api/v1/challenge/e60f3529-eb53-4635-aa75-4ed1db089c4f` with the existing bearer key and JSON content type. This does not require a new key if its permission owner is still an active super admin.

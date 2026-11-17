@@ -49,11 +49,12 @@ function ProgressChart({ racer }: { racer: Racer }) {
   // Break the actual series at the first missing day instead of drawing a
   // reassuring flat/interpolated line across unknown observations.
   const actual = points.filter(p => p.actual !== null).map((p, i) => `${x(i)},${y(p.actual!)}`).join(' ')
+  const expected = [{ expected: 0 }, ...racer.expectedHistory].map((p, i) => `${x(i)},${y(p.expected)}`).join(' ')
   return <figure className={styles.chart}>
     <svg viewBox="0 0 360 134" role="img" aria-label={`Verlauf ${racer.name}: durchgezogene Linie erfasste Subs, gestrichelte Linie Soll. Datenlücken werden nicht verbunden.`}>
       <line x1="12" x2="348" y1="108" y2="108" className={styles.chartGrid} />
       <line x1="12" x2="348" y1="64" y2="64" className={styles.chartGrid} />
-      <line x1="12" x2="348" y1={y(0)} y2={y(racer.target)} className={styles.chartExpected} />
+      <polyline points={expected} fill="none" className={styles.chartExpected} />
       {actual && <polyline points={actual} className={styles.chartActual} />}
       <text x="12" y="128">01.11.</text><text x="348" y="128" textAnchor="end">30.11.</text>
     </svg>
@@ -89,7 +90,7 @@ function RacerDetails({ racer: r, race }: { racer: Racer; race: Race }) {
     <section className={styles.section}>
       <h3>Creator-Aufteilung</h3>
       <div className={styles.tableWrap}><table><thead><tr><th>Creator</th><th>Neue Subs</th><th>{r.name === 'Jolena' ? 'Mindestziel' : 'Orientierungsziel'}</th><th>Stand</th></tr></thead>
-        <tbody>{r.breakdown.map(c => <tr key={c.id}><th scope="row">{c.name}{(!c.access || !c.exists || c.missingDates.length > 0 || c.invalidDates.length > 0) && <span className={styles.asterisk}> *</span>}</th><td>{number(c.total)}</td><td>{number(c.target)}</td><td>{percent(c.percent)}</td></tr>)}</tbody></table></div>
+        <tbody>{r.breakdown.map(c => <tr key={c.id}><th scope="row">{c.name}{c.startDate && <small className={styles.caption}> · ab {dateLabel(c.startDate).slice(0, 6)}</small>}{(!c.access || !c.exists || c.missingDates.length > 0 || c.invalidDates.length > 0) && <span className={styles.asterisk}> *</span>}</th><td>{number(c.total)}</td><td>{number(c.target)}</td><td>{percent(c.percent)}</td></tr>)}</tbody></table></div>
       {r.breakdown.some(c => !c.access) && <p className={styles.note}>Gesamtstände und Ränge sind für alle Challenge-Teilnehmer sichtbar. Creator-Einzeldaten bleiben auf deine Zugriffsrechte beschränkt.</p>}
       <p className={styles.caption}>{r.name === 'Jolena' ? 'Beide Creator-Mindestziele werden getrennt ausgewiesen. Eine zusätzliche Bonus-Sperrregel ist nicht bestätigt.' : 'Creator-Ziele dienen zur Orientierung. Maßgeblich ist das persönliche Gesamtziel.'}</p>
     </section>
@@ -165,15 +166,15 @@ export default function ChallengeClient() {
         <div aria-label="Challenge nach prozentualer Zielerreichung">
         <div className={styles.trackHeader}><span>Rang / Team</span><div className={styles.axis}><span style={{ left: '0%' }}>0 %</span><span style={{ left: `${50 / race.scaleMax * 100}%` }}>50 %</span><span style={{ left: `${100 / race.scaleMax * 100}%` }}>100 %</span>{race.scaleMax > 100 && <span className={styles.extendedAxis} style={{ left: '100%' }}>{race.scaleMax} %</span>}</div></div>
         <div className={styles.lanes}>
-          <div className={styles.guides} aria-hidden="true"><div className={styles.guideInner}><div className={styles.start} /><div className={styles.finish} style={{ left: `${100 / race.scaleMax * 100}%` }} /><div className={styles.pace} style={{ left: `${race.expectedPercent / race.scaleMax * 100}%` }} /></div></div>
+          <div className={styles.guides} aria-hidden="true"><div className={styles.guideInner}><div className={styles.start} /><div className={styles.finish} style={{ left: `${100 / race.scaleMax * 100}%` }} /></div></div>
           {race.racers.map(r => <button key={r.id} className={`${styles.lane} ${data.currentUserId === r.id ? styles.ownLane : ''}`} onClick={() => setSelection(r.id)} aria-haspopup="dialog" aria-label={`${r.name}${data.currentUserId === r.id ? ', deine Bahn' : ''}, ${r.rank === null ? 'ohne Rang' : `Rang ${r.rank}`}, ${r.percent === null ? 'keine auswertbaren Daten' : percent(r.percent)}${r.reached ? ', Ziel erreicht' : ''}`}>
             <span className={styles.identity}><span className={styles.rank}>{r.rank ?? '—'}</span><span className={styles.name}>{r.name}{data.currentUserId === r.id && <small>Du</small>}{r.reached && <small>Ziel erreicht</small>}</span></span>
-            <span className={styles.track}><span className={styles.progressRail} /><span className={styles.progressFill} style={{ width: `${(r.percent ?? 0) / race.scaleMax * 100}%` }} /><span className={styles.progressEndpoint} style={{ left: `${(r.percent ?? 0) / race.scaleMax * 100}%` }}><span className={styles.progressLabel}>{r.restricted && <LockKeyhole size={11} />}{percent(r.percent)}</span></span></span>
+            <span className={styles.track}><span className={styles.pace} aria-hidden="true" style={{ left: `${r.expected / r.target * 100 / race.scaleMax * 100}%` }} /><span className={styles.progressRail} /><span className={styles.progressFill} style={{ width: `${(r.percent ?? 0) / race.scaleMax * 100}%` }} /><span className={styles.progressEndpoint} style={{ left: `${(r.percent ?? 0) / race.scaleMax * 100}%` }}><span className={styles.progressLabel}>{r.restricted && <LockKeyhole size={11} />}{percent(r.percent)}</span></span></span>
           </button>)}
         </div>
         </div>
       </Card>
-      <footer className={styles.footer}><div className={styles.legend}><span><i className={styles.finishKey} />100 % des Monatsziels</span><span><i className={styles.paceKey} />Soll {percent(race.expectedPercent)}{race.asOf && ` · ${dateLabel(race.asOf).slice(0, 6)}`}</span></div><Link href="/admin/conversions"><Flag size={13} />Expectations / Einträge</Link></footer>
+      <footer className={styles.footer}><div className={styles.legend}><span><i className={styles.finishKey} />100 % des Monatsziels</span><span><i className={styles.paceKey} />Soll je Manager{race.asOf && ` · ${dateLabel(race.asOf).slice(0, 6)}`}</span></div><Link href="/admin/conversions"><Flag size={13} />Expectations / Einträge</Link></footer>
     </> : !error && <div className={styles.loading} role="status"><div />Sechs Bahnen werden vorbereitet…</div>}
     {selection === 'rules' && <Modal title="Challenge-Regeln" light={light} onClose={() => setSelection(null)}><ChallengeRules /></Modal>}
     {selected && race && <Modal title={selected.name} light={light} onClose={() => setSelection(null)}><RacerDetails racer={selected} race={race} /></Modal>}
